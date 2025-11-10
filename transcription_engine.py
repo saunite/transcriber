@@ -4,11 +4,37 @@ Handles both file-based and streaming audio transcription.
 """
 
 import os
+import ssl
 from pathlib import Path
 from typing import Optional, Iterator, Tuple, List
 import numpy as np
-from faster_whisper import WhisperModel
 from tqdm import tqdm
+
+# Bypass SSL verification for corporate networks
+try:
+    ssl._create_default_https_context = ssl._create_unverified_context
+except AttributeError:
+    pass
+
+# Disable SSL verification for httpx (used by huggingface_hub)
+os.environ['CURL_CA_BUNDLE'] = ''
+os.environ['REQUESTS_CA_BUNDLE'] = ''
+os.environ['SSL_CERT_FILE'] = ''
+
+# Monkey-patch httpx to disable SSL verification
+try:
+    import httpx
+    original_client_init = httpx.Client.__init__
+    
+    def patched_client_init(self, *args, **kwargs):
+        kwargs['verify'] = False
+        original_client_init(self, *args, **kwargs)
+    
+    httpx.Client.__init__ = patched_client_init
+except ImportError:
+    pass
+
+from faster_whisper import WhisperModel
 
 
 class TranscriptionEngine:
@@ -61,7 +87,9 @@ class TranscriptionEngine:
         language: Optional[str] = None,
         task: str = "transcribe",
         beam_size: int = 5,
-        word_timestamps: bool = True
+        word_timestamps: bool = True,
+        output_path: Optional[str] = None,
+        incremental_save: bool = True
     ) -> Tuple[List[dict], dict]:
         """
         Transcribe an audio/video file.
@@ -72,6 +100,8 @@ class TranscriptionEngine:
             task: "transcribe" or "translate" (translate to English)
             beam_size: Beam size for decoding (higher = more accurate but slower)
             word_timestamps: Include word-level timestamps
+            output_path: Path to save transcript incrementally (optional)
+            incremental_save: Save after each segment to avoid data loss (default: True)
         
         Returns:
             Tuple of (segments, info) where:
@@ -99,22 +129,42 @@ class TranscriptionEngine:
         print(f"\nDetected language: {info.language} (probability: {info.language_probability:.2f})")
         print(f"Duration: {info.duration:.2f} seconds\n")
         
+        # Open file for incremental writing if requested
+        output_file = None
+        if incremental_save and output_path:
+            output_file = open(output_path, 'w', encoding='utf-8')
+            output_file.write(f"# Transcription (in progress...)\n")
+            output_file.write(f"# Language: {info.language} (probability: {info.language_probability:.2f})\n")
+            output_file.write(f"# Duration: {info.duration:.2f} seconds\n\n")
+            output_file.flush()
+        
         # Process segments
-        for segment in tqdm(segments_gen, desc="Processing segments", unit="segment"):
-            segments.append({
-                'start': segment.start,
-                'end': segment.end,
-                'text': segment.text.strip(),
-                'words': [
-                    {
-                        'start': word.start,
-                        'end': word.end,
-                        'word': word.word,
-                        'probability': word.probability
-                    }
-                    for word in (segment.words or [])
-                ] if word_timestamps else []
-            })
+        try:
+            for segment in tqdm(segments_gen, desc="Processing segments", unit="segment"):
+                segment_dict = {
+                    'start': segment.start,
+                    'end': segment.end,
+                    'text': segment.text.strip(),
+                    'words': [
+                        {
+                            'start': word.start,
+                            'end': word.end,
+                            'word': word.word,
+                            'probability': word.probability
+                        }
+                        for word in (segment.words or [])
+                    ] if word_timestamps else []
+                }
+                segments.append(segment_dict)
+                
+                # Write segment immediately to file
+                if output_file:
+                    timestamp = f"[{self._format_time(segment.start)} -> {self._format_time(segment.end)}]"
+                    output_file.write(f"{timestamp} {segment.text.strip()}\n")
+                    output_file.flush()  # Ensure it's written to disk immediately
+        finally:
+            if output_file:
+                output_file.close()
         
         info_dict = {
             'language': info.language,

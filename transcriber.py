@@ -12,9 +12,16 @@ from pathlib import Path
 from audio_extractor import AudioExtractor
 from audio_capture import AudioCapture, setup_loopback_instructions
 from transcription_engine import TranscriptionEngine
-from speaker_diarization import SpeakerDiarization
-from audio_buffer import AudioBuffer
 import time
+
+# Optional dependencies
+try:
+    from speaker_diarization import SpeakerDiarization
+    from audio_buffer import AudioBuffer
+    DIARIZATION_AVAILABLE = True
+except ImportError:
+    DIARIZATION_AVAILABLE = False
+    print("⚠️  Note: Speaker diarization not available (install torch and pyannote.audio)")
 
 
 def main():
@@ -164,6 +171,25 @@ Examples:
     )
     
     parser.add_argument(
+        '--wasapi',
+        action='store_true',
+        help='Use WASAPI loopback (Windows only, works with Bluetooth headsets!)'
+    )
+    
+    parser.add_argument(
+        '--include-mic',
+        action='store_true',
+        help='Also capture microphone along with system audio (for Teams meetings)'
+    )
+    
+    parser.add_argument(
+        '--mic-device',
+        type=int,
+        default=-1,
+        help='Microphone device index (default: -1 = auto-detect)'
+    )
+    
+    parser.add_argument(
         '--chunk-duration',
         type=float,
         default=30.0,
@@ -270,11 +296,13 @@ def transcribe_file(engine: TranscriptionEngine, args) -> int:
             print(f"⚠️  Unknown file type: {file_ext}")
             print("Attempting to process as audio file...\n")
         
-        # Transcribe
+        # Transcribe (with incremental saving)
         segments, info = engine.transcribe_file(
             audio_file,
             language=args.language,
-            task=args.task
+            task=args.task,
+            output_path=args.output,
+            incremental_save=True
         )
         
         # Speaker diarization if requested
@@ -367,9 +395,22 @@ def transcribe_live(engine: TranscriptionEngine, args) -> int:
     print(f"Language: {args.language or 'auto-detect'}")
     print(f"Chunk duration: {args.chunk_duration}s")
     print(f"Overlap: {args.overlap_duration}s")
+    
+    # Check if using WASAPI (Windows only)
+    if args.wasapi:
+        print("Mode: WASAPI Loopback (Bluetooth-compatible)")
+        print("="*60 + "\n")
+        return transcribe_live_wasapi(engine, args)
+    
     if args.diarize:
-        print("⚠️  Note: Speaker diarization in live mode will be applied at the end")
+        print("⚠️  Note: Speaker diarization requires torch (not available)")
     print("="*60 + "\n")
+    
+    # Check if AudioBuffer is available
+    if not DIARIZATION_AVAILABLE:
+        print("⚠️  Advanced buffering not available. Using simple mode.")
+        print("    Transcription will happen in fixed chunks.\n")
+        return transcribe_live_simple(engine, args)
     
     # Initialize components
     capture = AudioCapture(sample_rate=16000, channels=1)
@@ -501,6 +542,296 @@ def transcribe_live(engine: TranscriptionEngine, args) -> int:
     else:
         print("\n⚠️  No transcription to save")
         return 0
+
+
+def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
+    """Simple live transcription without AudioBuffer (no torch dependency)."""
+    import numpy as np
+    import sounddevice as sd
+    from scipy import signal
+    
+    # Get device info to use its native sample rate
+    device_id = args.audio_device if args.audio_device >= 0 else None
+    if device_id is not None:
+        device_info = sd.query_devices(device_id)
+        native_rate = int(device_info['default_samplerate'])
+        print(f"Using device native sample rate: {native_rate} Hz")
+    else:
+        native_rate = 48000
+    
+    target_rate = 16000  # Whisper requires 16kHz
+    
+    # Initialize audio capture with native sample rate
+    capture = AudioCapture(sample_rate=native_rate, channels=1)
+    
+    # Storage
+    all_segments = []
+    audio_buffer = []
+    chunk_duration_samples = int(native_rate * args.chunk_duration)
+    
+    # Open output file for incremental writing
+    output_file = None
+    if args.output:
+        output_file = open(args.output, 'w', encoding='utf-8')
+        output_file.write(f"# Live Transcription Started\n")
+        output_file.write(f"# Model: {args.model}\n")
+        output_file.write(f"# Language: {args.language or 'auto-detect'}\n\n")
+        output_file.flush()
+    
+    print("🎙️  Listening... (Press Ctrl+C to stop)\n")
+    
+    def audio_callback(audio_chunk):
+        """Process incoming audio chunks."""
+        audio_buffer.append(audio_chunk.flatten())
+        
+        # Check if we have enough audio for transcription
+        total_samples = sum(len(chunk) for chunk in audio_buffer)
+        
+        if total_samples >= chunk_duration_samples:
+            # Concatenate all buffered audio
+            audio_data = np.concatenate(audio_buffer)
+            
+            # Resample to 16kHz if needed
+            if native_rate != target_rate:
+                num_samples = int(len(audio_data) * target_rate / native_rate)
+                audio_data = signal.resample(audio_data, num_samples)
+            
+            # Ensure float32
+            if audio_data.dtype != np.float32:
+                audio_data = audio_data.astype(np.float32)
+            
+            # Transcribe
+            try:
+                segments, info = engine.transcribe_chunk(audio_data, language=args.language)
+                
+                # Print and save results
+                for seg in segments:
+                    if seg['text'].strip():
+                        timestamp = f"[{engine._format_time(seg['start'])} -> {engine._format_time(seg['end'])}]"
+                        line = f"{timestamp} {seg['text']}"
+                        print(line)
+                        all_segments.append(seg)
+                        
+                        # Write immediately to file
+                        if output_file:
+                            output_file.write(line + "\n")
+                            output_file.flush()
+                
+                if not segments or not any(s['text'].strip() for s in segments):
+                    print("  (no speech detected)")
+            
+            except Exception as e:
+                print(f"  ❌ Error transcribing: {e}")
+            
+            # Clear buffer
+            audio_buffer.clear()
+    
+    try:
+        # Start capturing
+        capture.capture_stream(
+            callback=audio_callback,
+            device=args.audio_device,
+            duration=None  # Infinite until Ctrl+C
+        )
+    except KeyboardInterrupt:
+        print("\n\n⏹️  Stopping transcription...")
+    finally:
+        if output_file:
+            output_file.close()
+    
+    # Summary
+    print(f"\n{'='*60}")
+    print("Transcription Complete")
+    print(f"{'='*60}")
+    print(f"Total segments: {len(all_segments)}")
+    if args.output:
+        print(f"Saved to: {args.output}")
+    print(f"{'='*60}\n")
+    
+    return 0
+
+
+def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
+    """Live transcription using WASAPI loopback (Windows, Bluetooth-compatible)."""
+    import numpy as np
+    from wasapi_capture import WASAPICapture
+    from scipy import signal
+    import sounddevice as sd
+    
+    # Initialize WASAPI capture for system audio
+    capture = WASAPICapture()
+    
+    # Get system audio loopback device
+    if args.audio_device >= 0:
+        device_index = args.audio_device
+    else:
+        # Auto-detect default loopback
+        device_info = capture.get_default_loopback_device()
+        if not device_info:
+            print("❌ No WASAPI loopback device found!")
+            print("Run with --list-devices to see available devices.")
+            return 1
+        device_index = device_info['index']
+        print(f"Auto-detected loopback: {device_info['name']}\n")
+    
+    # Get microphone device if requested
+    mic_stream = None
+    mic_queue = []
+    if args.include_mic:
+        if args.mic_device >= 0:
+            mic_device = args.mic_device
+        else:
+            # Auto-detect default microphone
+            try:
+                mic_info = sd.query_devices(kind='input')
+                mic_device = mic_info['index'] if isinstance(mic_info, dict) else None
+                print(f"Auto-detected microphone: {mic_info['name']}\n")
+            except:
+                print("⚠️  Could not auto-detect microphone, using device 3")
+                mic_device = 3  # Your Bluetooth headset mic
+        
+        print(f"📱 Microphone capture enabled (device {mic_device})")
+        print("   Your voice will be included in the transcript\n")
+    
+    # Storage
+    all_segments = []
+    system_buffer = []
+    mic_buffer = []
+    start_time = None  # Track absolute start time
+    
+    # WASAPI typically uses 48kHz, we need 16kHz for Whisper
+    wasapi_rate = 48000
+    target_rate = 16000
+    # Chunk duration in TARGET rate (16kHz) since we resample before buffering
+    chunk_duration_samples = int(target_rate * args.chunk_duration)
+    mic_chunk_samples = int(target_rate * 5.0)  # Transcribe mic every 5 seconds
+    
+    # Open output file for incremental writing
+    output_file = None
+    if args.output:
+        output_file = open(args.output, 'w', encoding='utf-8')
+        output_file.write(f"# Live Transcription (WASAPI Loopback")
+        if args.include_mic:
+            output_file.write(f" + Microphone")
+        output_file.write(f")\n")
+        output_file.write(f"# Model: {args.model}\n")
+        output_file.write(f"# Language: {args.language or 'auto-detect'}\n\n")
+        output_file.flush()
+    
+    print("🎙️  Listening... (Press Ctrl+C to stop)\n")
+    
+    # Microphone callback (if enabled)
+    def mic_callback(indata, frames, time, status):
+        """Capture microphone audio."""
+        nonlocal start_time
+        if start_time is None:
+            start_time = time.inputBufferAdcTime
+        if status and "overflow" not in str(status).lower():
+            print(f"Mic status: {status}")
+        # Convert to mono and normalize
+        mic_audio = indata[:, 0] if len(indata.shape) > 1 else indata
+        # Flatten to 1D array
+        mic_audio = mic_audio.flatten()
+        mic_buffer.append(mic_audio.copy())
+    
+    # Start microphone capture if enabled
+    if args.include_mic:
+        mic_stream = sd.InputStream(
+            device=mic_device,
+            channels=1,
+            samplerate=16000,  # Microphone at 16kHz
+            callback=mic_callback
+        )
+        mic_stream.start()
+    
+    def audio_callback(audio_chunk):
+        """Process incoming system audio chunks."""
+        # Always resample system audio from 48kHz to 16kHz first
+        resampled_len = int(len(audio_chunk) * target_rate / wasapi_rate)
+        system_audio = signal.resample(audio_chunk, resampled_len)
+        
+        # Store system audio
+        system_buffer.append(system_audio)
+        
+        # Check microphone buffer size (process every 5 seconds)
+        if args.include_mic:
+            total_mic_samples = sum(len(chunk) for chunk in mic_buffer)
+            if total_mic_samples >= mic_chunk_samples:
+                mic_data = np.concatenate(mic_buffer)
+                mic_buffer.clear()
+                
+                # Only transcribe if there's significant audio
+                if np.max(np.abs(mic_data)) > 0.01:
+                    if mic_data.dtype != np.float32:
+                        mic_data = mic_data.astype(np.float32)
+                    
+                    try:
+                        segments, info = engine.transcribe_chunk(mic_data, language=args.language)
+                        for seg in segments:
+                            if seg['text'].strip():
+                                timestamp = f"[{engine._format_time(seg['start'])} -> {engine._format_time(seg['end'])}]"
+                                line = f"{timestamp} [MIC] {seg['text']}"
+                                print(line)
+                                all_segments.append(seg)
+                                if output_file:
+                                    output_file.write(line + "\n")
+                                    output_file.flush()
+                    except Exception as e:
+                        print(f"  ❌ Error transcribing microphone: {e}")
+        
+        # Check if we have enough system audio for transcription
+        total_samples = sum(len(chunk) for chunk in system_buffer)
+        
+        if total_samples >= chunk_duration_samples:
+            # Transcribe system audio
+            system_data = np.concatenate(system_buffer)
+            if system_data.dtype != np.float32:
+                system_data = system_data.astype(np.float32)
+            
+            try:
+                segments, info = engine.transcribe_chunk(system_data, language=args.language)
+                for seg in segments:
+                    if seg['text'].strip():
+                        timestamp = f"[{engine._format_time(seg['start'])} -> {engine._format_time(seg['end'])}]"
+                        line = f"{timestamp} [SYS] {seg['text']}"
+                        print(line)
+                        all_segments.append(seg)
+                        if output_file:
+                            output_file.write(line + "\n")
+                            output_file.flush()
+            except Exception as e:
+                print(f"  ❌ Error transcribing system audio: {e}")
+            
+            # Clear buffer
+            system_buffer.clear()
+    
+    try:
+        # Start capturing
+        capture.capture_stream(
+            callback=audio_callback,
+            device_index=device_index,
+            duration=None  # Infinite until Ctrl+C
+        )
+    except KeyboardInterrupt:
+        print("\n\n⏹️  Stopping transcription...")
+    finally:
+        if mic_stream:
+            mic_stream.stop()
+            mic_stream.close()
+        if output_file:
+            output_file.close()
+        capture.cleanup()
+    
+    # Summary
+    print(f"\n{'='*60}")
+    print("Transcription Complete")
+    print(f"{'='*60}")
+    print(f"Total segments: {len(all_segments)}")
+    if args.output:
+        print(f"Saved to: {args.output}")
+    print(f"{'='*60}\n")
+    
+    return 0
 
 
 if __name__ == "__main__":

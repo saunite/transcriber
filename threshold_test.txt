@@ -1,0 +1,14 @@
+# Live Transcription (WASAPI Loopback + Microphone)
+# Model: base
+# Language: auto-detect
+
+[00:00.000 -> 00:06.480] [MIC] and integration between systems and systems architecture, ecosystem architecture, etc.
+[00:00.000 -> 00:06.480] [MIC] and integration between systems and systems architecture, ecosystem architecture, etc.
+[00:07.680 -> 00:09.900] [MIC] So yeah, that's more of my side.
+[00:07.680 -> 00:09.900] [MIC] So yeah, that's more of my side.
+[00:00.000 -> 00:05.440] [MIC] bread and butter on these things. Basically, it's the classic monolith thing. The problem
+[00:00.000 -> 00:05.440] [MIC] bread and butter on these things. Basically, it's the classic monolith thing. The problem
+[00:05.440 -> 00:09.660] [MIC] is, is the more you build, you build 99 pieces to a monolith, I've got to add one more, that
+[00:05.440 -> 00:09.660] [MIC] is, is the more you build, you build 99 pieces to a monolith, I've got to add one more, that
+[00:09.660 -> 00:09.980] [MIC] means you get...
+[00:09.660 -> 00:09.980] [MIC] means you get...

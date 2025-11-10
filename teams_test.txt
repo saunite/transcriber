@@ -1,0 +1,6 @@
+# Live Transcription (WASAPI Loopback)
+# Model: base
+# Language: auto-detect
+
+[00:00.000 -> 00:07.580] One is because the guys who were in charge of this did not know how to communicate requirements.
+[00:03.180 -> 00:09.680] So like a great example, this is they'd be like hey, I just need this thing to kind of do

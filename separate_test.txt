@@ -1,0 +1,4 @@
+# Live Transcription (WASAPI Loopback + Microphone)
+# Model: base
+# Language: auto-detect
+
