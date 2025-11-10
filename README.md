@@ -60,16 +60,38 @@ python transcriber.py --file video.mp4 --diarize --num-speakers 3 --hf-token YOU
 
 ### Real-time Audio Capture
 
+**Quick Start for Teams Meetings (Windows with Bluetooth headset):**
+
+Double-click `start_teams_transcription.bat` to automatically start transcription with both system audio and microphone capture. The transcript will be saved with a timestamp (e.g., `meeting_20251110_143052.txt`).
+
+**Manual Command:**
+
 ```bash
-# Live transcription from system audio
+# Live transcription with dual-capture (system audio + microphone)
+python transcriber.py --live --wasapi --include-mic --mic-device 3
+
+# System audio only (WASAPI loopback for Bluetooth compatibility)
+python transcriber.py --live --wasapi
+
+# Traditional mode (may not work with Bluetooth headsets)
 python transcriber.py --live
 
-# Live transcription with speaker diarization
+# With speaker diarization (requires torch installation)
 python transcriber.py --live --diarize --hf-token YOUR_TOKEN
 
 # Custom chunk settings for better responsiveness
 python transcriber.py --live --chunk-duration 20 --overlap-duration 3
 ```
+
+**Understanding the Labels:**
+- `[SYS]` - System audio (other meeting participants, videos, etc.)
+- `[MIC]` - Your microphone (your voice)
+
+**Find Your Microphone Device:**
+```bash
+python transcriber.py --list-devices
+```
+Look for your Bluetooth headset in the input devices list and note the device number.
 
 ### Advanced Options
 
@@ -86,14 +108,17 @@ python transcriber.py --file video.mp4 --format srt --diarize --hf-token YOUR_TO
 # List available audio devices
 python transcriber.py --list-devices
 
-# Get help for audio loopback setup
-python transcriber.py --setup-help
+# WASAPI mode with custom microphone device
+python transcriber.py --live --wasapi --include-mic --mic-device 5
 ```
 
 ### Complete Options
 
 - `--file <path>` - Transcribe audio from a video/audio file
 - `--live` - Capture and transcribe system audio in real-time
+- `--wasapi` - Use WASAPI loopback mode (Windows only, Bluetooth-compatible)
+- `--include-mic` - Include microphone capture alongside system audio (use with --wasapi)
+- `--mic-device <id>` - Microphone device index (use --list-devices to find)
 - `--diarize` - Enable speaker diarization
 - `--hf-token <token>` - Hugging Face token for diarization (or set HUGGINGFACE_TOKEN env var)
 - `--num-speakers <n>` - Expected number of speakers
@@ -114,13 +139,29 @@ python transcriber.py --setup-help
 ## Setup for Real-time Audio Capture
 
 ### Windows
-Real-time capture uses WASAPI loopback. You may need to enable "Stereo Mix":
+
+**For Bluetooth Headsets (Recommended - WASAPI Mode):**
+
+The transcriber includes WASAPI loopback support which works with Bluetooth headsets. No additional setup required!
+
+```bash
+# Use WASAPI mode with microphone
+python transcriber.py --live --wasapi --include-mic --mic-device 3
+
+# Or just double-click start_teams_transcription.bat
+```
+
+**For Traditional Sound Cards (Stereo Mix):**
+
+You may need to enable "Stereo Mix":
 
 1. Right-click the speaker icon in taskbar → Sounds
 2. Go to 'Recording' tab
 3. Right-click empty area → Show Disabled Devices
 4. Enable 'Stereo Mix' or 'Wave Out Mix'
 5. Set it as default recording device
+
+**Note:** Stereo Mix does NOT work with Bluetooth headsets. Use WASAPI mode instead.
 
 **Alternative**: Install [VB-Cable](https://vb-audio.com/Cable/) virtual audio device
 
