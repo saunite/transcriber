@@ -1,0 +1,40 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary audio files
+*.wav
+*.mp3
+*.flac
+extracted_audio_*.wav
+
+# Output transcripts (uncomment if you don't want to track them)
+# *_transcript.txt
+# *.srt
+# *.vtt
+
+# Model cache (Whisper models are downloaded to cache)
+.cache/
+models/
+
+# Logs
+*.log

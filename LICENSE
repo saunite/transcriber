@@ -1,0 +1,41 @@
+# Transcriber Project - GNU General Public License v2.0
+
+Copyright (C) 2025
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along
+with this program; if not, write to the Free Software Foundation, Inc.,
+51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+
+---
+
+## Third-Party Components
+
+This software uses the following open-source components:
+
+### faster-whisper
+- License: MIT License
+- Copyright: SYSTRAN
+- Repository: https://github.com/SYSTRAN/faster-whisper
+- Used for: Audio transcription engine
+
+The MIT License is compatible with GPLv2.
+
+### Other Dependencies
+All Python dependencies (numpy, sounddevice, etc.) use licenses compatible
+with GPLv2. See requirements.txt for the full list.
+
+### FFmpeg
+- License: LGPL v2.1+ or GPL v2+ (depending on configuration)
+- Website: https://ffmpeg.org
+- Used for: Audio extraction from video files
+- Note: FFmpeg must be installed separately on the system

@@ -1,0 +1,22 @@
+# Audio transcription with faster-whisper
+faster-whisper>=1.0.0
+
+# Audio processing and capture
+sounddevice>=0.4.6
+soundfile>=0.12.1
+numpy>=1.24.0
+scipy>=1.10.0
+
+# Audio file handling (ffmpeg wrapper)
+pydub>=0.25.1
+
+# Speaker diarization
+pyannote.audio>=3.1.0
+torch>=2.0.0
+torchaudio>=2.0.0
+
+# Real-time streaming utilities
+webrtcvad>=2.0.10
+
+# CLI utilities
+tqdm>=4.65.0
