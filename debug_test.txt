@@ -1,8 +1,0 @@
-# Live Transcription (WASAPI Loopback + Microphone)
-# Model: base
-# Language: auto-detect
-
-[00:00.000 -> 00:01.060] shopping blog as well.
-[00:02.100 -> 00:04.180] Was instantiated in 1998.
-[00:05.420 -> 00:07.560] This is the quote unquote new system.
-[00:08.600 -> 00:09.120] It's

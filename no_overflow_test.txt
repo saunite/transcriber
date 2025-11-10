@@ -1,9 +1,0 @@
-# Live Transcription (WASAPI Loopback + Microphone)
-# Model: base
-# Language: auto-detect
-
-[00:01.420 -> 00:17.540] [MIC] Okay, let's start. What are we doing here? My nothing is showing. Yeah, everything is gone.
-[00:18.180 -> 00:19.860] [MIC] Go on, I'm going.
-[00:01.490 -> 00:04.990] [MIC] Oh really, that's very interesting, it's taking more than I was...
-[00:00.000 -> 00:08.800] [SYS] system that was a homegrown CRM that was born an instantiated back around 1989. So, so we're just
-[00:00.000 -> 00:00.940] [MIC] Thought it was fake.

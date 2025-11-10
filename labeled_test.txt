@@ -1,6 +1,0 @@
-# Live Transcription (WASAPI Loopback + Microphone)
-# Model: base
-# Language: auto-detect
-
-[00:00.000 -> 00:09.980] [MIC] It's named AI very confusingly, it is not the cool AI, it's its own little thing, it's called adaptive intelligence, and it's...
-[00:00.000 -> 00:09.980] [MIC] It's named AI very confusingly, it is not the cool AI, it's its own little thing, it's called adaptive intelligence, and it's...

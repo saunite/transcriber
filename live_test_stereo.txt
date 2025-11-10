@@ -1,4 +1,0 @@
-# Live Transcription Started
-# Model: base
-# Language: auto-detect
-

@@ -1,9 +1,0 @@
-# Live Transcription (WASAPI Loopback + Microphone)
-# Model: base
-# Language: auto-detect
-
-[00:00.000 -> 00:05.340] [SYS] manage all the microservices, but we are going to strip the different business functions out
-[00:06.060 -> 00:09.980] [SYS] and put them into separate services that are...
-[00:00.940 -> 00:07.300] [MIC] Hey, finally it's not working blah blah blah blah
-[00:00.000 -> 00:04.180] [SYS] Next framework that we're actually using is the next GS framework with Typecast.
-[00:04.720 -> 00:09.860] [SYS] What we're actually doing with the rest of this is, is that so anything.
