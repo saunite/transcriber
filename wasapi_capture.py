@@ -96,22 +96,28 @@ class WASAPICapture:
                 if total_frames and frames_captured >= total_frames:
                     break
                 
-                # Read audio data
-                data = stream.read(chunk_size, exception_on_overflow=False)
-                audio_chunk = np.frombuffer(data, dtype=np.int16)
-                
-                # Convert to float32 mono for Whisper
-                if CHANNELS == 2:
-                    # Convert stereo to mono
-                    audio_chunk = audio_chunk.reshape(-1, 2).mean(axis=1)
-                
-                # Normalize to float32 [-1, 1]
-                audio_chunk = audio_chunk.astype(np.float32) / 32768.0
-                
-                # Call user callback
-                callback(audio_chunk)
-                
-                frames_captured += 1
+                try:
+                    # Read audio data with timeout to allow Ctrl+C responsiveness
+                    data = stream.read(chunk_size, exception_on_overflow=False)
+                    audio_chunk = np.frombuffer(data, dtype=np.int16)
+                    
+                    # Convert to float32 mono for Whisper
+                    if CHANNELS == 2:
+                        # Convert stereo to mono
+                        audio_chunk = audio_chunk.reshape(-1, 2).mean(axis=1)
+                    
+                    # Normalize to float32 [-1, 1]
+                    audio_chunk = audio_chunk.astype(np.float32) / 32768.0
+                    
+                    # Call user callback
+                    callback(audio_chunk)
+                    
+                    frames_captured += 1
+                except IOError as e:
+                    # Handle buffer overflow/underflow gracefully
+                    if e.errno != pyaudio.paInputOverflowed:
+                        raise
+                    continue
                 
         except KeyboardInterrupt:
             print("\n✓ Capture stopped by user")

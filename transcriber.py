@@ -7,12 +7,23 @@ License: GPLv2
 """
 
 import sys
+import signal
 import argparse
 from pathlib import Path
 from audio_extractor import AudioExtractor
 from audio_capture import AudioCapture, setup_loopback_instructions
 from transcription_engine import TranscriptionEngine
 import time
+
+# Global flag for clean shutdown
+shutdown_requested = False
+
+def signal_handler(signum, frame):
+    """Handle Ctrl+C gracefully."""
+    global shutdown_requested
+    shutdown_requested = True
+    print("\n\n⏹️  Shutdown requested, stopping transcription...")
+    raise KeyboardInterrupt
 
 # Optional dependencies
 try:
@@ -246,6 +257,9 @@ Examples:
         print(f"\n{'='*60}")
         print("Audio Transcriber")
         print(f"{'='*60}\n")
+        
+        # Set up signal handler for Ctrl+C
+        signal.signal(signal.SIGINT, signal_handler)
         
         engine = TranscriptionEngine(
             model_size=args.model,
@@ -600,6 +614,10 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
         """Process incoming audio chunks."""
         nonlocal time_offset, last_speech_time
         
+        # Allow clean shutdown
+        if shutdown_requested:
+            raise KeyboardInterrupt
+        
         # Check for silence timeout
         if silence_timeout_enabled:
             elapsed_silence = time.time() - last_speech_time
@@ -820,6 +838,10 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
     def audio_callback(audio_chunk):
         """Process incoming system audio chunks."""
         nonlocal system_time_offset, mic_time_offset, last_speech_time
+        
+        # Allow clean shutdown
+        if shutdown_requested:
+            raise KeyboardInterrupt
         
         # Check for silence timeout
         if silence_timeout_enabled:
