@@ -570,6 +570,10 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
     chunk_duration_samples = int(native_rate * args.chunk_duration)
     time_offset = 0.0  # Track cumulative time offset
     
+    # Overlap settings to prevent speech loss at chunk boundaries
+    overlap_duration = 1.0  # 1 second overlap
+    overlap_samples = int(target_rate * overlap_duration)  # In target rate (16kHz)
+    
     # Open output file for incremental writing
     output_file = None
     if args.output:
@@ -600,6 +604,14 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
                 audio_data = signal.resample(audio_data, num_samples)
             
             chunk_duration_sec = len(audio_data) / target_rate
+            
+            # Keep overlap for next chunk to prevent speech cutoff
+            if len(audio_data) > overlap_samples:
+                overlap_data = audio_data[-overlap_samples:]
+                audio_buffer.clear()
+                audio_buffer.append(overlap_data)
+            else:
+                audio_buffer.clear()
             
             # Ensure float32
             if audio_data.dtype != np.float32:
@@ -637,9 +649,7 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
             
             except Exception as e:
                 print(f"  ❌ Error transcribing: {e}")
-            
-            # Clear buffer
-            audio_buffer.clear()
+
     
     try:
         # Start capturing
@@ -716,12 +726,16 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
     system_time_offset = 0.0  # Cumulative time offset for system audio
     mic_time_offset = 0.0  # Cumulative time offset for microphone
     
+    # Overlap settings to prevent speech loss at chunk boundaries
+    overlap_duration = 1.0  # 1 second overlap between chunks
+    
     # WASAPI typically uses 48kHz, we need 16kHz for Whisper
     wasapi_rate = 48000
     target_rate = 16000
     # Chunk duration in TARGET rate (16kHz) since we resample before buffering
     chunk_duration_samples = int(target_rate * args.chunk_duration)
     mic_chunk_samples = int(target_rate * 5.0)  # Transcribe mic every 5 seconds
+    overlap_samples = int(target_rate * overlap_duration)
     
     # Open output file for incremental writing
     output_file = None
@@ -778,7 +792,14 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
             if total_mic_samples >= mic_chunk_samples:
                 mic_data = np.concatenate(mic_buffer)
                 chunk_duration_sec = len(mic_data) / target_rate
-                mic_buffer.clear()
+                
+                # Keep overlap for next chunk to prevent speech cutoff
+                if len(mic_data) > overlap_samples:
+                    overlap_data = mic_data[-overlap_samples:]
+                    mic_buffer.clear()
+                    mic_buffer.append(overlap_data)
+                else:
+                    mic_buffer.clear()
                 
                 # Only transcribe if there's significant audio
                 if np.max(np.abs(mic_data)) > 0.01:
@@ -815,6 +836,15 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
             # Transcribe system audio
             system_data = np.concatenate(system_buffer)
             chunk_duration_sec = len(system_data) / target_rate
+            
+            # Keep overlap for next chunk to prevent speech cutoff
+            if len(system_data) > overlap_samples:
+                overlap_data = system_data[-overlap_samples:]
+                system_buffer.clear()
+                system_buffer.append(overlap_data)
+            else:
+                system_buffer.clear()
+            
             if system_data.dtype != np.float32:
                 system_data = system_data.astype(np.float32)
             
@@ -840,9 +870,7 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
                 system_time_offset += chunk_duration_sec
             except Exception as e:
                 print(f"  ❌ Error transcribing system audio: {e}")
-            
-            # Clear buffer
-            system_buffer.clear()
+
     
     try:
         # Start capturing
