@@ -203,6 +203,13 @@ Examples:
         help='Overlap between chunks for streaming (seconds, default: 5)'
     )
     
+    parser.add_argument(
+        '--silence-timeout',
+        type=float,
+        default=600.0,  # 10 minutes
+        help='Stop transcription after N seconds of silence (default: 600 = 10 minutes, 0 = never stop)'
+    )
+    
     # Utility options
     parser.add_argument(
         '--list-devices',
@@ -569,6 +576,8 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
     audio_buffer = []
     chunk_duration_samples = int(native_rate * args.chunk_duration)
     time_offset = 0.0  # Track cumulative time offset
+    last_speech_time = time.time()  # Track time of last detected speech
+    silence_timeout_enabled = args.silence_timeout > 0
     
     # Overlap settings to prevent speech loss at chunk boundaries
     overlap_duration = 1.0  # 1 second overlap
@@ -584,10 +593,19 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
         output_file.flush()
     
     print("🎙️  Listening... (Press Ctrl+C to stop)\n")
+    if silence_timeout_enabled:
+        print(f"⏱️  Auto-stop after {args.silence_timeout/60:.1f} minutes of silence\n")
     
     def audio_callback(audio_chunk):
         """Process incoming audio chunks."""
-        nonlocal time_offset
+        nonlocal time_offset, last_speech_time
+        
+        # Check for silence timeout
+        if silence_timeout_enabled:
+            elapsed_silence = time.time() - last_speech_time
+            if elapsed_silence > args.silence_timeout:
+                print(f"\n⏱️  Stopping: {args.silence_timeout/60:.1f} minutes of silence detected")
+                raise KeyboardInterrupt("Silence timeout")
         
         audio_buffer.append(audio_chunk.flatten())
         
@@ -620,6 +638,10 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
             # Transcribe
             try:
                 segments, info = engine.transcribe_chunk(audio_data, language=args.language)
+                
+                # Reset silence timer if speech was detected
+                if segments and any(s['text'].strip() for s in segments):
+                    last_speech_time = time.time()
                 
                 # Print and save results
                 for seg in segments:
@@ -725,6 +747,8 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
     start_time = None  # Track absolute start time
     system_time_offset = 0.0  # Cumulative time offset for system audio
     mic_time_offset = 0.0  # Cumulative time offset for microphone
+    last_speech_time = time.time()  # Track time of last detected speech
+    silence_timeout_enabled = args.silence_timeout > 0
     
     # Overlap settings to prevent speech loss at chunk boundaries
     overlap_duration = 1.0  # 1 second overlap between chunks
@@ -750,6 +774,8 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
         output_file.flush()
     
     print("🎙️  Listening... (Press Ctrl+C to stop)\n")
+    if silence_timeout_enabled:
+        print(f"⏱️  Auto-stop after {args.silence_timeout/60:.1f} minutes of silence\n")
     
     # Microphone callback (if enabled)
     def mic_callback(indata, frames, time, status):
@@ -777,7 +803,14 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
     
     def audio_callback(audio_chunk):
         """Process incoming system audio chunks."""
-        nonlocal system_time_offset, mic_time_offset
+        nonlocal system_time_offset, mic_time_offset, last_speech_time
+        
+        # Check for silence timeout
+        if silence_timeout_enabled:
+            elapsed_silence = time.time() - last_speech_time
+            if elapsed_silence > args.silence_timeout:
+                print(f"\n⏱️  Stopping: {args.silence_timeout/60:.1f} minutes of silence detected")
+                raise KeyboardInterrupt("Silence timeout")
         
         # Always resample system audio from 48kHz to 16kHz first
         resampled_len = int(len(audio_chunk) * target_rate / wasapi_rate)
@@ -808,6 +841,8 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
                     
                     try:
                         segments, info = engine.transcribe_chunk(mic_data, language=args.language)
+                        if segments and any(s['text'].strip() for s in segments):
+                            last_speech_time = time.time()  # Reset silence timer
                         for seg in segments:
                             if seg['text'].strip():
                                 # Add time offset to make timestamps cumulative
@@ -850,6 +885,8 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
             
             try:
                 segments, info = engine.transcribe_chunk(system_data, language=args.language)
+                if segments and any(s['text'].strip() for s in segments):
+                    last_speech_time = time.time()  # Reset silence timer
                 for seg in segments:
                     if seg['text'].strip():
                         # Add time offset to make timestamps cumulative

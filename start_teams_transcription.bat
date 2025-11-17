@@ -26,9 +26,12 @@ set output_file=meeting_%timestamp%.txt
 
 echo Starting transcription...
 echo Output will be saved to: %output_file%
+echo Auto-stop after 10 minutes of silence (use --silence-timeout 0 to disable)
 echo.
 
 REM Start transcription with WASAPI loopback + microphone
+REM Default silence timeout is 10 minutes (600 seconds)
+REM To disable auto-stop, add: --silence-timeout 0
 python transcriber.py --live --wasapi --include-mic --mic-device 3 --model base --output "%output_file%" --chunk-duration 10
 
 echo.

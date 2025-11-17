@@ -132,6 +132,7 @@ python transcriber.py --live --wasapi --include-mic --mic-device 5
 - `--no-timestamps` - Exclude timestamps from text output
 - `--chunk-duration <seconds>` - Duration of audio chunks for streaming (default: 30)
 - `--overlap-duration <seconds>` - Overlap between chunks (default: 5)
+- `--silence-timeout <seconds>` - Auto-stop after N seconds of silence (default: 600 = 10 min, 0 = never)
 - `--audio-device <id>` - Audio device index for live capture (-1 = auto-detect)
 - `--device <type>` - Device to run on: auto, cpu, cuda (default: auto)
 - `--compute-type <type>` - Compute type: auto, int8, float16, float32 (default: auto)
@@ -222,6 +223,11 @@ This software uses faster-whisper (MIT License) and pyannote.audio (MIT License)
 - **Linux**: Ensure PulseAudio/PipeWire is running
 - Use `--list-devices` to see available devices
 - Use `--setup-help` for detailed setup instructions
+
+### Auto-stop feature
+- By default, transcription stops after 10 minutes of silence
+- Disable with `--silence-timeout 0` for continuous recording
+- Adjust timeout with `--silence-timeout 300` (5 minutes), etc.
 
 ### "Hugging Face token required"
 - Speaker diarization requires authentication
