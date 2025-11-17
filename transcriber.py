@@ -568,6 +568,7 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
     all_segments = []
     audio_buffer = []
     chunk_duration_samples = int(native_rate * args.chunk_duration)
+    time_offset = 0.0  # Track cumulative time offset
     
     # Open output file for incremental writing
     output_file = None
@@ -582,6 +583,8 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
     
     def audio_callback(audio_chunk):
         """Process incoming audio chunks."""
+        nonlocal time_offset
+        
         audio_buffer.append(audio_chunk.flatten())
         
         # Check if we have enough audio for transcription
@@ -596,6 +599,8 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
                 num_samples = int(len(audio_data) * target_rate / native_rate)
                 audio_data = signal.resample(audio_data, num_samples)
             
+            chunk_duration_sec = len(audio_data) / target_rate
+            
             # Ensure float32
             if audio_data.dtype != np.float32:
                 audio_data = audio_data.astype(np.float32)
@@ -607,10 +612,17 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
                 # Print and save results
                 for seg in segments:
                     if seg['text'].strip():
-                        timestamp = f"[{engine._format_time(seg['start'])} -> {engine._format_time(seg['end'])}]"
+                        # Add time offset to make timestamps cumulative
+                        adjusted_start = seg['start'] + time_offset
+                        adjusted_end = seg['end'] + time_offset
+                        timestamp = f"[{engine._format_time(adjusted_start)} -> {engine._format_time(adjusted_end)}]"
                         line = f"{timestamp} {seg['text']}"
                         print(line)
-                        all_segments.append(seg)
+                        # Store adjusted segment
+                        adjusted_seg = seg.copy()
+                        adjusted_seg['start'] = adjusted_start
+                        adjusted_seg['end'] = adjusted_end
+                        all_segments.append(adjusted_seg)
                         
                         # Write immediately to file
                         if output_file:
@@ -619,6 +631,9 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
                 
                 if not segments or not any(s['text'].strip() for s in segments):
                     print("  (no speech detected)")
+                
+                # Update time offset for next chunk
+                time_offset += chunk_duration_sec
             
             except Exception as e:
                 print(f"  ❌ Error transcribing: {e}")
@@ -698,6 +713,8 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
     system_buffer = []
     mic_buffer = []
     start_time = None  # Track absolute start time
+    system_time_offset = 0.0  # Cumulative time offset for system audio
+    mic_time_offset = 0.0  # Cumulative time offset for microphone
     
     # WASAPI typically uses 48kHz, we need 16kHz for Whisper
     wasapi_rate = 48000
@@ -723,7 +740,7 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
     # Microphone callback (if enabled)
     def mic_callback(indata, frames, time, status):
         """Capture microphone audio."""
-        nonlocal start_time
+        nonlocal start_time, mic_time_offset
         if start_time is None:
             start_time = time.inputBufferAdcTime
         if status and "overflow" not in str(status).lower():
@@ -746,6 +763,8 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
     
     def audio_callback(audio_chunk):
         """Process incoming system audio chunks."""
+        nonlocal system_time_offset, mic_time_offset
+        
         # Always resample system audio from 48kHz to 16kHz first
         resampled_len = int(len(audio_chunk) * target_rate / wasapi_rate)
         system_audio = signal.resample(audio_chunk, resampled_len)
@@ -758,6 +777,7 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
             total_mic_samples = sum(len(chunk) for chunk in mic_buffer)
             if total_mic_samples >= mic_chunk_samples:
                 mic_data = np.concatenate(mic_buffer)
+                chunk_duration_sec = len(mic_data) / target_rate
                 mic_buffer.clear()
                 
                 # Only transcribe if there's significant audio
@@ -769,13 +789,22 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
                         segments, info = engine.transcribe_chunk(mic_data, language=args.language)
                         for seg in segments:
                             if seg['text'].strip():
-                                timestamp = f"[{engine._format_time(seg['start'])} -> {engine._format_time(seg['end'])}]"
+                                # Add time offset to make timestamps cumulative
+                                adjusted_start = seg['start'] + mic_time_offset
+                                adjusted_end = seg['end'] + mic_time_offset
+                                timestamp = f"[{engine._format_time(adjusted_start)} -> {engine._format_time(adjusted_end)}]"
                                 line = f"{timestamp} [MIC] {seg['text']}"
                                 print(line)
-                                all_segments.append(seg)
+                                # Store adjusted segment
+                                adjusted_seg = seg.copy()
+                                adjusted_seg['start'] = adjusted_start
+                                adjusted_seg['end'] = adjusted_end
+                                all_segments.append(adjusted_seg)
                                 if output_file:
                                     output_file.write(line + "\n")
                                     output_file.flush()
+                        # Update time offset for next chunk
+                        mic_time_offset += chunk_duration_sec
                     except Exception as e:
                         print(f"  ❌ Error transcribing microphone: {e}")
         
@@ -785,6 +814,7 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
         if total_samples >= chunk_duration_samples:
             # Transcribe system audio
             system_data = np.concatenate(system_buffer)
+            chunk_duration_sec = len(system_data) / target_rate
             if system_data.dtype != np.float32:
                 system_data = system_data.astype(np.float32)
             
@@ -792,13 +822,22 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
                 segments, info = engine.transcribe_chunk(system_data, language=args.language)
                 for seg in segments:
                     if seg['text'].strip():
-                        timestamp = f"[{engine._format_time(seg['start'])} -> {engine._format_time(seg['end'])}]"
+                        # Add time offset to make timestamps cumulative
+                        adjusted_start = seg['start'] + system_time_offset
+                        adjusted_end = seg['end'] + system_time_offset
+                        timestamp = f"[{engine._format_time(adjusted_start)} -> {engine._format_time(adjusted_end)}]"
                         line = f"{timestamp} [SYS] {seg['text']}"
                         print(line)
-                        all_segments.append(seg)
+                        # Store adjusted segment
+                        adjusted_seg = seg.copy()
+                        adjusted_seg['start'] = adjusted_start
+                        adjusted_seg['end'] = adjusted_end
+                        all_segments.append(adjusted_seg)
                         if output_file:
                             output_file.write(line + "\n")
                             output_file.flush()
+                # Update time offset for next chunk
+                system_time_offset += chunk_duration_sec
             except Exception as e:
                 print(f"  ❌ Error transcribing system audio: {e}")
             
