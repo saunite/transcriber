@@ -112,6 +112,24 @@ python transcriber.py --list-devices
 python transcriber.py --live --wasapi --include-mic --mic-device 5
 ```
 
+### Converting Existing Transcripts to SRT
+
+If you already have a timestamped transcript from live transcription, you can convert it to SRT format:
+
+```bash
+# Convert transcript to SRT subtitles
+python convert_to_srt.py meeting_20241117_143022.txt
+
+# Specify output filename
+python convert_to_srt.py transcript.txt --output subtitles.srt
+```
+
+This works with transcripts that have timestamps like:
+```
+[00:05 -> 00:08] Welcome to the meeting
+[17:30 -> 17:35] [SYS] Let's get started
+```
+
 ### Complete Options
 
 - `--file <path>` - Transcribe audio from a video/audio file
