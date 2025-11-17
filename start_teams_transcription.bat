@@ -32,7 +32,8 @@ echo.
 REM Start transcription with WASAPI loopback + microphone
 REM Default silence timeout is 10 minutes (600 seconds)
 REM To disable auto-stop, add: --silence-timeout 0
-python transcriber.py --live --wasapi --include-mic --mic-device 3 --model base --output "%output_file%" --chunk-duration 10
+REM Microphone auto-detection enabled (use --mic-device N to specify manually)
+python transcriber.py --live --wasapi --include-mic --model base --output "%output_file%" --chunk-duration 10
 
 echo.
 echo ============================================================

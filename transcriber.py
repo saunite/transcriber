@@ -724,6 +724,7 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
     # Get microphone device if requested
     mic_stream = None
     mic_queue = []
+    mic_channels = 1  # Default to mono
     if args.include_mic:
         if args.mic_device >= 0:
             mic_device = args.mic_device
@@ -734,11 +735,26 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
                 mic_device = mic_info['index'] if isinstance(mic_info, dict) else None
                 print(f"Auto-detected microphone: {mic_info['name']}\n")
             except:
-                print("⚠️  Could not auto-detect microphone, using device 3")
-                mic_device = 3  # Your Bluetooth headset mic
+                print("⚠️  Could not auto-detect microphone")
+                return 1
         
-        print(f"📱 Microphone capture enabled (device {mic_device})")
-        print("   Your voice will be included in the transcript\n")
+        # Get device info to determine max channels
+        try:
+            mic_info = sd.query_devices(mic_device)
+            max_input_channels = mic_info.get('max_input_channels', 0)
+            if max_input_channels == 0:
+                print(f"❌ Error: Device {mic_device} is not an input device (0 input channels)")
+                print(f"   Device name: {mic_info['name']}")
+                print("\nUse --list-devices to find your microphone device number")
+                return 1
+            # Use device's max channels (usually 1 for headset, 2 for arrays)
+            mic_channels = min(max_input_channels, 2)
+            print(f"📱 Microphone capture enabled (device {mic_device})")
+            print(f"   Device: {mic_info['name']}")
+            print(f"   Channels: {mic_channels}\n")
+        except Exception as e:
+            print(f"❌ Error querying microphone device {mic_device}: {e}")
+            return 1
     
     # Storage
     all_segments = []
@@ -795,7 +811,7 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
     if args.include_mic:
         mic_stream = sd.InputStream(
             device=mic_device,
-            channels=1,
+            channels=mic_channels,  # Use device's supported channels
             samplerate=16000,  # Microphone at 16kHz
             callback=mic_callback
         )
