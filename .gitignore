@@ -9,6 +9,11 @@ venv/
 env/
 ENV/
 .venv
+.venv311/
+
+# Environment variables
+.env
+.env.example
 
 # IDE
 .vscode/
@@ -28,9 +33,10 @@ Thumbs.db
 extracted_audio_*.wav
 
 # Output transcripts (uncomment if you don't want to track them)
-# *_transcript.txt
-# *.srt
-# *.vtt
+*_transcript.txt
+*.srt
+*.vtt
+*.txt
 
 # Model cache (Whisper models are downloaded to cache)
 .cache/
