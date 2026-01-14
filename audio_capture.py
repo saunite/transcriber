@@ -59,9 +59,22 @@ class AudioCapture:
                         
         elif self.system == "Linux":
             # On Linux with PulseAudio/PipeWire, look for monitor devices
+            # First try explicit monitor sources
             for idx, device in enumerate(devices):
                 name = device['name'].lower()
                 if 'monitor' in name and device['max_input_channels'] > 0:
+                    return idx
+            
+            # If no explicit monitor found, try pipewire (usually the monitor source on modern Linux)
+            for idx, device in enumerate(devices):
+                name = device['name'].lower()
+                if 'pipewire' in name and device['max_input_channels'] > 0:
+                    return idx
+            
+            # Last resort: try 'default' device on Linux (often routes to monitor on PipeWire)
+            for idx, device in enumerate(devices):
+                name = device['name'].lower()
+                if name == 'default' and device['max_input_channels'] > 0:
                     return idx
         
         return None
