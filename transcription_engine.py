@@ -5,6 +5,7 @@ Handles both file-based and streaming audio transcription.
 
 import os
 import ssl
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Iterator, Tuple, List
 import numpy as np
@@ -89,7 +90,9 @@ class TranscriptionEngine:
         beam_size: int = 5,
         word_timestamps: bool = True,
         output_path: Optional[str] = None,
-        incremental_save: bool = True
+        incremental_save: bool = True,
+        use_actual_time: bool = False,
+        base_time: Optional[datetime] = None
     ) -> Tuple[List[dict], dict]:
         """
         Transcribe an audio/video file.
@@ -102,6 +105,8 @@ class TranscriptionEngine:
             word_timestamps: Include word-level timestamps
             output_path: Path to save transcript incrementally (optional)
             incremental_save: Save after each segment to avoid data loss (default: True)
+            use_actual_time: Use wall-clock timestamps instead of relative offsets
+            base_time: Base wall-clock time for timestamp calculations
         
         Returns:
             Tuple of (segments, info) where:
@@ -129,6 +134,9 @@ class TranscriptionEngine:
         print(f"\nDetected language: {info.language} (probability: {info.language_probability:.2f})")
         print(f"Duration: {info.duration:.2f} seconds\n")
         
+        if use_actual_time and base_time is None:
+            base_time = datetime.now()
+
         # Open file for incremental writing if requested
         output_file = None
         if incremental_save and output_path:
@@ -159,7 +167,12 @@ class TranscriptionEngine:
                 
                 # Write segment immediately to file
                 if output_file:
-                    timestamp = f"[{self._format_time(segment.start)} -> {self._format_time(segment.end)}]"
+                    timestamp = self.format_timestamp(
+                        segment.start,
+                        segment.end,
+                        use_actual_time=use_actual_time,
+                        base_time=base_time
+                    )
                     output_file.write(f"{timestamp} {segment.text.strip()}\n")
                     output_file.flush()  # Ensure it's written to disk immediately
         finally:
@@ -278,7 +291,9 @@ class TranscriptionEngine:
         self,
         segments: List[dict],
         include_timestamps: bool = True,
-        include_words: bool = False
+        include_words: bool = False,
+        use_actual_time: bool = False,
+        base_time: Optional[datetime] = None
     ) -> str:
         """
         Format transcription segments into readable text.
@@ -287,15 +302,25 @@ class TranscriptionEngine:
             segments: List of segment dictionaries
             include_timestamps: Include timestamps in output
             include_words: Include word-level timestamps
+            use_actual_time: Use wall-clock timestamps instead of relative offsets
+            base_time: Base wall-clock time for timestamp calculations
         
         Returns:
             Formatted transcript string
         """
         lines = []
         
+        if use_actual_time and base_time is None:
+            base_time = datetime.now()
+
         for segment in segments:
             if include_timestamps:
-                timestamp = f"[{self._format_time(segment['start'])} -> {self._format_time(segment['end'])}]"
+                timestamp = self.format_timestamp(
+                    segment['start'],
+                    segment['end'],
+                    use_actual_time=use_actual_time,
+                    base_time=base_time
+                )
                 lines.append(f"{timestamp} {segment['text']}")
             else:
                 lines.append(segment['text'])
@@ -314,13 +339,39 @@ class TranscriptionEngine:
         mins = int(seconds // 60)
         secs = seconds % 60
         return f"{mins:02d}:{secs:06.3f}"
+
+    @staticmethod
+    def _format_wall_time(base_time: datetime, seconds: float) -> str:
+        """Format wall-clock time with millisecond precision."""
+        timestamp = base_time + timedelta(seconds=seconds)
+        return timestamp.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+
+    def format_timestamp(
+        self,
+        start_seconds: float,
+        end_seconds: float,
+        use_actual_time: bool = False,
+        base_time: Optional[datetime] = None
+    ) -> str:
+        """Format a timestamp range for output."""
+        if use_actual_time:
+            if base_time is None:
+                base_time = datetime.now()
+            start = self._format_wall_time(base_time, start_seconds)
+            end = self._format_wall_time(base_time, end_seconds)
+        else:
+            start = self._format_time(start_seconds)
+            end = self._format_time(end_seconds)
+        return f"[{start} -> {end}]"
     
     def save_transcript(
         self,
         segments: List[dict],
         output_path: str,
         format_type: str = "txt",
-        include_timestamps: bool = True
+        include_timestamps: bool = True,
+        use_actual_time: bool = False,
+        base_time: Optional[datetime] = None
     ) -> None:
         """
         Save transcript to file.
@@ -330,11 +381,18 @@ class TranscriptionEngine:
             output_path: Path to output file
             format_type: Output format ("txt", "srt", "vtt")
             include_timestamps: Include timestamps (for txt format)
+            use_actual_time: Use wall-clock timestamps instead of relative offsets
+            base_time: Base wall-clock time for timestamp calculations
         """
         output_path = Path(output_path)
         
         if format_type == "txt":
-            transcript = self.format_transcript(segments, include_timestamps)
+            transcript = self.format_transcript(
+                segments,
+                include_timestamps,
+                use_actual_time=use_actual_time,
+                base_time=base_time
+            )
             output_path.write_text(transcript, encoding='utf-8')
             
         elif format_type == "srt":

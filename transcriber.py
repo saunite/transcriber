@@ -9,6 +9,7 @@ License: GPLv2
 import sys
 import signal
 import argparse
+from datetime import datetime
 from pathlib import Path
 from audio_extractor import AudioExtractor
 from audio_capture import AudioCapture, setup_loopback_instructions
@@ -154,6 +155,12 @@ Examples:
         '--no-timestamps',
         action='store_true',
         help='Exclude timestamps from text output'
+    )
+
+    parser.add_argument(
+        '--actual-time',
+        action='store_true',
+        help='Use wall-clock timestamps (local time) instead of relative offsets'
     )
     
     # Device options
@@ -317,13 +324,17 @@ def transcribe_file(engine: TranscriptionEngine, args) -> int:
             print(f"⚠️  Unknown file type: {file_ext}")
             print("Attempting to process as audio file...\n")
         
+        base_time = datetime.now() if args.actual_time else None
+
         # Transcribe (with incremental saving)
         segments, info = engine.transcribe_file(
             audio_file,
             language=args.language,
             task=args.task,
             output_path=args.output,
-            incremental_save=True
+            incremental_save=True,
+            use_actual_time=args.actual_time,
+            base_time=base_time
         )
         
         # Speaker diarization if requested
@@ -379,7 +390,9 @@ def transcribe_file(engine: TranscriptionEngine, args) -> int:
                 segments,
                 str(output_path),
                 format_type=args.format,
-                include_timestamps=not args.no_timestamps
+                include_timestamps=not args.no_timestamps,
+                use_actual_time=args.actual_time,
+                base_time=base_time
             )
         
         # Print summary
@@ -440,10 +453,12 @@ def transcribe_live(engine: TranscriptionEngine, args) -> int:
     all_segments = []
     all_audio_data = []
     segment_counter = [0]  # Use list for mutable counter in closure
-    
-    # Create buffer with callback
+    time_offset = 0.0
+    session_start_time = datetime.now() if args.actual_time else None
+
     def process_chunk(audio_chunk):
         """Process audio chunk through transcription."""
+        nonlocal time_offset
         segment_counter[0] += 1
         print(f"\n[Chunk {segment_counter[0]}] Processing {len(audio_chunk)/16000:.1f}s of audio...")
         
@@ -456,14 +471,29 @@ def transcribe_live(engine: TranscriptionEngine, args) -> int:
             segments, info = engine.transcribe_chunk(audio_chunk, language=args.language)
             
             # Print and store results
+            chunk_duration_sec = len(audio_chunk) / 16000
+
             for seg in segments:
                 if seg['text'].strip():
-                    timestamp = f"[{engine._format_time(seg['start'])} -> {engine._format_time(seg['end'])}]"
+                    adjusted_start = seg['start'] + time_offset
+                    adjusted_end = seg['end'] + time_offset
+                    timestamp = engine.format_timestamp(
+                        adjusted_start,
+                        adjusted_end,
+                        use_actual_time=args.actual_time,
+                        base_time=session_start_time
+                    )
                     print(f"{timestamp} {seg['text']}")
-                    all_segments.append(seg)
+
+                    adjusted_seg = seg.copy()
+                    adjusted_seg['start'] = adjusted_start
+                    adjusted_seg['end'] = adjusted_end
+                    all_segments.append(adjusted_seg)
             
             if not segments:
                 print("  (no speech detected)")
+
+            time_offset += chunk_duration_sec
                 
         except Exception as e:
             print(f"  ❌ Error: {e}")
@@ -548,7 +578,9 @@ def transcribe_live(engine: TranscriptionEngine, args) -> int:
                 all_segments,
                 str(output_path),
                 format_type=args.format,
-                include_timestamps=not args.no_timestamps
+                include_timestamps=not args.no_timestamps,
+                use_actual_time=args.actual_time,
+                base_time=session_start_time
             )
         
         print(f"\n✓ Transcript saved to: {output_path}")
@@ -590,6 +622,7 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
     audio_buffer = []
     chunk_duration_samples = int(native_rate * args.chunk_duration)
     time_offset = 0.0  # Track cumulative time offset
+    session_start_time = datetime.now() if args.actual_time else None
     last_speech_time = time.time()  # Track time of last detected speech
     silence_timeout_enabled = args.silence_timeout > 0
     
@@ -667,7 +700,12 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
                         # Add time offset to make timestamps cumulative
                         adjusted_start = seg['start'] + time_offset
                         adjusted_end = seg['end'] + time_offset
-                        timestamp = f"[{engine._format_time(adjusted_start)} -> {engine._format_time(adjusted_end)}]"
+                        timestamp = engine.format_timestamp(
+                            adjusted_start,
+                            adjusted_end,
+                            use_actual_time=args.actual_time,
+                            base_time=session_start_time
+                        )
                         line = f"{timestamp} {seg['text']}"
                         print(line)
                         # Store adjusted segment
@@ -781,6 +819,7 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
     start_time = None  # Track absolute start time
     system_time_offset = 0.0  # Cumulative time offset for system audio
     mic_time_offset = 0.0  # Cumulative time offset for microphone
+    session_start_time = datetime.now() if args.actual_time else None
     last_speech_time = time.time()  # Track time of last detected speech
     silence_timeout_enabled = args.silence_timeout > 0
     
@@ -886,7 +925,12 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
                                 # Add time offset to make timestamps cumulative
                                 adjusted_start = seg['start'] + mic_time_offset
                                 adjusted_end = seg['end'] + mic_time_offset
-                                timestamp = f"[{engine._format_time(adjusted_start)} -> {engine._format_time(adjusted_end)}]"
+                                timestamp = engine.format_timestamp(
+                                    adjusted_start,
+                                    adjusted_end,
+                                    use_actual_time=args.actual_time,
+                                    base_time=session_start_time
+                                )
                                 line = f"{timestamp} [MIC] {seg['text']}"
                                 print(line)
                                 # Store adjusted segment
@@ -930,7 +974,12 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
                         # Add time offset to make timestamps cumulative
                         adjusted_start = seg['start'] + system_time_offset
                         adjusted_end = seg['end'] + system_time_offset
-                        timestamp = f"[{engine._format_time(adjusted_start)} -> {engine._format_time(adjusted_end)}]"
+                        timestamp = engine.format_timestamp(
+                            adjusted_start,
+                            adjusted_end,
+                            use_actual_time=args.actual_time,
+                            base_time=session_start_time
+                        )
                         line = f"{timestamp} [SYS] {seg['text']}"
                         print(line)
                         # Store adjusted segment
