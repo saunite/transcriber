@@ -9,7 +9,7 @@ License: GPLv2
 import sys
 import signal
 import argparse
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from audio_extractor import AudioExtractor
 from audio_capture import AudioCapture, setup_loopback_instructions
@@ -468,20 +468,20 @@ def transcribe_live(engine: TranscriptionEngine, args) -> int:
                 all_audio_data.append(audio_chunk.copy())
             
             # Transcribe chunk
+            chunk_duration_sec = len(audio_chunk) / 16000
+            chunk_wall_anchor = datetime.now() - timedelta(seconds=chunk_duration_sec)
             segments, info = engine.transcribe_chunk(audio_chunk, language=args.language)
             
             # Print and store results
-            chunk_duration_sec = len(audio_chunk) / 16000
-
             for seg in segments:
                 if seg['text'].strip():
                     adjusted_start = seg['start'] + time_offset
                     adjusted_end = seg['end'] + time_offset
                     timestamp = engine.format_timestamp(
-                        adjusted_start,
-                        adjusted_end,
+                        seg['start'] if args.actual_time else adjusted_start,
+                        seg['end'] if args.actual_time else adjusted_end,
                         use_actual_time=args.actual_time,
-                        base_time=session_start_time
+                        base_time=chunk_wall_anchor if args.actual_time else session_start_time
                     )
                     print(f"{timestamp} {seg['text']}")
 
@@ -688,6 +688,7 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
             
             # Transcribe
             try:
+                chunk_wall_anchor = datetime.now() - timedelta(seconds=chunk_duration_sec)
                 segments, info = engine.transcribe_chunk(audio_data, language=args.language)
                 
                 # Reset silence timer if speech was detected
@@ -701,10 +702,10 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
                         adjusted_start = seg['start'] + time_offset
                         adjusted_end = seg['end'] + time_offset
                         timestamp = engine.format_timestamp(
-                            adjusted_start,
-                            adjusted_end,
+                            seg['start'] if args.actual_time else adjusted_start,
+                            seg['end'] if args.actual_time else adjusted_end,
                             use_actual_time=args.actual_time,
-                            base_time=session_start_time
+                            base_time=chunk_wall_anchor if args.actual_time else session_start_time
                         )
                         line = f"{timestamp} {seg['text']}"
                         print(line)
@@ -917,6 +918,7 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
                         mic_data = mic_data.astype(np.float32)
                     
                     try:
+                        mic_chunk_wall_anchor = datetime.now() - timedelta(seconds=chunk_duration_sec)
                         segments, info = engine.transcribe_chunk(mic_data, language=args.language)
                         if segments and any(s['text'].strip() for s in segments):
                             last_speech_time = time.time()  # Reset silence timer
@@ -926,10 +928,10 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
                                 adjusted_start = seg['start'] + mic_time_offset
                                 adjusted_end = seg['end'] + mic_time_offset
                                 timestamp = engine.format_timestamp(
-                                    adjusted_start,
-                                    adjusted_end,
+                                    seg['start'] if args.actual_time else adjusted_start,
+                                    seg['end'] if args.actual_time else adjusted_end,
                                     use_actual_time=args.actual_time,
-                                    base_time=session_start_time
+                                    base_time=mic_chunk_wall_anchor if args.actual_time else session_start_time
                                 )
                                 line = f"{timestamp} [MIC] {seg['text']}"
                                 print(line)
@@ -966,6 +968,7 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
                 system_data = system_data.astype(np.float32)
             
             try:
+                sys_chunk_wall_anchor = datetime.now() - timedelta(seconds=chunk_duration_sec)
                 segments, info = engine.transcribe_chunk(system_data, language=args.language)
                 if segments and any(s['text'].strip() for s in segments):
                     last_speech_time = time.time()  # Reset silence timer
@@ -975,10 +978,10 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
                         adjusted_start = seg['start'] + system_time_offset
                         adjusted_end = seg['end'] + system_time_offset
                         timestamp = engine.format_timestamp(
-                            adjusted_start,
-                            adjusted_end,
+                            seg['start'] if args.actual_time else adjusted_start,
+                            seg['end'] if args.actual_time else adjusted_end,
                             use_actual_time=args.actual_time,
-                            base_time=session_start_time
+                            base_time=sys_chunk_wall_anchor if args.actual_time else session_start_time
                         )
                         line = f"{timestamp} [SYS] {seg['text']}"
                         print(line)
