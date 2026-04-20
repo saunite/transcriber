@@ -761,10 +761,12 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
     from wasapi_capture import WASAPICapture
     from scipy import signal
     import sounddevice as sd
-    
+    import queue
+    import threading
+
     # Initialize WASAPI capture for system audio
     capture = WASAPICapture()
-    
+
     # Get system audio loopback device
     if args.audio_device >= 0:
         device_index = args.audio_device
@@ -780,7 +782,6 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
     
     # Get microphone device if requested
     mic_stream = None
-    mic_queue = []
     mic_channels = 1  # Default to mono
     if args.include_mic:
         if args.mic_device >= 0:
@@ -794,7 +795,7 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
             except:
                 print("⚠️  Could not auto-detect microphone")
                 return 1
-        
+
         # Get device info to determine max channels
         try:
             mic_info = sd.query_devices(mic_device)
@@ -806,27 +807,22 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
                 return 1
             # Use device's max channels (usually 1 for headset, 2 for arrays)
             mic_channels = min(max_input_channels, 2)
-            print(f"📱 Microphone capture enabled (device {mic_device})")
+            print(f"Microphone capture enabled (device {mic_device})")
             print(f"   Device: {mic_info['name']}")
             print(f"   Channels: {mic_channels}\n")
         except Exception as e:
             print(f"❌ Error querying microphone device {mic_device}: {e}")
             return 1
-    
+
     # Storage
     all_segments = []
-    system_buffer = []
-    mic_buffer = []
-    start_time = None  # Track absolute start time
-    system_time_offset = 0.0  # Cumulative time offset for system audio
-    mic_time_offset = 0.0  # Cumulative time offset for microphone
     session_start_time = datetime.now() if args.actual_time else None
     last_speech_time = time.time()  # Track time of last detected speech
     silence_timeout_enabled = args.silence_timeout > 0
-    
+
     # Overlap settings to prevent speech loss at chunk boundaries
     overlap_duration = 1.0  # 1 second overlap between chunks
-    
+
     # WASAPI typically uses 48kHz, we need 16kHz for Whisper
     wasapi_rate = 48000
     target_rate = 16000
@@ -834,7 +830,14 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
     chunk_duration_samples = int(target_rate * args.chunk_duration)
     mic_chunk_samples = int(target_rate * 5.0)  # Transcribe mic every 5 seconds
     overlap_samples = int(target_rate * overlap_duration)
-    
+
+    # Thread-safe queues: capture callbacks push raw audio here (non-blocking)
+    # The transcription worker thread drains these queues independently.
+    sys_audio_queue = queue.Queue()
+    mic_audio_queue = queue.Queue()
+    stop_event = threading.Event()
+    write_lock = threading.Lock()
+
     # Open output file for incremental writing
     output_file = None
     if args.output:
@@ -846,169 +849,166 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
         output_file.write(f"# Model: {args.model}\n")
         output_file.write(f"# Language: {args.language or 'auto-detect'}\n\n")
         output_file.flush()
-    
-    print("🎙️  Listening... (Press Ctrl+C to stop)\n")
+
+    print("Listening... (Press Ctrl+C to stop)\n")
     if silence_timeout_enabled:
-        print(f"⏱️  Auto-stop after {args.silence_timeout/60:.1f} minutes of silence\n")
-    
-    # Microphone callback (if enabled)
-    def mic_callback(indata, frames, time, status):
-        """Capture microphone audio."""
-        nonlocal start_time, mic_time_offset
-        if start_time is None:
-            start_time = time.inputBufferAdcTime
+        print(f"Auto-stop after {args.silence_timeout/60:.1f} minutes of silence\n")
+
+    # Microphone callback: just enqueue raw audio, never blocks
+    def mic_callback(indata, frames, time_info, status):
         if status and "overflow" not in str(status).lower():
             print(f"Mic status: {status}")
-        # Convert to mono and normalize
         mic_audio = indata[:, 0] if len(indata.shape) > 1 else indata
-        # Flatten to 1D array
-        mic_audio = mic_audio.flatten()
-        mic_buffer.append(mic_audio.copy())
-    
+        mic_audio_queue.put(mic_audio.flatten().copy())
+
     # Start microphone capture if enabled
     if args.include_mic:
         mic_stream = sd.InputStream(
             device=mic_device,
-            channels=mic_channels,  # Use device's supported channels
-            samplerate=16000,  # Microphone at 16kHz
+            channels=mic_channels,
+            samplerate=16000,
             callback=mic_callback
         )
         mic_stream.start()
-    
+
+    # WASAPI callback: enqueue RAW audio only (no resampling here), never blocks
     def audio_callback(audio_chunk):
-        """Process incoming system audio chunks."""
-        nonlocal system_time_offset, mic_time_offset, last_speech_time
-        
-        # Allow clean shutdown
         if shutdown_requested:
             raise KeyboardInterrupt
-        
-        # Check for silence timeout
         if silence_timeout_enabled:
             elapsed_silence = time.time() - last_speech_time
             if elapsed_silence > args.silence_timeout:
-                print(f"\n⏱️  Stopping: {args.silence_timeout/60:.1f} minutes of silence detected")
+                print(f"\nAuto-stop: {args.silence_timeout/60:.1f} minutes of silence detected")
                 raise KeyboardInterrupt("Silence timeout")
-        
-        # Always resample system audio from 48kHz to 16kHz first
-        resampled_len = int(len(audio_chunk) * target_rate / wasapi_rate)
-        system_audio = signal.resample(audio_chunk, resampled_len)
-        
-        # Store system audio
-        system_buffer.append(system_audio)
-        
-        # Check microphone buffer size (process every 5 seconds)
-        if args.include_mic:
-            total_mic_samples = sum(len(chunk) for chunk in mic_buffer)
-            if total_mic_samples >= mic_chunk_samples:
-                mic_data = np.concatenate(mic_buffer)
-                chunk_duration_sec = len(mic_data) / target_rate
-                
-                # Keep overlap for next chunk to prevent speech cutoff
-                if len(mic_data) > overlap_samples:
-                    overlap_data = mic_data[-overlap_samples:]
-                    mic_buffer.clear()
-                    mic_buffer.append(overlap_data)
+        sys_audio_queue.put(audio_chunk)
+
+    def _emit(line):
+        """Print and write a transcription line (thread-safe)."""
+        print(line)
+        if output_file:
+            with write_lock:
+                output_file.write(line + "\n")
+                output_file.flush()
+
+    def sys_worker():
+        """Dedicated thread: drains system audio queue and runs inference."""
+        nonlocal last_speech_time
+        sys_buffer = []
+        system_time_offset = 0.0
+
+        while not stop_event.is_set() or not sys_audio_queue.empty():
+            # Drain queue into buffer (non-blocking)
+            while not sys_audio_queue.empty():
+                raw = sys_audio_queue.get_nowait()
+                # Resample 48kHz -> 16kHz here, away from the capture callback
+                resampled_len = int(len(raw) * target_rate / wasapi_rate)
+                sys_buffer.append(signal.resample(raw, resampled_len))
+
+            total_sys = sum(len(c) for c in sys_buffer)
+            if total_sys >= chunk_duration_samples:
+                system_data = np.concatenate(sys_buffer)
+                chunk_duration_sec = len(system_data) / target_rate
+                if len(system_data) > overlap_samples:
+                    sys_buffer[:] = [system_data[-overlap_samples:]]
                 else:
-                    mic_buffer.clear()
-                
-                # Only transcribe if there's significant audio
+                    sys_buffer.clear()
+                if system_data.dtype != np.float32:
+                    system_data = system_data.astype(np.float32)
+                try:
+                    wall_anchor = datetime.now() - timedelta(seconds=chunk_duration_sec)
+                    segments, _ = engine.transcribe_chunk(system_data, language=args.language)
+                    if segments and any(s['text'].strip() for s in segments):
+                        last_speech_time = time.time()
+                    for seg in segments:
+                        if seg['text'].strip():
+                            adjusted_start = seg['start'] + system_time_offset
+                            adjusted_end = seg['end'] + system_time_offset
+                            ts = engine.format_timestamp(
+                                seg['start'] if args.actual_time else adjusted_start,
+                                seg['end'] if args.actual_time else adjusted_end,
+                                use_actual_time=args.actual_time,
+                                base_time=wall_anchor if args.actual_time else session_start_time
+                            )
+                            _emit(f"{ts} [SYS] {seg['text']}")
+                            adjusted_seg = seg.copy()
+                            adjusted_seg['start'] = adjusted_start
+                            adjusted_seg['end'] = adjusted_end
+                            all_segments.append(adjusted_seg)
+                    system_time_offset += chunk_duration_sec
+                except Exception as e:
+                    print(f"  ❌ Error transcribing system audio: {e}")
+            else:
+                time.sleep(0.05)
+
+    def mic_worker():
+        """Dedicated thread: drains mic audio queue and runs inference."""
+        nonlocal last_speech_time
+        mic_buffer_local = []
+        mic_time_offset = 0.0
+
+        while not stop_event.is_set() or not mic_audio_queue.empty():
+            while not mic_audio_queue.empty():
+                mic_buffer_local.append(mic_audio_queue.get_nowait())
+
+            total_mic = sum(len(c) for c in mic_buffer_local)
+            if total_mic >= mic_chunk_samples:
+                mic_data = np.concatenate(mic_buffer_local)
+                chunk_duration_sec = len(mic_data) / target_rate
+                if len(mic_data) > overlap_samples:
+                    mic_buffer_local[:] = [mic_data[-overlap_samples:]]
+                else:
+                    mic_buffer_local.clear()
                 if np.max(np.abs(mic_data)) > 0.01:
                     if mic_data.dtype != np.float32:
                         mic_data = mic_data.astype(np.float32)
-                    
                     try:
-                        mic_chunk_wall_anchor = datetime.now() - timedelta(seconds=chunk_duration_sec)
-                        segments, info = engine.transcribe_chunk(mic_data, language=args.language)
+                        wall_anchor = datetime.now() - timedelta(seconds=chunk_duration_sec)
+                        segments, _ = engine.transcribe_chunk(mic_data, language=args.language)
                         if segments and any(s['text'].strip() for s in segments):
-                            last_speech_time = time.time()  # Reset silence timer
+                            last_speech_time = time.time()
                         for seg in segments:
                             if seg['text'].strip():
-                                # Add time offset to make timestamps cumulative
                                 adjusted_start = seg['start'] + mic_time_offset
                                 adjusted_end = seg['end'] + mic_time_offset
-                                timestamp = engine.format_timestamp(
+                                ts = engine.format_timestamp(
                                     seg['start'] if args.actual_time else adjusted_start,
                                     seg['end'] if args.actual_time else adjusted_end,
                                     use_actual_time=args.actual_time,
-                                    base_time=mic_chunk_wall_anchor if args.actual_time else session_start_time
+                                    base_time=wall_anchor if args.actual_time else session_start_time
                                 )
-                                line = f"{timestamp} [MIC] {seg['text']}"
-                                print(line)
-                                # Store adjusted segment
+                                _emit(f"{ts} [MIC] {seg['text']}")
                                 adjusted_seg = seg.copy()
                                 adjusted_seg['start'] = adjusted_start
                                 adjusted_seg['end'] = adjusted_end
                                 all_segments.append(adjusted_seg)
-                                if output_file:
-                                    output_file.write(line + "\n")
-                                    output_file.flush()
-                        # Update time offset for next chunk
                         mic_time_offset += chunk_duration_sec
                     except Exception as e:
                         print(f"  ❌ Error transcribing microphone: {e}")
-        
-        # Check if we have enough system audio for transcription
-        total_samples = sum(len(chunk) for chunk in system_buffer)
-        
-        if total_samples >= chunk_duration_samples:
-            # Transcribe system audio
-            system_data = np.concatenate(system_buffer)
-            chunk_duration_sec = len(system_data) / target_rate
-            
-            # Keep overlap for next chunk to prevent speech cutoff
-            if len(system_data) > overlap_samples:
-                overlap_data = system_data[-overlap_samples:]
-                system_buffer.clear()
-                system_buffer.append(overlap_data)
             else:
-                system_buffer.clear()
-            
-            if system_data.dtype != np.float32:
-                system_data = system_data.astype(np.float32)
-            
-            try:
-                sys_chunk_wall_anchor = datetime.now() - timedelta(seconds=chunk_duration_sec)
-                segments, info = engine.transcribe_chunk(system_data, language=args.language)
-                if segments and any(s['text'].strip() for s in segments):
-                    last_speech_time = time.time()  # Reset silence timer
-                for seg in segments:
-                    if seg['text'].strip():
-                        # Add time offset to make timestamps cumulative
-                        adjusted_start = seg['start'] + system_time_offset
-                        adjusted_end = seg['end'] + system_time_offset
-                        timestamp = engine.format_timestamp(
-                            seg['start'] if args.actual_time else adjusted_start,
-                            seg['end'] if args.actual_time else adjusted_end,
-                            use_actual_time=args.actual_time,
-                            base_time=sys_chunk_wall_anchor if args.actual_time else session_start_time
-                        )
-                        line = f"{timestamp} [SYS] {seg['text']}"
-                        print(line)
-                        # Store adjusted segment
-                        adjusted_seg = seg.copy()
-                        adjusted_seg['start'] = adjusted_start
-                        adjusted_seg['end'] = adjusted_end
-                        all_segments.append(adjusted_seg)
-                        if output_file:
-                            output_file.write(line + "\n")
-                            output_file.flush()
-                # Update time offset for next chunk
-                system_time_offset += chunk_duration_sec
-            except Exception as e:
-                print(f"  ❌ Error transcribing system audio: {e}")
+                time.sleep(0.05)
 
-    
+    # Start dedicated worker threads (sys and mic run in parallel, never blocking each other)
+    sys_thread = threading.Thread(target=sys_worker, daemon=True)
+    sys_thread.start()
+    mic_thread = None
+    if args.include_mic:
+        mic_thread = threading.Thread(target=mic_worker, daemon=True)
+        mic_thread.start()
+
     try:
-        # Start capturing
+        # Start capturing (callbacks only enqueue audio now, never block)
         capture.capture_stream(
             callback=audio_callback,
             device_index=device_index,
             duration=None  # Infinite until Ctrl+C
         )
     except KeyboardInterrupt:
-        print("\n\n⏹️  Stopping transcription...")
+        print("\n\nStopping transcription...")
     finally:
+        stop_event.set()
+        sys_thread.join(timeout=60)
+        if mic_thread:
+            mic_thread.join(timeout=60)
         if mic_stream:
             mic_stream.stop()
             mic_stream.close()

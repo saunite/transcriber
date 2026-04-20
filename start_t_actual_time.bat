@@ -21,6 +21,9 @@ call .venv\Scripts\activate.bat
 REM Set up environment variables
 set PATH=%PATH%;C:\Users\e-AndreSaunite\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.0-full_build\bin
 set PYTHONHTTPSVERIFY=0
+set HF_HUB_DISABLE_SYMLINKS_WARNING=1
+set PYTHONIOENCODING=utf-8
+chcp 65001 >nul
 
 REM Generate timestamp for output filename
 for /f "tokens=2 delims==" %%I in ('wmic os get localdatetime /value') do set datetime=%%I
@@ -36,7 +39,8 @@ REM Start transcription with WASAPI loopback + microphone
 REM Default silence timeout is 10 minutes (600 seconds)
 REM To disable auto-stop, add: --silence-timeout 0
 REM Microphone auto-detection enabled (use --mic-device N to specify manually)
-python transcriber.py --actual-time --live --wasapi --include-mic --model base --output "%output_file%" --chunk-duration 10
+REM python transcriber.py --actual-time --live --wasapi --include-mic --model base --output "%output_file%" --chunk-duration 10
+python transcriber.py --actual-time --live --wasapi --include-mic --model turbo --language en --output "%output_file%" --chunk-duration 10
 
 echo.
 echo ============================================================
