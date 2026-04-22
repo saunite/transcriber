@@ -1082,6 +1082,26 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
             mic_wav_file.close()
         capture.cleanup()
 
+    # Merge sys + mic WAV into a stereo file if both were recorded
+    merged_audio_save_path = None
+    if sys_audio_save_path and mic_audio_save_path:
+        try:
+            import soundfile as sf
+            print("\nMerging system and microphone audio...")
+            sys_data, sys_rate = sf.read(sys_audio_save_path, dtype='float32')
+            mic_data, mic_rate = sf.read(mic_audio_save_path, dtype='float32')
+            # Both are 16kHz mono — no resampling needed
+            # Trim to the shorter of the two to align them
+            n = min(len(sys_data), len(mic_data))
+            stereo = np.column_stack([sys_data[:n], mic_data[:n]])
+            base_stem = Path(sys_audio_save_path).stem.replace('_sys', '')
+            base_dir = Path(sys_audio_save_path).parent
+            merged_audio_save_path = str(base_dir / f"{base_stem}_merged.wav")
+            sf.write(merged_audio_save_path, stereo, sys_rate)
+            print(f"✓ Merged audio saved to: {merged_audio_save_path}")
+        except Exception as e:
+            print(f"⚠️  Could not merge audio files: {e}")
+
     # Summary
     print(f"\n{'='*60}")
     print("Transcription Complete")
@@ -1093,6 +1113,8 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
         print(f"System audio saved to: {sys_audio_save_path}")
     if mic_audio_save_path:
         print(f"Microphone audio saved to: {mic_audio_save_path}")
+    if merged_audio_save_path:
+        print(f"Merged audio saved to: {merged_audio_save_path}")
     print(f"{'='*60}\n")
 
     return 0
