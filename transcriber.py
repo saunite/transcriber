@@ -893,7 +893,7 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
         sys_wav_file = wave.open(sys_audio_save_path, 'wb')
         sys_wav_file.setnchannels(1)
         sys_wav_file.setsampwidth(2)  # int16
-        sys_wav_file.setframerate(wasapi_rate)
+        sys_wav_file.setframerate(target_rate)
         print(f"💾 Recording system audio to: {sys_audio_save_path}")
         if args.include_mic:
             mic_audio_save_path = str(base_dir / f"{base_stem}_mic.wav")
@@ -928,7 +928,7 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
         )
         mic_stream.start()
 
-    # WASAPI callback: write to disk and enqueue RAW audio (no resampling here), never blocks
+    # WASAPI callback: enqueue RAW audio only (no resampling here), never blocks
     def audio_callback(audio_chunk):
         if shutdown_requested:
             raise KeyboardInterrupt
@@ -937,9 +937,6 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
             if elapsed_silence > args.silence_timeout:
                 print(f"\nAuto-stop: {args.silence_timeout/60:.1f} minutes of silence detected")
                 raise KeyboardInterrupt("Silence timeout")
-        if sys_wav_file:
-            int16_data = (audio_chunk * 32767.0).clip(-32768, 32767).astype(np.int16)
-            sys_wav_file.writeframes(int16_data.tobytes())
         sys_audio_queue.put(audio_chunk)
 
     def _emit(line):
@@ -962,7 +959,12 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
                 raw = sys_audio_queue.get_nowait()
                 # Resample 48kHz -> 16kHz here, away from the capture callback
                 resampled_len = int(len(raw) * target_rate / wasapi_rate)
-                sys_buffer.append(signal.resample(raw, resampled_len))
+                resampled = signal.resample(raw, resampled_len)
+                # Write 16kHz audio to disk (same rate as mic, Whisper-ready)
+                if sys_wav_file:
+                    int16_data = (resampled * 32767.0).clip(-32768, 32767).astype(np.int16)
+                    sys_wav_file.writeframes(int16_data.tobytes())
+                sys_buffer.append(resampled)
 
             total_sys = sum(len(c) for c in sys_buffer)
             if total_sys >= chunk_duration_samples:
