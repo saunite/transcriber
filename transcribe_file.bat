@@ -46,7 +46,7 @@ echo ============================================================
 echo.
 
 REM Run transcription
-.venv\Scripts\python.exe transcriber.py --file "%~1" --output "%~2" --format %FORMAT%
+.venv\Scripts\python.exe transcriber.py --language en --file "%~1" --output "%~2" --format %FORMAT%
 
 if %ERRORLEVEL% EQU 0 (
     echo.

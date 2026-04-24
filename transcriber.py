@@ -162,7 +162,13 @@ Examples:
         action='store_true',
         help='Use wall-clock timestamps (local time) instead of relative offsets'
     )
-    
+
+    parser.add_argument(
+        '--save-audio',
+        action='store_true',
+        help='Save captured audio to a WAV file alongside the transcript (live mode only)'
+    )
+
     # Device options
     parser.add_argument(
         '--device',
@@ -602,6 +608,7 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
     import numpy as np
     import sounddevice as sd
     from scipy import signal
+    import wave
     
     # Get device info to use its native sample rate
     device_id = args.audio_device if args.audio_device >= 0 else None
@@ -638,7 +645,21 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
         output_file.write(f"# Model: {args.model}\n")
         output_file.write(f"# Language: {args.language or 'auto-detect'}\n\n")
         output_file.flush()
-    
+
+    # Open WAV file for audio recording if requested
+    wav_file = None
+    audio_save_path = None
+    if args.save_audio:
+        if args.output:
+            audio_save_path = str(Path(args.output).with_suffix('.wav'))
+        else:
+            audio_save_path = str(Path.cwd() / f"live_audio_{time.strftime('%Y%m%d_%H%M%S')}.wav")
+        wav_file = wave.open(audio_save_path, 'wb')
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)  # int16
+        wav_file.setframerate(native_rate)
+        print(f"💾 Recording audio to: {audio_save_path}")
+
     print("🎙️  Listening... (Press Ctrl+C to stop)\n")
     if silence_timeout_enabled:
         print(f"⏱️  Auto-stop after {args.silence_timeout/60:.1f} minutes of silence\n")
@@ -646,18 +667,23 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
     def audio_callback(audio_chunk):
         """Process incoming audio chunks."""
         nonlocal time_offset, last_speech_time
-        
+
         # Allow clean shutdown
         if shutdown_requested:
             raise KeyboardInterrupt
-        
+
         # Check for silence timeout
         if silence_timeout_enabled:
             elapsed_silence = time.time() - last_speech_time
             if elapsed_silence > args.silence_timeout:
                 print(f"\n⏱️  Stopping: {args.silence_timeout/60:.1f} minutes of silence detected")
                 raise KeyboardInterrupt("Silence timeout")
-        
+
+        # Write raw audio to disk before any processing (native rate, float32 -> int16)
+        if wav_file:
+            int16_data = (audio_chunk.flatten() * 32767.0).clip(-32768, 32767).astype(np.int16)
+            wav_file.writeframes(int16_data.tobytes())
+
         audio_buffer.append(audio_chunk.flatten())
         
         # Check if we have enough audio for transcription
@@ -742,7 +768,9 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
     finally:
         if output_file:
             output_file.close()
-    
+        if wav_file:
+            wav_file.close()
+
     # Summary
     print(f"\n{'='*60}")
     print("Transcription Complete")
@@ -750,8 +778,10 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
     print(f"Total segments: {len(all_segments)}")
     if args.output:
         print(f"Saved to: {args.output}")
+    if audio_save_path:
+        print(f"Audio saved to: {audio_save_path}")
     print(f"{'='*60}\n")
-    
+
     return 0
 
 
@@ -763,6 +793,7 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
     import sounddevice as sd
     import queue
     import threading
+    import wave
 
     # Initialize WASAPI capture for system audio
     capture = WASAPICapture()
@@ -850,16 +881,42 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
         output_file.write(f"# Language: {args.language or 'auto-detect'}\n\n")
         output_file.flush()
 
+    # Open WAV file(s) for audio recording if requested
+    sys_wav_file = None
+    mic_wav_file = None
+    sys_audio_save_path = None
+    mic_audio_save_path = None
+    if args.save_audio:
+        base_stem = Path(args.output).stem if args.output else f"live_audio_{time.strftime('%Y%m%d_%H%M%S')}"
+        base_dir = Path(args.output).parent if args.output else Path.cwd()
+        sys_audio_save_path = str(base_dir / f"{base_stem}_sys.wav")
+        sys_wav_file = wave.open(sys_audio_save_path, 'wb')
+        sys_wav_file.setnchannels(1)
+        sys_wav_file.setsampwidth(2)  # int16
+        sys_wav_file.setframerate(target_rate)
+        print(f"💾 Recording system audio to: {sys_audio_save_path}")
+        if args.include_mic:
+            mic_audio_save_path = str(base_dir / f"{base_stem}_mic.wav")
+            mic_wav_file = wave.open(mic_audio_save_path, 'wb')
+            mic_wav_file.setnchannels(1)
+            mic_wav_file.setsampwidth(2)  # int16
+            mic_wav_file.setframerate(16000)
+            print(f"💾 Recording microphone to: {mic_audio_save_path}")
+
     print("Listening... (Press Ctrl+C to stop)\n")
     if silence_timeout_enabled:
         print(f"Auto-stop after {args.silence_timeout/60:.1f} minutes of silence\n")
 
-    # Microphone callback: just enqueue raw audio, never blocks
+    # Microphone callback: write to disk and enqueue, never blocks
     def mic_callback(indata, frames, time_info, status):
         if status and "overflow" not in str(status).lower():
             print(f"Mic status: {status}")
         mic_audio = indata[:, 0] if len(indata.shape) > 1 else indata
-        mic_audio_queue.put(mic_audio.flatten().copy())
+        chunk = mic_audio.flatten().copy()
+        if mic_wav_file:
+            int16_data = (chunk * 32767.0).clip(-32768, 32767).astype(np.int16)
+            mic_wav_file.writeframes(int16_data.tobytes())
+        mic_audio_queue.put(chunk)
 
     # Start microphone capture if enabled
     if args.include_mic:
@@ -902,7 +959,12 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
                 raw = sys_audio_queue.get_nowait()
                 # Resample 48kHz -> 16kHz here, away from the capture callback
                 resampled_len = int(len(raw) * target_rate / wasapi_rate)
-                sys_buffer.append(signal.resample(raw, resampled_len))
+                resampled = signal.resample(raw, resampled_len)
+                # Write 16kHz audio to disk (same rate as mic, Whisper-ready)
+                if sys_wav_file:
+                    int16_data = (resampled * 32767.0).clip(-32768, 32767).astype(np.int16)
+                    sys_wav_file.writeframes(int16_data.tobytes())
+                sys_buffer.append(resampled)
 
             total_sys = sum(len(c) for c in sys_buffer)
             if total_sys >= chunk_duration_samples:
@@ -1014,8 +1076,32 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
             mic_stream.close()
         if output_file:
             output_file.close()
+        if sys_wav_file:
+            sys_wav_file.close()
+        if mic_wav_file:
+            mic_wav_file.close()
         capture.cleanup()
-    
+
+    # Merge sys + mic WAV into a stereo file if both were recorded
+    merged_audio_save_path = None
+    if sys_audio_save_path and mic_audio_save_path:
+        try:
+            import soundfile as sf
+            print("\nMerging system and microphone audio...")
+            sys_data, sys_rate = sf.read(sys_audio_save_path, dtype='float32')
+            mic_data, mic_rate = sf.read(mic_audio_save_path, dtype='float32')
+            # Both are 16kHz mono — no resampling needed
+            # Trim to the shorter of the two to align them
+            n = min(len(sys_data), len(mic_data))
+            stereo = np.column_stack([sys_data[:n], mic_data[:n]])
+            base_stem = Path(sys_audio_save_path).stem.replace('_sys', '')
+            base_dir = Path(sys_audio_save_path).parent
+            merged_audio_save_path = str(base_dir / f"{base_stem}_merged.wav")
+            sf.write(merged_audio_save_path, stereo, sys_rate)
+            print(f"✓ Merged audio saved to: {merged_audio_save_path}")
+        except Exception as e:
+            print(f"⚠️  Could not merge audio files: {e}")
+
     # Summary
     print(f"\n{'='*60}")
     print("Transcription Complete")
@@ -1023,8 +1109,14 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
     print(f"Total segments: {len(all_segments)}")
     if args.output:
         print(f"Saved to: {args.output}")
+    if sys_audio_save_path:
+        print(f"System audio saved to: {sys_audio_save_path}")
+    if mic_audio_save_path:
+        print(f"Microphone audio saved to: {mic_audio_save_path}")
+    if merged_audio_save_path:
+        print(f"Merged audio saved to: {merged_audio_save_path}")
     print(f"{'='*60}\n")
-    
+
     return 0
 
 
