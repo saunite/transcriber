@@ -28,7 +28,7 @@ chcp 65001 >nul
 REM Generate timestamp for output filename
 for /f "tokens=2 delims==" %%I in ('wmic os get localdatetime /value') do set datetime=%%I
 set timestamp=%datetime:~0,8%_%datetime:~8,6%
-set output_file=meeting_%timestamp%.txt
+set output_file=%1_meeting_%timestamp%.txt
 
 echo Starting transcription...
 echo Output will be saved to: %output_file%
