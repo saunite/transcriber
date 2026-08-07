@@ -35,11 +35,21 @@ scoop install ffmpeg
 sudo apt update && sudo apt install ffmpeg
 ```
 
+**Linux (RHEL/Fedora):**
+```bash
+sudo dnf install ffmpeg  # or: sudo yum install ffmpeg
+```
+
 ### Python Dependencies
 
 Install Python packages:
+
 ```bash
+# Windows
 pip install -r requirements.txt
+
+# Linux (uses requirements-linux.txt, which omits the Windows-only pyaudiowpatch)
+pip install -r requirements-linux.txt
 ```
 
 ## Usage
@@ -95,6 +105,29 @@ python transcriber.py --list-devices
 ```
 Look for your Bluetooth headset in the input devices list and note the device number.
 
+### Launchers
+
+The repo includes ready-made launchers that set up the environment (venv + ffmpeg PATH) and invoke the transcriber:
+
+```bat
+REM Windows: transcribe a single file
+transcribe_file.bat <input_file> <output_file> [txt|srt|vtt]
+REM Example:
+transcribe_file.bat "meeting.mp4" "transcript.srt" srt
+
+REM Windows: merge pre-recorded mic + system WAVs into one transcript
+merge_and_transcribe.bat <mic_file.wav> <sys_file.wav> [output_file] [txt|srt|vtt]
+REM Example:
+merge_and_transcribe.bat mic.wav sys.wav transcript.txt
+
+REM Windows: Teams meeting (WASAPI loopback + mic), with optional prefix/flags
+start_teams_transcription.bat [name-prefix] [transcriber flags...]
+REM Example:
+start_teams_transcription.bat sprint-review --actual-time --silence-timeout 0
+```
+
+On Linux, use `start_transcription.sh` for live capture (see [Linux](#linux) under "Setup for Real-time Audio Capture").
+
 ### Advanced Options
 
 ```bash
@@ -128,10 +161,11 @@ python transcriber.py --live --wasapi --include-mic --mic-device 5
 - `--format <type>` - Output format: txt, srt, vtt (default: txt)
 - `--no-timestamps` - Exclude timestamps from text output
 - `--actual-time` - Use wall-clock timestamps (local time) instead of relative offsets
-- `--save-audio` - Save captured audio to WAV files alongside the transcript (live mode only)
+- `--save-audio` - Save captured audio to WAV files alongside the transcript (live mode only). In WASAPI mode with `--include-mic`, this writes `<base>_sys.wav`, `<base>_mic.wav`, and a merged stereo `<base>_merged.wav` (merge uses ffmpeg)
 - `--chunk-duration <seconds>` - Duration of audio chunks for streaming (default: 30)
 - `--silence-timeout <seconds>` - Auto-stop after N seconds of silence (default: 600 = 10 min, 0 = never)
 - `--audio-device <id>` - Audio device index for live capture (-1 = auto-detect)
+- `--setup-help` - Print audio loopback setup instructions and exit
 - `--device <type>` - Device to run on: auto, cpu, cuda (default: auto)
 - `--compute-type <type>` - Compute type: auto, int8, float16, float32 (default: auto)
 
@@ -165,12 +199,23 @@ You may need to enable "Stereo Mix":
 **Alternative**: Install [VB-Cable](https://vb-audio.com/Cable/) virtual audio device
 
 ### Linux
+
 Uses PulseAudio/PipeWire monitor. Identify your audio monitor device:
 ```bash
 pactl list sources | grep -i monitor
 ```
 
-The transcriber will auto-detect monitor devices automatically.
+The transcriber will auto-detect monitor devices automatically. You can also start live transcription with the bundled launcher:
+
+```bash
+# Auto-detect the monitor device (default)
+./start_transcription.sh
+
+# Use a specific PipeWire/PulseAudio monitor device index
+./start_transcription.sh 2
+```
+
+The script writes output to `transcription_<timestamp>.txt`, auto-stops after 10 minutes of silence (use `--silence-timeout 0` for continuous recording, or pass additional `transcriber.py` flags through as arguments).
 
 ## Performance Tips
 
