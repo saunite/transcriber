@@ -7,7 +7,7 @@ Transcribe audio files and live audio chunks using faster-whisper, with configur
 ## Requirements
 
 ### Requirement: Transcribe audio files
-The system SHALL transcribe an audio file using faster-whisper and return a list of segments (start, end, text, word-level timestamps) plus metadata (language, language probability, duration), applying voice activity detection to filter silence.
+The system SHALL transcribe an audio file using faster-whisper and return a list of segments (start, end, text) plus metadata (language, language probability, duration), applying voice activity detection to filter silence.
 
 #### Scenario: Transcribe a file with detected language
 - **WHEN** a user transcribes an audio file without specifying a language

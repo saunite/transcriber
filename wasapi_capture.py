@@ -16,15 +16,6 @@ class WASAPICapture:
         self.p = pyaudio.PyAudio()
         self.is_capturing = False
         
-    def list_loopback_devices(self):
-        """List all WASAPI loopback devices."""
-        print("\n=== WASAPI Loopback Devices ===")
-        for device in self.p.get_loopback_device_info_generator():
-            print(f"[{device['index']}] {device['name']}")
-            print(f"    Channels: {device['maxInputChannels']}")
-            print(f"    Sample Rate: {int(device['defaultSampleRate'])} Hz")
-        print()
-    
     def get_default_loopback_device(self):
         """Get the loopback device for the default output."""
         try:

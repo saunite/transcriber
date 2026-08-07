@@ -16,24 +16,10 @@ from audio_capture import AudioCapture, setup_loopback_instructions
 from transcription_engine import TranscriptionEngine
 import time
 
-# Global flag for clean shutdown
-shutdown_requested = False
-
 def signal_handler(signum, frame):
     """Handle Ctrl+C gracefully."""
-    global shutdown_requested
-    shutdown_requested = True
     print("\n\n⏹️  Shutdown requested, stopping transcription...")
     raise KeyboardInterrupt
-
-# Optional dependencies
-try:
-    from speaker_diarization import SpeakerDiarization
-    from audio_buffer import AudioBuffer
-    DIARIZATION_AVAILABLE = True
-except ImportError:
-    DIARIZATION_AVAILABLE = False
-    print("⚠️  Note: Speaker diarization not available (install torch and pyannote.audio)")
 
 
 def main():
@@ -74,41 +60,6 @@ Examples:
         '--live', '-l',
         action='store_true',
         help='Capture and transcribe system audio in real-time'
-    )
-    
-    # Diarization options
-    parser.add_argument(
-        '--diarize',
-        action='store_true',
-        help='Enable speaker diarization (identify who spoke when)'
-    )
-    
-    parser.add_argument(
-        '--hf-token',
-        type=str,
-        default=None,
-        help='Hugging Face token for speaker diarization (or set HUGGINGFACE_TOKEN env var)'
-    )
-    
-    parser.add_argument(
-        '--num-speakers',
-        type=int,
-        default=None,
-        help='Expected number of speakers (for diarization)'
-    )
-    
-    parser.add_argument(
-        '--min-speakers',
-        type=int,
-        default=None,
-        help='Minimum number of speakers (for diarization)'
-    )
-    
-    parser.add_argument(
-        '--max-speakers',
-        type=int,
-        default=None,
-        help='Maximum number of speakers (for diarization)'
     )
     
     # Model options
@@ -221,13 +172,6 @@ Examples:
     )
     
     parser.add_argument(
-        '--overlap-duration',
-        type=float,
-        default=5.0,
-        help='Overlap between chunks for streaming (seconds, default: 5)'
-    )
-    
-    parser.add_argument(
         '--silence-timeout',
         type=float,
         default=600.0,  # 10 minutes
@@ -286,7 +230,9 @@ Examples:
         
         # Live capture mode
         elif args.live:
-            return transcribe_live(engine, args)
+            if args.wasapi:
+                return transcribe_live_wasapi(engine, args)
+            return transcribe_live_simple(engine, args)
     
     except KeyboardInterrupt:
         print("\n\n⚠️  Interrupted by user")
@@ -343,63 +289,22 @@ def transcribe_file(engine: TranscriptionEngine, args) -> int:
             base_time=base_time
         )
         
-        # Speaker diarization if requested
-        if args.diarize:
-            print("\n" + "="*60)
-            print("Running Speaker Diarization")
-            print("="*60)
-            
-            diarizer = SpeakerDiarization(auth_token=args.hf_token)
-            
-            diar_segments = diarizer.diarize_file(
-                audio_file,
-                num_speakers=args.num_speakers,
-                min_speakers=args.min_speakers,
-                max_speakers=args.max_speakers
-            )
-            
-            # Merge transcription with diarization
-            segments = diarizer.merge_transcription_with_diarization(
-                segments,
-                diar_segments
-            )
-            
-            # Print speaker statistics
-            stats = diarizer.get_speaker_statistics(segments)
-            print("\nSpeaker Statistics:")
-            for speaker, speaker_stats in sorted(stats.items()):
-                print(f"  {speaker}:")
-                print(f"    Duration: {speaker_stats['total_duration']:.1f}s")
-                print(f"    Segments: {speaker_stats['segments']}")
-                if speaker_stats['words'] > 0:
-                    print(f"    Words: {speaker_stats['words']}")
-        
         # Determine output path
         if args.output:
             output_path = Path(args.output)
         else:
-            suffix = "_diarized" if args.diarize else "_transcript"
-            output_name = f"{file_path.stem}{suffix}.{args.format}"
+            output_name = f"{file_path.stem}_transcript.{args.format}"
             output_path = Path.cwd() / output_name
         
         # Save transcript
-        if args.diarize and args.format == 'txt':
-            # Use special formatting for diarization
-            transcript = SpeakerDiarization.format_with_speakers(
-                segments,
-                include_timestamps=not args.no_timestamps
-            )
-            output_path.write_text(transcript, encoding='utf-8')
-            print(f"\n✓ Transcript with speakers saved to: {output_path}")
-        else:
-            engine.save_transcript(
-                segments,
-                str(output_path),
-                format_type=args.format,
-                include_timestamps=not args.no_timestamps,
-                use_actual_time=args.actual_time,
-                base_time=base_time
-            )
+        engine.save_transcript(
+            segments,
+            str(output_path),
+            format_type=args.format,
+            include_timestamps=not args.no_timestamps,
+            use_actual_time=args.actual_time,
+            base_time=base_time
+        )
         
         # Print summary
         print(f"\n{'='*60}")
@@ -409,9 +314,6 @@ def transcribe_file(engine: TranscriptionEngine, args) -> int:
         print(f"Language: {info['language']} (confidence: {info['language_probability']:.1%})")
         print(f"Duration: {info['duration']:.1f} seconds")
         print(f"Segments: {len(segments)}")
-        if args.diarize:
-            speakers = set(seg.get('speaker', 'UNKNOWN') for seg in segments)
-            print(f"Speakers: {len(speakers)}")
         print(f"Output: {output_path}")
         print(f"{'='*60}\n")
         
@@ -426,188 +328,65 @@ def transcribe_file(engine: TranscriptionEngine, args) -> int:
                 print(f"⚠️  Warning: Could not clean up temp file: {e}")
 
 
-def transcribe_live(engine: TranscriptionEngine, args) -> int:
-    """Handle live audio capture and transcription."""
+def _process_audio_chunk(
+    engine,
+    audio_data,
+    time_offset,
+    use_actual_time,
+    session_start_time,
+    language=None,
+    sample_rate=16000
+):
+    """Resample to 16 kHz, transcribe a chunk, apply the running offset, format timestamps.
+
+    Returns (results, spoke, new_offset) where results is a list of
+    (timestamp_str, adjusted_segment) tuples and spoke is True if any
+    non-empty text was transcribed.
+    """
+    import numpy as np
+    from scipy import signal
+
+    if audio_data.dtype != np.float32:
+        audio_data = audio_data.astype(np.float32)
+    if sample_rate != 16000:
+        num_samples = int(len(audio_data) * 16000 / sample_rate)
+        audio_data = signal.resample(audio_data, num_samples)
+
+    chunk_duration_sec = len(audio_data) / 16000
+    segments, _ = engine.transcribe_chunk(audio_data, language=language)
+
+    results = []
+    for seg in segments:
+        if not seg['text'].strip():
+            continue
+        adjusted_start = seg['start'] + time_offset
+        adjusted_end = seg['end'] + time_offset
+        timestamp = engine.format_timestamp(
+            seg['start'] if use_actual_time else adjusted_start,
+            seg['end'] if use_actual_time else adjusted_end,
+            use_actual_time=use_actual_time,
+            base_time=(datetime.now() - timedelta(seconds=chunk_duration_sec)) if use_actual_time else session_start_time
+        )
+        adjusted_seg = seg.copy()
+        adjusted_seg['start'] = adjusted_start
+        adjusted_seg['end'] = adjusted_end
+        results.append((timestamp, adjusted_seg))
+
+    return results, bool(results), time_offset + chunk_duration_sec
+
+
+def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
+    """Simple live transcription for non-WASAPI mode."""
     print("\n" + "="*60)
     print("Live Audio Transcription")
     print("="*60)
     print(f"Model: {args.model}")
     print(f"Language: {args.language or 'auto-detect'}")
     print(f"Chunk duration: {args.chunk_duration}s")
-    print(f"Overlap: {args.overlap_duration}s")
-    
-    # Check if using WASAPI (Windows only)
-    if args.wasapi:
-        print("Mode: WASAPI Loopback (Bluetooth-compatible)")
-        print("="*60 + "\n")
-        return transcribe_live_wasapi(engine, args)
-    
-    if args.diarize:
-        print("⚠️  Note: Speaker diarization requires torch (not available)")
     print("="*60 + "\n")
-    
-    # Check if AudioBuffer is available
-    if not DIARIZATION_AVAILABLE:
-        print("⚠️  Advanced buffering not available. Using simple mode.")
-        print("    Transcription will happen in fixed chunks.\n")
-        return transcribe_live_simple(engine, args)
-    
-    # Initialize components
-    capture = AudioCapture(sample_rate=16000, channels=1)
-    
-    # Storage for segments
-    all_segments = []
-    all_audio_data = []
-    segment_counter = [0]  # Use list for mutable counter in closure
-    time_offset = 0.0
-    session_start_time = datetime.now() if args.actual_time else None
 
-    def process_chunk(audio_chunk):
-        """Process audio chunk through transcription."""
-        nonlocal time_offset
-        segment_counter[0] += 1
-        print(f"\n[Chunk {segment_counter[0]}] Processing {len(audio_chunk)/16000:.1f}s of audio...")
-        
-        try:
-            # Store audio for diarization later
-            if args.diarize:
-                all_audio_data.append(audio_chunk.copy())
-            
-            # Transcribe chunk
-            chunk_duration_sec = len(audio_chunk) / 16000
-            chunk_wall_anchor = datetime.now() - timedelta(seconds=chunk_duration_sec)
-            segments, info = engine.transcribe_chunk(audio_chunk, language=args.language)
-            
-            # Print and store results
-            for seg in segments:
-                if seg['text'].strip():
-                    adjusted_start = seg['start'] + time_offset
-                    adjusted_end = seg['end'] + time_offset
-                    timestamp = engine.format_timestamp(
-                        seg['start'] if args.actual_time else adjusted_start,
-                        seg['end'] if args.actual_time else adjusted_end,
-                        use_actual_time=args.actual_time,
-                        base_time=chunk_wall_anchor if args.actual_time else session_start_time
-                    )
-                    print(f"{timestamp} {seg['text']}")
-
-                    adjusted_seg = seg.copy()
-                    adjusted_seg['start'] = adjusted_start
-                    adjusted_seg['end'] = adjusted_end
-                    all_segments.append(adjusted_seg)
-            
-            if not segments:
-                print("  (no speech detected)")
-
-            time_offset += chunk_duration_sec
-                
-        except Exception as e:
-            print(f"  ❌ Error: {e}")
-    
-    buffer = AudioBuffer(
-        sample_rate=16000,
-        chunk_duration=args.chunk_duration,
-        overlap_duration=args.overlap_duration,
-        callback=process_chunk
-    )
-    
-    # Start buffer processing thread
-    buffer.start_processing(interval=0.5)
-    
-    try:
-        # Capture audio
-        capture.capture_stream(
-            callback=buffer.add_audio,
-            device=args.audio_device,
-            duration=None  # Infinite until Ctrl+C
-        )
-    except KeyboardInterrupt:
-        print("\n\nStopping capture...")
-    finally:
-        buffer.stop_processing()
-    
-    # Save transcript if we got any
-    if all_segments:
-        print(f"\n{'='*60}")
-        print("Saving Transcript")
-        print(f"{'='*60}")
-        
-        # Apply diarization if requested
-        if args.diarize and all_audio_data:
-            print("\nApplying speaker diarization to captured audio...")
-            try:
-                import numpy as np
-                combined_audio = np.concatenate(all_audio_data)
-                
-                diarizer = SpeakerDiarization(auth_token=args.hf_token)
-                diar_segments = diarizer.diarize_array(
-                    combined_audio,
-                    sample_rate=16000,
-                    num_speakers=args.num_speakers,
-                    min_speakers=args.min_speakers,
-                    max_speakers=args.max_speakers
-                )
-                
-                # Merge
-                all_segments = diarizer.merge_transcription_with_diarization(
-                    all_segments,
-                    diar_segments
-                )
-                
-                # Print stats
-                stats = diarizer.get_speaker_statistics(all_segments)
-                print("\nSpeaker Statistics:")
-                for speaker, speaker_stats in sorted(stats.items()):
-                    print(f"  {speaker}: {speaker_stats['total_duration']:.1f}s, {speaker_stats['segments']} segments")
-                    
-            except Exception as e:
-                print(f"⚠️  Could not apply diarization: {e}")
-        
-        # Determine output path
-        if args.output:
-            output_path = Path(args.output)
-        else:
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
-            suffix = "_diarized" if args.diarize else "_transcript"
-            output_name = f"live{suffix}_{timestamp}.txt"
-            output_path = Path.cwd() / output_name
-        
-        # Save
-        if args.diarize and args.format == 'txt':
-            transcript = SpeakerDiarization.format_with_speakers(
-                all_segments,
-                include_timestamps=not args.no_timestamps
-            )
-            output_path.write_text(transcript, encoding='utf-8')
-        else:
-            engine.save_transcript(
-                all_segments,
-                str(output_path),
-                format_type=args.format,
-                include_timestamps=not args.no_timestamps,
-                use_actual_time=args.actual_time,
-                base_time=session_start_time
-            )
-        
-        print(f"\n✓ Transcript saved to: {output_path}")
-        print(f"Total segments: {len(all_segments)}")
-        
-        # Print buffer stats
-        stats = buffer.get_stats()
-        print(f"Total audio processed: {stats['duration_seconds']:.1f}s")
-        print(f"Chunks processed: {stats['chunks_processed']}")
-        
-        return 0
-    else:
-        print("\n⚠️  No transcription to save")
-        return 0
-
-
-def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
-    """Simple live transcription without AudioBuffer (no torch dependency)."""
     import numpy as np
     import sounddevice as sd
-    from scipy import signal
     import wave
     
     # Get device info to use its native sample rate
@@ -618,8 +397,6 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
         print(f"Using device native sample rate: {native_rate} Hz")
     else:
         native_rate = 48000
-    
-    target_rate = 16000  # Whisper requires 16kHz
     
     # Initialize audio capture with native sample rate
     capture = AudioCapture(sample_rate=native_rate, channels=1)
@@ -635,7 +412,7 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
     
     # Overlap settings to prevent speech loss at chunk boundaries
     overlap_duration = 1.0  # 1 second overlap
-    overlap_samples = int(target_rate * overlap_duration)  # In target rate (16kHz)
+    overlap_samples = int(native_rate * overlap_duration)  # In native rate
     
     # Open output file for incremental writing
     output_file = None
@@ -668,10 +445,6 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
         """Process incoming audio chunks."""
         nonlocal time_offset, last_speech_time
 
-        # Allow clean shutdown
-        if shutdown_requested:
-            raise KeyboardInterrupt
-
         # Check for silence timeout
         if silence_timeout_enabled:
             elapsed_silence = time.time() - last_speech_time
@@ -692,65 +465,38 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
         if total_samples >= chunk_duration_samples:
             # Concatenate all buffered audio
             audio_data = np.concatenate(audio_buffer)
-            
-            # Resample to 16kHz if needed
-            if native_rate != target_rate:
-                num_samples = int(len(audio_data) * target_rate / native_rate)
-                audio_data = signal.resample(audio_data, num_samples)
-            
-            chunk_duration_sec = len(audio_data) / target_rate
+            audio_buffer.clear()
             
             # Keep overlap for next chunk to prevent speech cutoff
             if len(audio_data) > overlap_samples:
-                overlap_data = audio_data[-overlap_samples:]
-                audio_buffer.clear()
-                audio_buffer.append(overlap_data)
-            else:
-                audio_buffer.clear()
-            
-            # Ensure float32
-            if audio_data.dtype != np.float32:
-                audio_data = audio_data.astype(np.float32)
+                audio_buffer.append(audio_data[-overlap_samples:])
             
             # Transcribe
             try:
-                chunk_wall_anchor = datetime.now() - timedelta(seconds=chunk_duration_sec)
-                segments, info = engine.transcribe_chunk(audio_data, language=args.language)
+                results, spoke, new_offset = _process_audio_chunk(
+                    engine, audio_data, time_offset,
+                    args.actual_time, session_start_time,
+                    language=args.language, sample_rate=native_rate
+                )
+                time_offset = new_offset
                 
                 # Reset silence timer if speech was detected
-                if segments and any(s['text'].strip() for s in segments):
+                if spoke:
                     last_speech_time = time.time()
                 
                 # Print and save results
-                for seg in segments:
-                    if seg['text'].strip():
-                        # Add time offset to make timestamps cumulative
-                        adjusted_start = seg['start'] + time_offset
-                        adjusted_end = seg['end'] + time_offset
-                        timestamp = engine.format_timestamp(
-                            seg['start'] if args.actual_time else adjusted_start,
-                            seg['end'] if args.actual_time else adjusted_end,
-                            use_actual_time=args.actual_time,
-                            base_time=chunk_wall_anchor if args.actual_time else session_start_time
-                        )
-                        line = f"{timestamp} {seg['text']}"
-                        print(line)
-                        # Store adjusted segment
-                        adjusted_seg = seg.copy()
-                        adjusted_seg['start'] = adjusted_start
-                        adjusted_seg['end'] = adjusted_end
-                        all_segments.append(adjusted_seg)
-                        
-                        # Write immediately to file
-                        if output_file:
-                            output_file.write(line + "\n")
-                            output_file.flush()
+                for timestamp, seg in results:
+                    line = f"{timestamp} {seg['text']}"
+                    print(line)
+                    all_segments.append(seg)
+                    
+                    # Write immediately to file
+                    if output_file:
+                        output_file.write(line + "\n")
+                        output_file.flush()
                 
-                if not segments or not any(s['text'].strip() for s in segments):
+                if not results:
                     print("  (no speech detected)")
-                
-                # Update time offset for next chunk
-                time_offset += chunk_duration_sec
             
             except Exception as e:
                 print(f"  ❌ Error transcribing: {e}")
@@ -794,6 +540,15 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
     import queue
     import threading
     import wave
+
+    print("\n" + "="*60)
+    print("Live Audio Transcription")
+    print("="*60)
+    print(f"Model: {args.model}")
+    print(f"Language: {args.language or 'auto-detect'}")
+    print(f"Chunk duration: {args.chunk_duration}s")
+    print("Mode: WASAPI Loopback (Bluetooth-compatible)")
+    print("="*60 + "\n")
 
     # Initialize WASAPI capture for system audio
     capture = WASAPICapture()
@@ -930,8 +685,6 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
 
     # WASAPI callback: enqueue RAW audio only (no resampling here), never blocks
     def audio_callback(audio_chunk):
-        if shutdown_requested:
-            raise KeyboardInterrupt
         if silence_timeout_enabled:
             elapsed_silence = time.time() - last_speech_time
             if elapsed_silence > args.silence_timeout:
@@ -969,34 +722,21 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
             total_sys = sum(len(c) for c in sys_buffer)
             if total_sys >= chunk_duration_samples:
                 system_data = np.concatenate(sys_buffer)
-                chunk_duration_sec = len(system_data) / target_rate
                 if len(system_data) > overlap_samples:
                     sys_buffer[:] = [system_data[-overlap_samples:]]
                 else:
                     sys_buffer.clear()
-                if system_data.dtype != np.float32:
-                    system_data = system_data.astype(np.float32)
                 try:
-                    wall_anchor = datetime.now() - timedelta(seconds=chunk_duration_sec)
-                    segments, _ = engine.transcribe_chunk(system_data, language=args.language)
-                    if segments and any(s['text'].strip() for s in segments):
+                    results, spoke, system_time_offset = _process_audio_chunk(
+                        engine, system_data, system_time_offset,
+                        args.actual_time, session_start_time,
+                        language=args.language, sample_rate=target_rate
+                    )
+                    if spoke:
                         last_speech_time = time.time()
-                    for seg in segments:
-                        if seg['text'].strip():
-                            adjusted_start = seg['start'] + system_time_offset
-                            adjusted_end = seg['end'] + system_time_offset
-                            ts = engine.format_timestamp(
-                                seg['start'] if args.actual_time else adjusted_start,
-                                seg['end'] if args.actual_time else adjusted_end,
-                                use_actual_time=args.actual_time,
-                                base_time=wall_anchor if args.actual_time else session_start_time
-                            )
-                            _emit(f"{ts} [SYS] {seg['text']}")
-                            adjusted_seg = seg.copy()
-                            adjusted_seg['start'] = adjusted_start
-                            adjusted_seg['end'] = adjusted_end
-                            all_segments.append(adjusted_seg)
-                    system_time_offset += chunk_duration_sec
+                    for ts, seg in results:
+                        _emit(f"{ts} [SYS] {seg['text']}")
+                        all_segments.append(seg)
                 except Exception as e:
                     print(f"  ❌ Error transcribing system audio: {e}")
             else:
@@ -1015,35 +755,22 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
             total_mic = sum(len(c) for c in mic_buffer_local)
             if total_mic >= mic_chunk_samples:
                 mic_data = np.concatenate(mic_buffer_local)
-                chunk_duration_sec = len(mic_data) / target_rate
                 if len(mic_data) > overlap_samples:
                     mic_buffer_local[:] = [mic_data[-overlap_samples:]]
                 else:
                     mic_buffer_local.clear()
                 if np.max(np.abs(mic_data)) > 0.01:
-                    if mic_data.dtype != np.float32:
-                        mic_data = mic_data.astype(np.float32)
                     try:
-                        wall_anchor = datetime.now() - timedelta(seconds=chunk_duration_sec)
-                        segments, _ = engine.transcribe_chunk(mic_data, language=args.language)
-                        if segments and any(s['text'].strip() for s in segments):
+                        results, spoke, mic_time_offset = _process_audio_chunk(
+                            engine, mic_data, mic_time_offset,
+                            args.actual_time, session_start_time,
+                            language=args.language, sample_rate=target_rate
+                        )
+                        if spoke:
                             last_speech_time = time.time()
-                        for seg in segments:
-                            if seg['text'].strip():
-                                adjusted_start = seg['start'] + mic_time_offset
-                                adjusted_end = seg['end'] + mic_time_offset
-                                ts = engine.format_timestamp(
-                                    seg['start'] if args.actual_time else adjusted_start,
-                                    seg['end'] if args.actual_time else adjusted_end,
-                                    use_actual_time=args.actual_time,
-                                    base_time=wall_anchor if args.actual_time else session_start_time
-                                )
-                                _emit(f"{ts} [MIC] {seg['text']}")
-                                adjusted_seg = seg.copy()
-                                adjusted_seg['start'] = adjusted_start
-                                adjusted_seg['end'] = adjusted_end
-                                all_segments.append(adjusted_seg)
-                        mic_time_offset += chunk_duration_sec
+                        for ts, seg in results:
+                            _emit(f"{ts} [MIC] {seg['text']}")
+                            all_segments.append(seg)
                     except Exception as e:
                         print(f"  ❌ Error transcribing microphone: {e}")
             else:

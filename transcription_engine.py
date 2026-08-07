@@ -7,33 +7,13 @@ import os
 import ssl
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional, Iterator, Tuple, List
+from typing import Optional, Tuple, List
 import numpy as np
 from tqdm import tqdm
 
-# Bypass SSL verification for corporate networks
-try:
-    ssl._create_default_https_context = ssl._create_unverified_context
-except AttributeError:
-    pass
-
-# Disable SSL verification for httpx (used by huggingface_hub)
-os.environ['CURL_CA_BUNDLE'] = ''
-os.environ['REQUESTS_CA_BUNDLE'] = ''
+# Disable SSL verification (corporate networks / offline model downloads)
+ssl._create_default_https_context = ssl._create_unverified_context
 os.environ['SSL_CERT_FILE'] = ''
-
-# Monkey-patch httpx to disable SSL verification
-try:
-    import httpx
-    original_client_init = httpx.Client.__init__
-    
-    def patched_client_init(self, *args, **kwargs):
-        kwargs['verify'] = False
-        original_client_init(self, *args, **kwargs)
-    
-    httpx.Client.__init__ = patched_client_init
-except ImportError:
-    pass
 
 from faster_whisper import WhisperModel
 
@@ -87,8 +67,6 @@ class TranscriptionEngine:
         audio_path: str,
         language: Optional[str] = None,
         task: str = "transcribe",
-        beam_size: int = 5,
-        word_timestamps: bool = True,
         output_path: Optional[str] = None,
         incremental_save: bool = True,
         use_actual_time: bool = False,
@@ -101,8 +79,6 @@ class TranscriptionEngine:
             audio_path: Path to audio or video file
             language: Language code (e.g., "en", "es") or None for auto-detection
             task: "transcribe" or "translate" (translate to English)
-            beam_size: Beam size for decoding (higher = more accurate but slower)
-            word_timestamps: Include word-level timestamps
             output_path: Path to save transcript incrementally (optional)
             incremental_save: Save after each segment to avoid data loss (default: True)
             use_actual_time: Use wall-clock timestamps instead of relative offsets
@@ -124,8 +100,8 @@ class TranscriptionEngine:
             audio_path,
             language=language,
             task=task,
-            beam_size=beam_size,
-            word_timestamps=word_timestamps,
+            beam_size=5,
+            word_timestamps=True,
             vad_filter=True  # Voice activity detection to filter silence
         )
         
@@ -152,16 +128,7 @@ class TranscriptionEngine:
                 segment_dict = {
                     'start': segment.start,
                     'end': segment.end,
-                    'text': segment.text.strip(),
-                    'words': [
-                        {
-                            'start': word.start,
-                            'end': word.end,
-                            'word': word.word,
-                            'probability': word.probability
-                        }
-                        for word in (segment.words or [])
-                    ] if word_timestamps else []
+                    'text': segment.text.strip()
                 }
                 segments.append(segment_dict)
                 
@@ -182,55 +149,10 @@ class TranscriptionEngine:
         info_dict = {
             'language': info.language,
             'language_probability': info.language_probability,
-            'duration': info.duration,
-            'duration_after_vad': getattr(info, 'duration_after_vad', None)
+            'duration': info.duration
         }
         
         return segments, info_dict
-    
-    def transcribe_stream(
-        self,
-        audio_iterator: Iterator[np.ndarray],
-        language: Optional[str] = None,
-        chunk_duration: float = 30.0
-    ) -> Iterator[str]:
-        """
-        Transcribe streaming audio in real-time.
-        
-        Args:
-            audio_iterator: Iterator yielding audio chunks (numpy arrays)
-            language: Language code or None for auto-detection
-            chunk_duration: Duration of audio chunks to accumulate before transcribing
-        
-        Yields:
-            Transcribed text segments
-        """
-        print("🎙️  Real-time streaming transcription started")
-        print("Note: There may be a delay as audio accumulates for processing\n")
-        
-        for audio_chunk in audio_iterator:
-            # Ensure audio is float32
-            if audio_chunk.dtype != np.float32:
-                audio_chunk = audio_chunk.astype(np.float32)
-            
-            # Transcribe the chunk
-            try:
-                segments, _ = self.model.transcribe(
-                    audio_chunk,
-                    language=language,
-                    beam_size=3,  # Lower beam size for faster processing
-                    vad_filter=True,
-                    word_timestamps=False  # Disable for speed
-                )
-                
-                # Yield transcribed text
-                for segment in segments:
-                    if segment.text.strip():
-                        yield segment.text.strip()
-                        
-            except Exception as e:
-                print(f"⚠️  Error transcribing chunk: {e}")
-                continue
     
     def transcribe_chunk(
         self,
@@ -267,16 +189,7 @@ class TranscriptionEngine:
             segments.append({
                 'start': segment.start,
                 'end': segment.end,
-                'text': segment.text.strip(),
-                'words': [
-                    {
-                        'start': word.start,
-                        'end': word.end,
-                        'word': word.word,
-                        'probability': word.probability
-                    }
-                    for word in (segment.words or [])
-                ]
+                'text': segment.text.strip()
             })
         
         info_dict = {
@@ -291,7 +204,6 @@ class TranscriptionEngine:
         self,
         segments: List[dict],
         include_timestamps: bool = True,
-        include_words: bool = False,
         use_actual_time: bool = False,
         base_time: Optional[datetime] = None
     ) -> str:
@@ -301,7 +213,6 @@ class TranscriptionEngine:
         Args:
             segments: List of segment dictionaries
             include_timestamps: Include timestamps in output
-            include_words: Include word-level timestamps
             use_actual_time: Use wall-clock timestamps instead of relative offsets
             base_time: Base wall-clock time for timestamp calculations
         
@@ -324,12 +235,6 @@ class TranscriptionEngine:
                 lines.append(f"{timestamp} {segment['text']}")
             else:
                 lines.append(segment['text'])
-            
-            # Add word-level timestamps if requested
-            if include_words and segment.get('words'):
-                for word in segment['words']:
-                    word_ts = f"  {self._format_time(word['start'])}-{self._format_time(word['end'])}"
-                    lines.append(f"{word_ts} {word['word']} (conf: {word['probability']:.2f})")
         
         return '\n'.join(lines)
     

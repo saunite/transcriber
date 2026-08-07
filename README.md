@@ -1,12 +1,11 @@
 # Audio Transcriber
 
-A cross-platform CLI tool for transcribing audio from video files and live audio streams using faster-whisper, with **real-time streaming** and **speaker diarization** support.
+A cross-platform CLI tool for transcribing audio from video files and live audio streams using faster-whisper, with **real-time streaming** support.
 
 ## Features
 
 - 🎥 Transcribe audio from local video files (MP4, AVI, MKV, etc.)
 - 🎙️ **Real-time transcription** from system audio (live meetings, streaming videos)
-- 👥 **Speaker diarization** - Identify who spoke when
 - 💻 Cross-platform: Works on Windows and Linux
 - 🔒 100% offline and local - all data stays on your machine
 - ⚡ Fast transcription with faster-whisper (MIT license)
@@ -51,11 +50,8 @@ pip install -r requirements.txt
 # Basic transcription
 python transcriber.py --file path/to/video.mp4
 
-# With speaker diarization
-python transcriber.py --file meeting.mp4 --diarize --hf-token YOUR_TOKEN
-
-# Specify number of speakers
-python transcriber.py --file video.mp4 --diarize --num-speakers 3 --hf-token YOUR_TOKEN
+# Specify language and larger model
+python transcriber.py --file meeting.mp4 --language en --model medium
 ```
 
 ### Real-time Audio Capture
@@ -63,6 +59,15 @@ python transcriber.py --file video.mp4 --diarize --num-speakers 3 --hf-token YOU
 **Quick Start for Teams Meetings (Windows with Bluetooth headset):**
 
 Double-click `start_teams_transcription.bat` to automatically start transcription with both system audio and microphone capture. The transcript will be saved with a timestamp (e.g., `meeting_20251110_143052.txt`).
+
+The launcher passes extra arguments through to `transcriber.py`, so you can run it with a filename prefix and/or flags:
+
+```bat
+start_teams_transcription.bat                  REM default: meeting_TIMESTAMP.txt
+start_teams_transcription.bat sprint-review    REM filename prefix
+start_teams_transcription.bat --silence-timeout 0
+start_teams_transcription.bat --actual-time --save-audio
+```
 
 **Manual Command:**
 
@@ -76,11 +81,8 @@ python transcriber.py --live --wasapi
 # Traditional mode (may not work with Bluetooth headsets)
 python transcriber.py --live
 
-# With speaker diarization (requires torch installation)
-python transcriber.py --live --diarize --hf-token YOUR_TOKEN
-
 # Custom chunk settings for better responsiveness
-python transcriber.py --live --chunk-duration 20 --overlap-duration 3
+python transcriber.py --live --chunk-duration 20
 ```
 
 **Understanding the Labels:**
@@ -102,32 +104,14 @@ python transcriber.py --file audio.wav --model medium
 # Specify language
 python transcriber.py --file video.mp4 --language en
 
-# Output as SRT subtitles with speakers
-python transcriber.py --file video.mp4 --format srt --diarize --hf-token YOUR_TOKEN
+# Output as SRT subtitles
+python transcriber.py --file video.mp4 --format srt
 
 # List available audio devices
 python transcriber.py --list-devices
 
 # WASAPI mode with custom microphone device
 python transcriber.py --live --wasapi --include-mic --mic-device 5
-```
-
-### Converting Existing Transcripts to SRT
-
-If you already have a timestamped transcript from live transcription, you can convert it to SRT format:
-
-```bash
-# Convert transcript to SRT subtitles
-python convert_to_srt.py meeting_20241117_143022.txt
-
-# Specify output filename
-python convert_to_srt.py transcript.txt --output subtitles.srt
-```
-
-This works with transcripts that have timestamps like:
-```
-[00:05 -> 00:08] Welcome to the meeting
-[17:30 -> 17:35] [SYS] Let's get started
 ```
 
 ### Complete Options
@@ -137,19 +121,15 @@ This works with transcripts that have timestamps like:
 - `--wasapi` - Use WASAPI loopback mode (Windows only, Bluetooth-compatible)
 - `--include-mic` - Include microphone capture alongside system audio (use with --wasapi)
 - `--mic-device <id>` - Microphone device index (use --list-devices to find)
-- `--diarize` - Enable speaker diarization
-- `--hf-token <token>` - Hugging Face token for diarization (or set HUGGINGFACE_TOKEN env var)
-- `--num-speakers <n>` - Expected number of speakers
-- `--min-speakers <n>` - Minimum number of speakers
-- `--max-speakers <n>` - Maximum number of speakers
 - `--model <size>` - Model size: tiny, base, small, medium, large, turbo (default: base)
 - `--language <code>` - Language code (e.g., en, es, fr) - auto-detect if not specified
 - `--task <type>` - Task: transcribe or translate (default: transcribe)
 - `--output <path>` - Output file for transcript (default: auto-generated)
 - `--format <type>` - Output format: txt, srt, vtt (default: txt)
 - `--no-timestamps` - Exclude timestamps from text output
+- `--actual-time` - Use wall-clock timestamps (local time) instead of relative offsets
+- `--save-audio` - Save captured audio to WAV files alongside the transcript (live mode only)
 - `--chunk-duration <seconds>` - Duration of audio chunks for streaming (default: 30)
-- `--overlap-duration <seconds>` - Overlap between chunks (default: 5)
 - `--silence-timeout <seconds>` - Auto-stop after N seconds of silence (default: 600 = 10 min, 0 = never)
 - `--audio-device <id>` - Audio device index for live capture (-1 = auto-detect)
 - `--device <type>` - Device to run on: auto, cpu, cuda (default: auto)
@@ -192,31 +172,11 @@ pactl list sources | grep -i monitor
 
 The transcriber will auto-detect monitor devices automatically.
 
-## Speaker Diarization Setup
-
-Speaker diarization uses pyannote.audio which requires a Hugging Face account:
-
-1. Create a free account at [https://huggingface.co/](https://huggingface.co/)
-2. Accept the license at [https://huggingface.co/pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
-3. Get your access token from [https://huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
-4. Use the token with `--hf-token YOUR_TOKEN` or set environment variable:
-
-**Windows (PowerShell):**
-```powershell
-$env:HUGGINGFACE_TOKEN="your_token_here"
-```
-
-**Linux/Mac:**
-```bash
-export HUGGINGFACE_TOKEN="your_token_here"
-```
-
 ## Performance Tips
 
 ### For Best Accuracy
 - Use `--model medium` or `--model large`
 - Specify `--language` if you know it
-- Use `--diarize` with correct `--num-speakers` if known
 
 ### For Speed
 - Use `--model tiny` or `--model base`
@@ -232,7 +192,7 @@ export HUGGINGFACE_TOKEN="your_token_here"
 
 GPLv2
 
-This software uses faster-whisper (MIT License) and pyannote.audio (MIT License), both compatible with GPLv2.
+This software uses faster-whisper (MIT License), compatible with GPLv2.
 
 ## Troubleshooting
 
@@ -247,10 +207,6 @@ This software uses faster-whisper (MIT License) and pyannote.audio (MIT License)
 - Disable with `--silence-timeout 0` for continuous recording
 - Adjust timeout with `--silence-timeout 300` (5 minutes), etc.
 
-### "Hugging Face token required"
-- Speaker diarization requires authentication
-- Follow setup steps in "Speaker Diarization Setup" section above
-
 ### Slow transcription
 - Use smaller model (`--model tiny` or `--model base`)
 - Enable GPU if available
@@ -260,7 +216,6 @@ This software uses faster-whisper (MIT License) and pyannote.audio (MIT License)
 - Use larger model (`--model medium` or `--model large`)
 - Specify correct `--language`
 - Ensure good audio quality (no background noise)
-- For diarization, specify `--num-speakers` if known
 
 ## Examples
 
@@ -269,23 +224,12 @@ This software uses faster-whisper (MIT License) and pyannote.audio (MIT License)
 python transcriber.py --file meeting.mp4
 ```
 
-### Transcribe with speakers identified
-```bash
-python transcriber.py --file interview.mp4 --diarize --num-speakers 2 --hf-token YOUR_TOKEN
-```
-
 ### Live meeting transcription
 ```bash
 python transcriber.py --live --model base --language en
 ```
 
-### Live transcription with speaker detection
+### Generate SRT subtitles
 ```bash
-export HUGGINGFACE_TOKEN="your_token"
-python transcriber.py --live --diarize --min-speakers 2 --max-speakers 5
-```
-
-### Generate subtitles with speaker labels
-```bash
-python transcriber.py --file video.mp4 --format srt --diarize --hf-token YOUR_TOKEN
+python transcriber.py --file video.mp4 --format srt
 ```

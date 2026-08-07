@@ -1,5 +1,6 @@
 # Audio Capture
 
+
 ## Purpose
 
 Capture live system audio (and optionally microphone audio) for real-time transcription, including WASAPI loopback support on Windows and device listing.

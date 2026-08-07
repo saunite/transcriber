@@ -157,39 +157,6 @@ class AudioCapture:
             raise
         finally:
             self.is_capturing = False
-    
-    def capture_to_file(
-        self,
-        output_file: str,
-        duration: float,
-        device: Optional[int] = None
-    ) -> None:
-        """
-        Capture audio to a WAV file.
-        
-        Args:
-            output_file: Path to output WAV file
-            duration: Duration to record in seconds
-            device: Device index to capture from
-        """
-        import soundfile as sf
-        
-        print(f"Recording {duration} seconds to {output_file}...")
-        
-        if device == -1:
-            device = self.get_loopback_device()
-        
-        recording = sd.rec(
-            int(duration * self.sample_rate),
-            samplerate=self.sample_rate,
-            channels=self.channels,
-            device=device
-        )
-        sd.wait()  # Wait until recording is finished
-        
-        # Save as WAV file
-        sf.write(output_file, recording, self.sample_rate)
-        print(f"✓ Saved to {output_file}")
 
 
 def setup_loopback_instructions():
