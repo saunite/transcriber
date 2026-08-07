@@ -4,8 +4,6 @@ WASAPI loopback audio capture for Windows - captures system audio including Blue
 import pyaudiowpatch as pyaudio
 import numpy as np
 from typing import Callable, Optional
-import threading
-from queue import Queue
 
 
 class WASAPICapture:
@@ -39,9 +37,7 @@ class WASAPICapture:
     def capture_stream(
         self,
         callback: Callable[[np.ndarray], None],
-        device_index: Optional[int] = None,
-        duration: Optional[float] = None,
-        chunk_size: int = 1024
+        device_index: Optional[int] = None
     ):
         """
         Capture audio from WASAPI loopback device.
@@ -49,8 +45,6 @@ class WASAPICapture:
         Args:
             callback: Function called with each audio chunk (numpy array)
             device_index: WASAPI loopback device index (None = auto-detect)
-            duration: Duration in seconds (None = infinite)
-            chunk_size: Number of frames per callback
         """
         # Get device
         if device_index is None:
@@ -65,6 +59,7 @@ class WASAPICapture:
         # Audio parameters
         CHANNELS = device_info['maxInputChannels']
         RATE = int(device_info['defaultSampleRate'])
+        chunk_size = 1024
         
         # Open stream
         stream = self.p.open(
@@ -77,16 +72,11 @@ class WASAPICapture:
         )
         
         self.is_capturing = True
-        frames_captured = 0
-        total_frames = int(RATE / chunk_size * duration) if duration else None
         
         try:
             print("🎙️  Capturing audio... Press Ctrl+C to stop\n")
             
             while self.is_capturing:
-                if total_frames and frames_captured >= total_frames:
-                    break
-                
                 try:
                     # Read audio data with timeout to allow Ctrl+C responsiveness
                     data = stream.read(chunk_size, exception_on_overflow=False)
@@ -103,7 +93,6 @@ class WASAPICapture:
                     # Call user callback
                     callback(audio_chunk)
                     
-                    frames_captured += 1
                 except IOError as e:
                     # Handle buffer overflow/underflow gracefully
                     if e.errno != pyaudio.paInputOverflowed:

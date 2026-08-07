@@ -9,7 +9,6 @@ import numpy as np
 import sounddevice as sd
 from typing import Callable, Optional
 from queue import Queue
-import threading
 
 
 class AudioCapture:
@@ -90,9 +89,7 @@ class AudioCapture:
     def capture_stream(
         self,
         callback: Callable[[np.ndarray], None],
-        device: Optional[int] = None,
-        duration: Optional[float] = None,
-        chunk_size: int = 1024
+        device: Optional[int] = None
     ) -> None:
         """
         Capture audio from system in real-time and send to callback.
@@ -100,8 +97,6 @@ class AudioCapture:
         Args:
             callback: Function to process audio chunks (receives numpy array)
             device: Device index to capture from (None = default, -1 = auto-detect loopback)
-            duration: Duration to capture in seconds (None = infinite)
-            chunk_size: Size of audio chunks to capture at once
         """
         # Auto-detect loopback device if requested
         if device == -1:
@@ -121,31 +116,22 @@ class AudioCapture:
             print(f"Using loopback device: {sd.query_devices(device)['name']}")
         
         self.is_capturing = True
-        start_time = None
         
         try:
             with sd.InputStream(
                 device=device,
                 channels=self.channels,
                 samplerate=self.sample_rate,
-                blocksize=chunk_size,
+                blocksize=1024,
                 callback=self._audio_callback
             ):
                 print("🎙️  Capturing audio... Press Ctrl+C to stop")
-                start_time = __import__('time').time()
                 
                 # Process audio from queue
                 while self.is_capturing:
                     if not self.audio_queue.empty():
                         audio_chunk = self.audio_queue.get()
                         callback(audio_chunk)
-                    
-                    # Check duration
-                    if duration is not None and start_time is not None:
-                        elapsed = __import__('time').time() - start_time
-                        if elapsed >= duration:
-                            print(f"\n✓ Capture completed ({duration}s)")
-                            break
                     
                     # Small sleep to prevent busy-waiting
                     __import__('time').sleep(0.01)

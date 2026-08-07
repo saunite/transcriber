@@ -68,7 +68,6 @@ class TranscriptionEngine:
         language: Optional[str] = None,
         task: str = "transcribe",
         output_path: Optional[str] = None,
-        incremental_save: bool = True,
         use_actual_time: bool = False,
         base_time: Optional[datetime] = None
     ) -> Tuple[List[dict], dict]:
@@ -80,7 +79,6 @@ class TranscriptionEngine:
             language: Language code (e.g., "en", "es") or None for auto-detection
             task: "transcribe" or "translate" (translate to English)
             output_path: Path to save transcript incrementally (optional)
-            incremental_save: Save after each segment to avoid data loss (default: True)
             use_actual_time: Use wall-clock timestamps instead of relative offsets
             base_time: Base wall-clock time for timestamp calculations
         
@@ -101,7 +99,6 @@ class TranscriptionEngine:
             language=language,
             task=task,
             beam_size=5,
-            word_timestamps=True,
             vad_filter=True  # Voice activity detection to filter silence
         )
         
@@ -115,7 +112,7 @@ class TranscriptionEngine:
 
         # Open file for incremental writing if requested
         output_file = None
-        if incremental_save and output_path:
+        if output_path:
             output_file = open(output_path, 'w', encoding='utf-8')
             output_file.write(f"# Transcription (in progress...)\n")
             output_file.write(f"# Language: {info.language} (probability: {info.language_probability:.2f})\n")
@@ -158,7 +155,7 @@ class TranscriptionEngine:
         self,
         audio_chunk: np.ndarray,
         language: Optional[str] = None
-    ) -> Tuple[List[dict], dict]:
+    ) -> List[dict]:
         """
         Transcribe a single audio chunk.
         Optimized for real-time streaming with lower beam size.
@@ -168,19 +165,18 @@ class TranscriptionEngine:
             language: Language code or None for auto-detection
         
         Returns:
-            Tuple of (segments, info)
+            List of transcription segments
         """
         # Ensure audio is float32
         if audio_chunk.dtype != np.float32:
             audio_chunk = audio_chunk.astype(np.float32)
         
         # Transcribe with faster settings
-        segments_gen, info = self.model.transcribe(
+        segments_gen, _ = self.model.transcribe(
             audio_chunk,
             language=language,
             beam_size=3,  # Lower for speed
-            vad_filter=True,
-            word_timestamps=True
+            vad_filter=True
         )
         
         # Convert to list
@@ -192,51 +188,7 @@ class TranscriptionEngine:
                 'text': segment.text.strip()
             })
         
-        info_dict = {
-            'language': info.language,
-            'language_probability': info.language_probability,
-            'duration': info.duration
-        }
-        
-        return segments, info_dict
-    
-    def format_transcript(
-        self,
-        segments: List[dict],
-        include_timestamps: bool = True,
-        use_actual_time: bool = False,
-        base_time: Optional[datetime] = None
-    ) -> str:
-        """
-        Format transcription segments into readable text.
-        
-        Args:
-            segments: List of segment dictionaries
-            include_timestamps: Include timestamps in output
-            use_actual_time: Use wall-clock timestamps instead of relative offsets
-            base_time: Base wall-clock time for timestamp calculations
-        
-        Returns:
-            Formatted transcript string
-        """
-        lines = []
-        
-        if use_actual_time and base_time is None:
-            base_time = datetime.now()
-
-        for segment in segments:
-            if include_timestamps:
-                timestamp = self.format_timestamp(
-                    segment['start'],
-                    segment['end'],
-                    use_actual_time=use_actual_time,
-                    base_time=base_time
-                )
-                lines.append(f"{timestamp} {segment['text']}")
-            else:
-                lines.append(segment['text'])
-        
-        return '\n'.join(lines)
+        return segments
     
     @staticmethod
     def _format_time(seconds: float) -> str:
@@ -292,13 +244,21 @@ class TranscriptionEngine:
         output_path = Path(output_path)
         
         if format_type == "txt":
-            transcript = self.format_transcript(
-                segments,
-                include_timestamps,
-                use_actual_time=use_actual_time,
-                base_time=base_time
-            )
-            output_path.write_text(transcript, encoding='utf-8')
+            lines = []
+            if use_actual_time and base_time is None:
+                base_time = datetime.now()
+            for segment in segments:
+                if include_timestamps:
+                    timestamp = self.format_timestamp(
+                        segment['start'],
+                        segment['end'],
+                        use_actual_time=use_actual_time,
+                        base_time=base_time
+                    )
+                    lines.append(f"{timestamp} {segment['text']}")
+                else:
+                    lines.append(segment['text'])
+            output_path.write_text('\n'.join(lines), encoding='utf-8')
             
         elif format_type == "srt":
             self._save_srt(segments, output_path)

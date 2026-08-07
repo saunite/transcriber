@@ -4,19 +4,14 @@ Handles extracting audio from video files using ffmpeg.
 """
 
 import os
-import platform
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Optional
 
 
 class AudioExtractor:
     """Extract audio from video files using ffmpeg."""
     
-    def __init__(self):
-        self.system = platform.system()
-        
     def _check_ffmpeg(self) -> bool:
         """Check if ffmpeg is available on the system."""
         try:
@@ -32,7 +27,6 @@ class AudioExtractor:
     def extract_audio(
         self,
         video_path: str,
-        output_path: Optional[str] = None,
         sample_rate: int = 16000
     ) -> str:
         """
@@ -40,8 +34,6 @@ class AudioExtractor:
         
         Args:
             video_path: Path to the input video file
-            output_path: Path for the output audio file (WAV format)
-                        If None, creates a temporary file
             sample_rate: Audio sample rate in Hz (default: 16000, required for Whisper)
         
         Returns:
@@ -61,12 +53,9 @@ class AudioExtractor:
         if not video_path.exists():
             raise FileNotFoundError(f"Video file not found: {video_path}")
         
-        # Create output path if not provided
-        if output_path is None:
-            temp_dir = tempfile.gettempdir()
-            output_path = os.path.join(temp_dir, f"extracted_audio_{os.getpid()}.wav")
-        else:
-            output_path = str(Path(output_path))
+        # Create temporary output path
+        temp_dir = tempfile.gettempdir()
+        output_path = os.path.join(temp_dir, f"extracted_audio_{os.getpid()}.wav")
         
         # Build ffmpeg command (cross-platform)
         command = [

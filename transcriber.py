@@ -284,7 +284,6 @@ def transcribe_file(engine: TranscriptionEngine, args) -> int:
             language=args.language,
             task=args.task,
             output_path=args.output,
-            incremental_save=True,
             use_actual_time=args.actual_time,
             base_time=base_time
         )
@@ -353,7 +352,7 @@ def _process_audio_chunk(
         audio_data = signal.resample(audio_data, num_samples)
 
     chunk_duration_sec = len(audio_data) / 16000
-    segments, _ = engine.transcribe_chunk(audio_data, language=language)
+    segments = engine.transcribe_chunk(audio_data, language=language)
 
     results = []
     for seg in segments:
@@ -506,8 +505,7 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
         # Start capturing
         capture.capture_stream(
             callback=audio_callback,
-            device=args.audio_device,
-            duration=None  # Infinite until Ctrl+C
+            device=args.audio_device
         )
     except KeyboardInterrupt:
         print("\n\n⏹️  Stopping transcription...")
@@ -700,96 +698,71 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
                 output_file.write(line + "\n")
                 output_file.flush()
 
-    def sys_worker():
-        """Dedicated thread: drains system audio queue and runs inference."""
+    def _drain_and_transcribe(queue, buffer, threshold, tag, gate, transform=None):
+        """Dedicated thread: drains an audio queue and runs inference."""
         nonlocal last_speech_time
-        sys_buffer = []
-        system_time_offset = 0.0
+        time_offset = 0.0
 
-        while not stop_event.is_set() or not sys_audio_queue.empty():
-            # Drain queue into buffer (non-blocking)
-            while not sys_audio_queue.empty():
-                raw = sys_audio_queue.get_nowait()
-                # Resample 48kHz -> 16kHz here, away from the capture callback
-                resampled_len = int(len(raw) * target_rate / wasapi_rate)
-                resampled = signal.resample(raw, resampled_len)
-                # Write 16kHz audio to disk (same rate as mic, Whisper-ready)
-                if sys_wav_file:
-                    int16_data = (resampled * 32767.0).clip(-32768, 32767).astype(np.int16)
-                    sys_wav_file.writeframes(int16_data.tobytes())
-                sys_buffer.append(resampled)
+        while not stop_event.is_set() or not queue.empty():
+            while not queue.empty():
+                item = queue.get_nowait()
+                if transform:
+                    item = transform(item)
+                buffer.append(item)
 
-            total_sys = sum(len(c) for c in sys_buffer)
-            if total_sys >= chunk_duration_samples:
-                system_data = np.concatenate(sys_buffer)
-                if len(system_data) > overlap_samples:
-                    sys_buffer[:] = [system_data[-overlap_samples:]]
+            total = sum(len(c) for c in buffer)
+            if total >= threshold:
+                data = np.concatenate(buffer)
+                if len(data) > overlap_samples:
+                    buffer[:] = [data[-overlap_samples:]]
                 else:
-                    sys_buffer.clear()
-                try:
-                    results, spoke, system_time_offset = _process_audio_chunk(
-                        engine, system_data, system_time_offset,
-                        args.actual_time, session_start_time,
-                        language=args.language, sample_rate=target_rate
-                    )
-                    if spoke:
-                        last_speech_time = time.time()
-                    for ts, seg in results:
-                        _emit(f"{ts} [SYS] {seg['text']}")
-                        all_segments.append(seg)
-                except Exception as e:
-                    print(f"  ❌ Error transcribing system audio: {e}")
-            else:
-                time.sleep(0.05)
-
-    def mic_worker():
-        """Dedicated thread: drains mic audio queue and runs inference."""
-        nonlocal last_speech_time
-        mic_buffer_local = []
-        mic_time_offset = 0.0
-
-        while not stop_event.is_set() or not mic_audio_queue.empty():
-            while not mic_audio_queue.empty():
-                mic_buffer_local.append(mic_audio_queue.get_nowait())
-
-            total_mic = sum(len(c) for c in mic_buffer_local)
-            if total_mic >= mic_chunk_samples:
-                mic_data = np.concatenate(mic_buffer_local)
-                if len(mic_data) > overlap_samples:
-                    mic_buffer_local[:] = [mic_data[-overlap_samples:]]
-                else:
-                    mic_buffer_local.clear()
-                if np.max(np.abs(mic_data)) > 0.01:
+                    buffer.clear()
+                if not gate or np.max(np.abs(data)) > 0.01:
                     try:
-                        results, spoke, mic_time_offset = _process_audio_chunk(
-                            engine, mic_data, mic_time_offset,
+                        results, spoke, time_offset = _process_audio_chunk(
+                            engine, data, time_offset,
                             args.actual_time, session_start_time,
                             language=args.language, sample_rate=target_rate
                         )
                         if spoke:
                             last_speech_time = time.time()
                         for ts, seg in results:
-                            _emit(f"{ts} [MIC] {seg['text']}")
+                            _emit(f"{ts} [{tag}] {seg['text']}")
                             all_segments.append(seg)
                     except Exception as e:
-                        print(f"  ❌ Error transcribing microphone: {e}")
+                        print(f"  ❌ Error transcribing {tag.lower()} audio: {e}")
             else:
                 time.sleep(0.05)
 
+    def transform_sys(raw):
+        """Resample 48kHz -> 16kHz away from the capture callback, persist 16kHz WAV."""
+        resampled = signal.resample(raw, int(len(raw) * target_rate / wasapi_rate))
+        if sys_wav_file:
+            int16_data = (resampled * 32767.0).clip(-32768, 32767).astype(np.int16)
+            sys_wav_file.writeframes(int16_data.tobytes())
+        return resampled
+
     # Start dedicated worker threads (sys and mic run in parallel, never blocking each other)
-    sys_thread = threading.Thread(target=sys_worker, daemon=True)
+    sys_thread = threading.Thread(
+        target=_drain_and_transcribe,
+        args=(sys_audio_queue, [], chunk_duration_samples, "SYS", False, transform_sys),
+        daemon=True
+    )
     sys_thread.start()
     mic_thread = None
     if args.include_mic:
-        mic_thread = threading.Thread(target=mic_worker, daemon=True)
+        mic_thread = threading.Thread(
+            target=_drain_and_transcribe,
+            args=(mic_audio_queue, [], mic_chunk_samples, "MIC", True),
+            daemon=True
+        )
         mic_thread.start()
 
     try:
         # Start capturing (callbacks only enqueue audio now, never block)
         capture.capture_stream(
             callback=audio_callback,
-            device_index=device_index,
-            duration=None  # Infinite until Ctrl+C
+            device_index=device_index
         )
     except KeyboardInterrupt:
         print("\n\nStopping transcription...")
@@ -812,22 +785,24 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
     # Merge sys + mic WAV into a stereo file if both were recorded
     merged_audio_save_path = None
     if sys_audio_save_path and mic_audio_save_path:
+        import subprocess
+        base_stem = Path(sys_audio_save_path).stem.replace('_sys', '')
+        base_dir = Path(sys_audio_save_path).parent
+        merged_audio_save_path = str(base_dir / f"{base_stem}_merged.wav")
+        print("\nMerging system and microphone audio...")
         try:
-            import soundfile as sf
-            print("\nMerging system and microphone audio...")
-            sys_data, sys_rate = sf.read(sys_audio_save_path, dtype='float32')
-            mic_data, mic_rate = sf.read(mic_audio_save_path, dtype='float32')
-            # Both are 16kHz mono — no resampling needed
-            # Trim to the shorter of the two to align them
-            n = min(len(sys_data), len(mic_data))
-            stereo = np.column_stack([sys_data[:n], mic_data[:n]])
-            base_stem = Path(sys_audio_save_path).stem.replace('_sys', '')
-            base_dir = Path(sys_audio_save_path).parent
-            merged_audio_save_path = str(base_dir / f"{base_stem}_merged.wav")
-            sf.write(merged_audio_save_path, stereo, sys_rate)
+            # Stack sys (L) and mic (R) mono 16kHz WAVs, trimming to the shorter input
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", sys_audio_save_path, "-i", mic_audio_save_path,
+                 "-filter_complex", "[0:a][1:a]amerge=inputs=2:duration=shortest",
+                 merged_audio_save_path],
+                check=True,
+                capture_output=True
+            )
             print(f"✓ Merged audio saved to: {merged_audio_save_path}")
         except Exception as e:
             print(f"⚠️  Could not merge audio files: {e}")
+            merged_audio_save_path = None
 
     # Summary
     print(f"\n{'='*60}")

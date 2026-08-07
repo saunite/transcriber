@@ -67,4 +67,4 @@ echo ""
 
 # Start transcription with selected audio device
 # To disable auto-stop, add: --silence-timeout 0
-"${PY_CMD}" transcriber.py --live ${DEVICE_FLAG} --model base --output "${output_file}" --chunk-duration 10
+"${PY_CMD}" transcriber.py --live ${AUDIO_DEVICE_FLAG} --model base --output "${output_file}" --chunk-duration 10
