@@ -9,7 +9,7 @@ License: GPLv2
 import sys
 import signal
 import argparse
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from audio_extractor import AudioExtractor
 from audio_capture import AudioCapture, setup_loopback_instructions
@@ -331,16 +331,16 @@ def _process_audio_chunk(
     engine,
     audio_data,
     time_offset,
-    use_actual_time,
-    session_start_time,
     language=None,
     sample_rate=16000
 ):
-    """Resample to 16 kHz, transcribe a chunk, apply the running offset, format timestamps.
+    """Resample to 16 kHz, transcribe a chunk, apply the running offset, format relative timestamps.
 
     Returns (results, spoke, new_offset) where results is a list of
     (timestamp_str, adjusted_segment) tuples and spoke is True if any
-    non-empty text was transcribed.
+    non-empty text was transcribed. timestamp_str is always the relative
+    [MM:SS -> MM:SS] range; callers substitute a live wall-clock stamp
+    (read from the system clock at emit time) when actual-time mode is on.
     """
     import numpy as np
     from scipy import signal
@@ -360,18 +360,18 @@ def _process_audio_chunk(
             continue
         adjusted_start = seg['start'] + time_offset
         adjusted_end = seg['end'] + time_offset
-        timestamp = engine.format_timestamp(
-            seg['start'] if use_actual_time else adjusted_start,
-            seg['end'] if use_actual_time else adjusted_end,
-            use_actual_time=use_actual_time,
-            base_time=(datetime.now() - timedelta(seconds=chunk_duration_sec)) if use_actual_time else session_start_time
-        )
+        timestamp = engine.format_timestamp(adjusted_start, adjusted_end)
         adjusted_seg = seg.copy()
         adjusted_seg['start'] = adjusted_start
         adjusted_seg['end'] = adjusted_end
         results.append((timestamp, adjusted_seg))
 
     return results, bool(results), time_offset + chunk_duration_sec
+
+
+def _wall_clock_stamp() -> str:
+    """Current local date/time, read fresh at the call site."""
+    return datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
 
 
 def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
@@ -405,7 +405,6 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
     audio_buffer = []
     chunk_duration_samples = int(native_rate * args.chunk_duration)
     time_offset = 0.0  # Track cumulative time offset
-    session_start_time = datetime.now() if args.actual_time else None
     last_speech_time = time.time()  # Track time of last detected speech
     silence_timeout_enabled = args.silence_timeout > 0
     
@@ -474,18 +473,18 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
             try:
                 results, spoke, new_offset = _process_audio_chunk(
                     engine, audio_data, time_offset,
-                    args.actual_time, session_start_time,
                     language=args.language, sample_rate=native_rate
                 )
                 time_offset = new_offset
-                
+
                 # Reset silence timer if speech was detected
                 if spoke:
                     last_speech_time = time.time()
-                
+
                 # Print and save results
                 for timestamp, seg in results:
-                    line = f"{timestamp} {seg['text']}"
+                    stamp = _wall_clock_stamp() if args.actual_time else timestamp
+                    line = f"{stamp} {seg['text']}"
                     print(line)
                     all_segments.append(seg)
                     
@@ -600,7 +599,6 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
 
     # Storage
     all_segments = []
-    session_start_time = datetime.now() if args.actual_time else None
     last_speech_time = time.time()  # Track time of last detected speech
     silence_timeout_enabled = args.silence_timeout > 0
 
@@ -721,13 +719,13 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
                     try:
                         results, spoke, time_offset = _process_audio_chunk(
                             engine, data, time_offset,
-                            args.actual_time, session_start_time,
                             language=args.language, sample_rate=target_rate
                         )
                         if spoke:
                             last_speech_time = time.time()
                         for ts, seg in results:
-                            _emit(f"{ts} [{tag}] {seg['text']}")
+                            stamp = _wall_clock_stamp() if args.actual_time else ts
+                            _emit(f"{stamp} [{tag}] {seg['text']}")
                             all_segments.append(seg)
                     except Exception as e:
                         print(f"  ❌ Error transcribing {tag.lower()} audio: {e}")
