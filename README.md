@@ -70,13 +70,13 @@ python transcriber.py --file meeting.mp4 --language en --model medium
 
 Double-click `start_teams_transcription.bat` to automatically start transcription with both system audio and microphone capture. The transcript will be saved with a timestamp (e.g., `meeting_20251110_143052.txt`).
 
-The launcher passes extra arguments through to `transcriber.py`, so you can run it with a filename prefix and/or flags:
+The launcher passes extra arguments through to `transcriber.py`, so you can run it with a filename prefix and/or flags. Timestamps default to wall-clock time (`--actual-time` is always passed):
 
 ```bat
 start_teams_transcription.bat                  REM default: meeting_TIMESTAMP.txt
 start_teams_transcription.bat sprint-review    REM filename prefix
 start_teams_transcription.bat --silence-timeout 0
-start_teams_transcription.bat --actual-time --save-audio
+start_teams_transcription.bat --save-audio
 ```
 
 **Manual Command:**
@@ -121,9 +121,10 @@ REM Example:
 merge_and_transcribe.bat mic.wav sys.wav transcript.txt
 
 REM Windows: Teams meeting (WASAPI loopback + mic), with optional prefix/flags
+REM Timestamps default to wall-clock time (--actual-time is always passed)
 start_teams_transcription.bat [name-prefix] [transcriber flags...]
 REM Example:
-start_teams_transcription.bat sprint-review --actual-time --silence-timeout 0
+start_teams_transcription.bat sprint-review --silence-timeout 0
 ```
 
 On Linux, use `start_transcription.sh` for live capture (see [Linux](#linux) under "Setup for Real-time Audio Capture").

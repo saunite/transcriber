@@ -5,12 +5,12 @@ REM (system audio + microphone) for complete Teams meeting coverage
 REM
 REM Usage: start_teams_transcription.bat [name-prefix] [transcriber flags...]
 REM   name-prefix:  prefix for the output filename (default: meeting)
+REM   Timestamps default to wall-clock time (--actual-time is always passed).
 REM   flags:        passed through to transcriber.py, e.g.
 REM                   --silence-timeout 0      never auto-stop on silence
-REM                   --actual-time            wall-clock timestamps
 REM                   --save-audio             also save sys/mic WAV files
 REM                   --language en            force a language
-REM   Example: start_teams_transcription.bat sprint-review --actual-time --silence-timeout 0
+REM   Example: start_teams_transcription.bat sprint-review --silence-timeout 0
 setlocal
 
 set NAME_PREFIX=meeting
@@ -55,7 +55,7 @@ echo ============================================================
 echo.
 
 REM Start transcription with WASAPI loopback + microphone
-python transcriber.py --live --wasapi --include-mic --model base --output "%output_file%" --chunk-duration 10 %REST%
+python transcriber.py --live --wasapi --include-mic --model base --output "%output_file%" --chunk-duration 10 --actual-time %REST%
 
 echo.
 echo ============================================================

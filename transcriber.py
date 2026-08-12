@@ -6,6 +6,9 @@ Cross-platform audio transcription tool using faster-whisper.
 License: GPLv2
 """
 
+import os
+os.environ.pop("TZ", None)
+
 import sys
 import signal
 import argparse

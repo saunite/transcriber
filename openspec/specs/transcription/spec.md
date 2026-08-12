@@ -43,7 +43,7 @@ The system SHALL let users specify a language code and a task of transcribe (kee
 - **THEN** the system transcribes with English as the language and translates to English
 
 ### Requirement: Format timestamps for output
-The system SHALL format segment times as relative `[MM:SS -> MM:SS]` ranges when actual-time mode is off. When actual-time mode is on: file transcription SHALL format wall-clock time as a `[start -> end]` range anchored to one base time captured once at the start of file processing; live/streaming transcription SHALL format wall-clock time as a single `YYYY-MM-DD HH:MM:SS` timestamp read directly from the system clock at the moment each output line is produced, not reconstructed from audio offsets or chunk duration.
+The system SHALL format segment times as relative `[MM:SS -> MM:SS]` ranges when actual-time mode is off. When actual-time mode is on: file transcription SHALL format wall-clock time as a `[start -> end]` range anchored to one base time captured once at the start of file processing; live/streaming transcription SHALL format wall-clock time as a single `YYYY-MM-DD HH:MM:SS` timestamp read directly from the system clock at the moment each output line is produced, not reconstructed from audio offsets or chunk duration. Local-time resolution SHALL reflect the OS's actual configured timezone regardless of an inherited shell environment variable the process can't correctly interpret.
 
 #### Scenario: Relative timestamps
 - **WHEN** actual-time mode is off
@@ -56,6 +56,10 @@ The system SHALL format segment times as relative `[MM:SS -> MM:SS]` ranges when
 #### Scenario: Wall-clock timestamps for live transcription
 - **WHEN** actual-time mode is on during live capture (simple or WASAPI mode)
 - **THEN** the system stamps each output line with the current local date and time read from the system clock at the moment that line is produced, regardless of how long transcription of that chunk took
+
+#### Scenario: Launched from a shell with an incompatible inherited TZ variable
+- **WHEN** the process is launched from a shell (e.g. Cygwin) that exports an IANA-style `TZ` environment variable the Windows C runtime cannot parse
+- **THEN** wall-clock timestamps still reflect the OS's actual configured local timezone, not UTC
 
 ### Requirement: Save transcripts in multiple formats
 The system SHALL save transcripts in txt, srt, or vtt format, with txt supporting timestamps toggling and srt/vtt using their standard time formats.
