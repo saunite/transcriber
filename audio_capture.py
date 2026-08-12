@@ -5,10 +5,10 @@ Supports capturing system audio output (loopback) on Windows and Linux.
 
 import platform
 import sys
+import time
 import numpy as np
 import sounddevice as sd
 from typing import Callable, Optional
-from queue import Queue
 
 
 class AudioCapture:
@@ -17,7 +17,7 @@ class AudioCapture:
     def __init__(self, sample_rate: int = 16000, channels: int = 1):
         """
         Initialize audio capture.
-        
+
         Args:
             sample_rate: Audio sample rate in Hz (default: 16000 for Whisper)
             channels: Number of audio channels (1=mono, 2=stereo)
@@ -26,7 +26,7 @@ class AudioCapture:
         self.channels = channels
         self.system = platform.system()
         self.is_capturing = False
-        self.audio_queue = Queue()
+        self._user_callback = None
         
     def list_devices(self) -> None:
         """List all available audio devices."""
@@ -82,9 +82,13 @@ class AudioCapture:
         """Callback function for audio stream."""
         if status:
             print(f"Audio callback status: {status}", file=sys.stderr)
-        
-        # Put audio data in queue for processing
-        self.audio_queue.put(indata.copy())
+
+        # Invoke user callback directly
+        if self._user_callback:
+            try:
+                self._user_callback(indata.copy())
+            except Exception as e:
+                print(f"Error in audio callback: {e}", file=sys.stderr)
     
     def capture_stream(
         self,
@@ -93,7 +97,7 @@ class AudioCapture:
     ) -> None:
         """
         Capture audio from system in real-time and send to callback.
-        
+
         Args:
             callback: Function to process audio chunks (receives numpy array)
             device: Device index to capture from (None = default, -1 = auto-detect loopback)
@@ -114,9 +118,11 @@ class AudioCapture:
                     print("  - Run: pactl list sources | grep -i monitor")
                 raise RuntimeError("No loopback device found")
             print(f"Using loopback device: {sd.query_devices(device)['name']}")
-        
+
+        # Store callback for direct invocation in _audio_callback
+        self._user_callback = callback
         self.is_capturing = True
-        
+
         try:
             with sd.InputStream(
                 device=device,
@@ -126,16 +132,11 @@ class AudioCapture:
                 callback=self._audio_callback
             ):
                 print("🎙️  Capturing audio... Press Ctrl+C to stop")
-                
-                # Process audio from queue
+
+                # Keep stream running until interrupted
                 while self.is_capturing:
-                    if not self.audio_queue.empty():
-                        audio_chunk = self.audio_queue.get()
-                        callback(audio_chunk)
-                    
-                    # Small sleep to prevent busy-waiting
-                    __import__('time').sleep(0.01)
-                        
+                    time.sleep(0.01)
+
         except KeyboardInterrupt:
             print("\n\n✓ Capture stopped by user")
         except Exception as e:

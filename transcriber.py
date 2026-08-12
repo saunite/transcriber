@@ -14,6 +14,7 @@ import signal
 import argparse
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 from audio_extractor import AudioExtractor
 from audio_capture import AudioCapture, setup_loopback_instructions
 from transcription_engine import TranscriptionEngine
@@ -377,45 +378,28 @@ def _wall_clock_stamp() -> str:
     return datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
 
 
-def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
-    """Simple live transcription for non-WASAPI mode."""
+def _print_header(model: str, language: Optional[str], chunk_duration: float, mode: str = "") -> None:
+    """Print header for live transcription."""
     print("\n" + "="*60)
     print("Live Audio Transcription")
     print("="*60)
-    print(f"Model: {args.model}")
-    print(f"Language: {args.language or 'auto-detect'}")
-    print(f"Chunk duration: {args.chunk_duration}s")
+    print(f"Model: {model}")
+    print(f"Language: {language or 'auto-detect'}")
+    print(f"Chunk duration: {chunk_duration}s")
+    if mode:
+        print(f"Mode: {mode}")
     print("="*60 + "\n")
 
-    import numpy as np
-    import sounddevice as sd
+
+def _setup_output_files(args, native_rate: int = 16000, include_mic: bool = False):
+    """
+    Open and initialize output transcript and WAV files.
+
+    Returns: (output_file, wav_file, audio_save_path)
+    For WASAPI with mic: (output_file, sys_wav_file, mic_wav_file, sys_audio_save_path, mic_audio_save_path)
+    """
     import wave
-    
-    # Get device info to use its native sample rate
-    device_id = args.audio_device if args.audio_device >= 0 else None
-    if device_id is not None:
-        device_info = sd.query_devices(device_id)
-        native_rate = int(device_info['default_samplerate'])
-        print(f"Using device native sample rate: {native_rate} Hz")
-    else:
-        native_rate = 48000
-    
-    # Initialize audio capture with native sample rate
-    capture = AudioCapture(sample_rate=native_rate, channels=1)
-    
-    # Storage
-    all_segments = []
-    audio_buffer = []
-    chunk_duration_samples = int(native_rate * args.chunk_duration)
-    time_offset = 0.0  # Track cumulative time offset
-    last_speech_time = time.time()  # Track time of last detected speech
-    silence_timeout_enabled = args.silence_timeout > 0
-    
-    # Overlap settings to prevent speech loss at chunk boundaries
-    overlap_duration = 1.0  # 1 second overlap
-    overlap_samples = int(native_rate * overlap_duration)  # In native rate
-    
-    # Open output file for incremental writing
+
     output_file = None
     if args.output:
         output_file = open(args.output, 'w', encoding='utf-8')
@@ -424,7 +408,6 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
         output_file.write(f"# Language: {args.language or 'auto-detect'}\n\n")
         output_file.flush()
 
-    # Open WAV file for audio recording if requested
     wav_file = None
     audio_save_path = None
     if args.save_audio:
@@ -437,6 +420,63 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
         wav_file.setsampwidth(2)  # int16
         wav_file.setframerate(native_rate)
         print(f"💾 Recording audio to: {audio_save_path}")
+
+    return output_file, wav_file, audio_save_path
+
+
+def _print_summary(all_segments: list, args, output_path: Optional[str] = None, audio_save_path: Optional[str] = None, sys_audio_save_path: Optional[str] = None, mic_audio_save_path: Optional[str] = None, merged_audio_save_path: Optional[str] = None) -> None:
+    """Print summary of transcription completion."""
+    print(f"\n{'='*60}")
+    print("Transcription Complete")
+    print(f"{'='*60}")
+    print(f"Total segments: {len(all_segments)}")
+    if output_path:
+        print(f"Saved to: {output_path}")
+    if audio_save_path:
+        print(f"Audio saved to: {audio_save_path}")
+    if sys_audio_save_path:
+        print(f"System audio saved to: {sys_audio_save_path}")
+    if mic_audio_save_path:
+        print(f"Microphone audio saved to: {mic_audio_save_path}")
+    if merged_audio_save_path:
+        print(f"Merged audio saved to: {merged_audio_save_path}")
+    print(f"{'='*60}\n")
+
+
+def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
+    """Simple live transcription for non-WASAPI mode."""
+    import numpy as np
+    import sounddevice as sd
+
+    # Get device info to use its native sample rate
+    device_id = args.audio_device if args.audio_device >= 0 else None
+    if device_id is not None:
+        device_info = sd.query_devices(device_id)
+        native_rate = int(device_info['default_samplerate'])
+        print(f"Using device native sample rate: {native_rate} Hz")
+    else:
+        native_rate = 48000
+
+    # Print header
+    _print_header(args.model, args.language, args.chunk_duration)
+
+    # Initialize audio capture with native sample rate
+    capture = AudioCapture(sample_rate=native_rate, channels=1)
+
+    # Storage
+    all_segments = []
+    audio_buffer = []
+    chunk_duration_samples = int(native_rate * args.chunk_duration)
+    time_offset = 0.0  # Track cumulative time offset
+    last_speech_time = time.time()  # Track time of last detected speech
+    silence_timeout_enabled = args.silence_timeout > 0
+
+    # Overlap settings to prevent speech loss at chunk boundaries
+    overlap_duration = 1.0  # 1 second overlap
+    overlap_samples = int(native_rate * overlap_duration)  # In native rate
+
+    # Setup output and WAV files
+    output_file, wav_file, audio_save_path = _setup_output_files(args, native_rate)
 
     print("🎙️  Listening... (Press Ctrl+C to stop)\n")
     if silence_timeout_enabled:
@@ -517,16 +557,8 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
         if wav_file:
             wav_file.close()
 
-    # Summary
-    print(f"\n{'='*60}")
-    print("Transcription Complete")
-    print(f"{'='*60}")
-    print(f"Total segments: {len(all_segments)}")
-    if args.output:
-        print(f"Saved to: {args.output}")
-    if audio_save_path:
-        print(f"Audio saved to: {audio_save_path}")
-    print(f"{'='*60}\n")
+    # Print summary
+    _print_summary(all_segments, args, output_path=args.output, audio_save_path=audio_save_path)
 
     return 0
 
@@ -541,14 +573,8 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
     import threading
     import wave
 
-    print("\n" + "="*60)
-    print("Live Audio Transcription")
-    print("="*60)
-    print(f"Model: {args.model}")
-    print(f"Language: {args.language or 'auto-detect'}")
-    print(f"Chunk duration: {args.chunk_duration}s")
-    print("Mode: WASAPI Loopback (Bluetooth-compatible)")
-    print("="*60 + "\n")
+    # Print header
+    _print_header(args.model, args.language, args.chunk_duration, "WASAPI Loopback (Bluetooth-compatible)")
 
     # Initialize WASAPI capture for system audio
     capture = WASAPICapture()
@@ -805,20 +831,8 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
             print(f"⚠️  Could not merge audio files: {e}")
             merged_audio_save_path = None
 
-    # Summary
-    print(f"\n{'='*60}")
-    print("Transcription Complete")
-    print(f"{'='*60}")
-    print(f"Total segments: {len(all_segments)}")
-    if args.output:
-        print(f"Saved to: {args.output}")
-    if sys_audio_save_path:
-        print(f"System audio saved to: {sys_audio_save_path}")
-    if mic_audio_save_path:
-        print(f"Microphone audio saved to: {mic_audio_save_path}")
-    if merged_audio_save_path:
-        print(f"Merged audio saved to: {merged_audio_save_path}")
-    print(f"{'='*60}\n")
+    # Print summary
+    _print_summary(all_segments, args, output_path=args.output, sys_audio_save_path=sys_audio_save_path, mic_audio_save_path=mic_audio_save_path, merged_audio_save_path=merged_audio_save_path)
 
     return 0
 
