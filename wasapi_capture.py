@@ -1,6 +1,8 @@
 """
 WASAPI loopback audio capture for Windows - captures system audio including Bluetooth
 """
+import queue
+import threading
 import pyaudiowpatch as pyaudio
 import numpy as np
 from typing import Callable, Optional
@@ -41,7 +43,12 @@ class WASAPICapture:
     ):
         """
         Capture audio from WASAPI loopback device.
-        
+
+        The blocking device read runs on a background thread so Ctrl+C
+        (delivered only to the main thread) is never stuck waiting on a
+        stalled read; the main thread only ever blocks on a short-timeout
+        queue read, which always returns control to the interpreter.
+
         Args:
             callback: Function called with each audio chunk (numpy array)
             device_index: WASAPI loopback device index (None = auto-detect)
@@ -53,14 +60,14 @@ class WASAPICapture:
                 raise RuntimeError("No WASAPI loopback device found")
         else:
             device_info = self.p.get_device_info_by_index(device_index)
-        
+
         print(f"🎙️  Capturing from: {device_info['name']}")
-        
+
         # Audio parameters
         CHANNELS = device_info['maxInputChannels']
         RATE = int(device_info['defaultSampleRate'])
         chunk_size = 1024
-        
+
         # Open stream
         stream = self.p.open(
             format=pyaudio.paInt16,
@@ -70,41 +77,52 @@ class WASAPICapture:
             frames_per_buffer=chunk_size,
             input_device_index=device_info['index']
         )
-        
+
         self.is_capturing = True
-        
-        try:
-            print("🎙️  Capturing audio... Press Ctrl+C to stop\n")
-            
+        audio_queue = queue.Queue()
+
+        def _read_loop():
+            """Background reader. stream.close() (called from the main
+            thread on shutdown) forces a blocked read to raise here,
+            which is how this loop exits."""
             while self.is_capturing:
                 try:
-                    # Read audio data with timeout to allow Ctrl+C responsiveness
                     data = stream.read(chunk_size, exception_on_overflow=False)
-                    audio_chunk = np.frombuffer(data, dtype=np.int16)
-                    
-                    # Convert to float32 mono for Whisper
-                    if CHANNELS == 2:
-                        # Convert stereo to mono
-                        audio_chunk = audio_chunk.reshape(-1, 2).mean(axis=1)
-                    
-                    # Normalize to float32 [-1, 1]
-                    audio_chunk = audio_chunk.astype(np.float32) / 32768.0
-                    
-                    # Call user callback
-                    callback(audio_chunk)
-                    
                 except IOError as e:
-                    # Handle buffer overflow/underflow gracefully
-                    if e.errno != pyaudio.paInputOverflowed:
-                        raise
+                    if e.errno == pyaudio.paInputOverflowed:
+                        continue
+                    self.is_capturing = False  # unrecoverable read error or closed stream
+                    break
+                except Exception:
+                    self.is_capturing = False
+                    break
+
+                audio_chunk = np.frombuffer(data, dtype=np.int16)
+                if CHANNELS == 2:
+                    audio_chunk = audio_chunk.reshape(-1, 2).mean(axis=1)
+                audio_chunk = audio_chunk.astype(np.float32) / 32768.0
+                audio_queue.put(audio_chunk)
+
+        reader_thread = threading.Thread(target=_read_loop, daemon=True)
+        reader_thread.start()
+
+        try:
+            print("🎙️  Capturing audio... Press Ctrl+C to stop\n")
+
+            while self.is_capturing:
+                try:
+                    audio_chunk = audio_queue.get(timeout=0.1)
+                except queue.Empty:
                     continue
-                
+                callback(audio_chunk)
+
         except KeyboardInterrupt:
             print("\n✓ Capture stopped by user")
         finally:
+            self.is_capturing = False
             stream.stop_stream()
             stream.close()
-            self.is_capturing = False
+            reader_thread.join(timeout=5)
     
     def cleanup(self):
         """Clean up PyAudio resources."""
