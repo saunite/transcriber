@@ -85,7 +85,16 @@ Examples:
         choices=['tiny', 'base', 'small', 'medium', 'large', 'turbo'],
         help='Whisper model size (default: base). Larger = more accurate but slower'
     )
-    
+
+    parser.add_argument(
+        '--model-path',
+        type=str,
+        default=None,
+        help='Load the model from this local directory instead of resolving '
+             '--model by name via the network/cache. Used by bundled builds '
+             '(GUI sidecar, portable build); --model is still used for logging.'
+    )
+
     parser.add_argument(
         '--language',
         type=str,
@@ -253,7 +262,8 @@ Examples:
         engine = TranscriptionEngine(
             model_size=args.model,
             device=args.device,
-            compute_type=args.compute_type
+            compute_type=args.compute_type,
+            model_path=args.model_path
         )
         
         # File transcription mode

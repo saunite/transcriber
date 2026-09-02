@@ -22,6 +22,10 @@ The system SHALL capture system audio output in real time from a loopback source
 - **WHEN** the user presses Ctrl+C during live capture
 - **THEN** the system stops capturing gracefully
 
+#### Scenario: Capture stops on user interrupt even when the underlying read stalls
+- **WHEN** the user presses Ctrl+C during WASAPI live capture and the underlying audio read has stalled (no data returned, e.g. due to a device/format change, sleep/wake, or Bluetooth reconnect)
+- **THEN** the system still stops promptly, without requiring the process to be killed externally
+
 ### Requirement: Capture microphone audio
 The system SHALL capture microphone input concurrently with system audio when microphone inclusion is enabled, tagging its segments distinctly from system audio.
 

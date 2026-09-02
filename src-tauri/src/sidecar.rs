@@ -31,6 +31,22 @@ static TRANSCRIPT_LINE_RE: Lazy<Regex> = Lazy::new(|| {
 /// Logical name registered under `bundle.externalBin` in tauri.conf.json.
 const SIDECAR_NAME: &str = "transcriber-sidecar";
 
+/// Resolves the bundled model directory relative to the running app's own
+/// location via Tauri's path API, so this works identically whether the app
+/// is installed (NSIS) or run from a portable, extract-anywhere folder --
+/// see openspec/changes/add-portable-build/design.md Decision 1. Mirrors
+/// `bundle.resources: ["resources/model/**/*"]` in tauri.conf.json, which
+/// preserves that relative path under the resolved resource directory.
+fn resolve_model_dir(app: &AppHandle) -> Result<String, String> {
+    let dir = app
+        .path()
+        .resource_dir()
+        .map_err(|e| format!("could not resolve bundled resource directory: {e}"))?
+        .join("resources")
+        .join("model");
+    Ok(dir.to_string_lossy().into_owned())
+}
+
 pub struct SidecarManager {
     child: Option<CommandChild>,
     session_active: bool,
@@ -160,6 +176,8 @@ pub async fn start_live_session(
         "--wasapi".to_string(),
         "--model".to_string(),
         model,
+        "--model-path".to_string(),
+        resolve_model_dir(&app)?,
     ];
     // ponytail: hardcodes --wasapi (Windows). --coreaudio-tap (macOS) and
     // Linux's flag-less simple mode need the same branch here once the
@@ -225,6 +243,7 @@ pub async fn start_file_transcription(
         "--format".to_string(), format,
         "--task".to_string(), task,
         "--model".to_string(), model,
+        "--model-path".to_string(), resolve_model_dir(&app)?,
     ];
     if let Some(lang) = language {
         args.push("--language".to_string());

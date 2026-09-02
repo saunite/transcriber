@@ -1,44 +1,122 @@
-// UNVERIFIED against a running Tauri app (see index.html header comment).
-// Uses the global window.__TAURI__ (app.withGlobalTauri in
-// tauri.conf.json) -- no npm/bundler step.
+// Transcriber -- "Verbatim" direction (.impeccable/surfaces/src-index-html.md).
+// Uses the global window.__TAURI__ (app.withGlobalTauri in tauri.conf.json)
+// -- no npm/bundler step. IPC contract (commands/events) is fixed by
+// src-tauri/src/{main,sidecar}.rs; this file only owns presentation.
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
+// tauri-plugin-dialog registered in main.rs; withGlobalTauri exposes its
+// JS API at window.__TAURI__.dialog with no npm package needed (UNVERIFIED
+// against a real build -- see src-tauri/Cargo.toml).
+const { open: openFileDialog } = window.__TAURI__.dialog;
 
 const els = {
-  toast: document.getElementById("toast"),
-  startLiveBtn: document.getElementById("start-live-btn"),
-  stopLiveBtn: document.getElementById("stop-live-btn"),
-  macosNotice: document.getElementById("macos-live-notice"),
-  liveControls: document.getElementById("live-controls"),
-  deviceSelect: document.getElementById("device-select"),
+  noteRoot: document.getElementById("note-root"),
+  settingsToggle: document.getElementById("settings-toggle"),
+  settingsDrawer: document.getElementById("settings-drawer"),
   modelSelect: document.getElementById("model-select"),
   languageInput: document.getElementById("language-input"),
   includeMicCheckbox: document.getElementById("include-mic-checkbox"),
-  micDeviceLabel: document.getElementById("mic-device-label"),
+  micDeviceField: document.getElementById("mic-device-field"),
   micDeviceSelect: document.getElementById("mic-device-select"),
-  transcriptView: document.getElementById("transcript-view"),
-  debugLog: document.getElementById("debug-log"),
+  tabLive: document.getElementById("tab-live"),
+  tabFile: document.getElementById("tab-file"),
+  panelLive: document.getElementById("panel-live"),
+  panelFile: document.getElementById("panel-file"),
+  liveStamp: document.getElementById("live-stamp"),
+  startingStamp: document.getElementById("starting-stamp"),
+  busyStamp: document.getElementById("busy-stamp"),
+  stopBtn: document.getElementById("stop-btn"),
+  liveEmpty: document.getElementById("live-empty"),
+  startLiveBtn: document.getElementById("start-live-btn"),
+  macosNotice: document.getElementById("macos-live-notice"),
+  transcriptLive: document.getElementById("transcript-live"),
   dropZone: document.getElementById("drop-zone"),
   formatSelect: document.getElementById("format-select"),
   taskSelect: document.getElementById("task-select"),
-  fileProgress: document.getElementById("file-progress"),
+  transcriptFile: document.getElementById("transcript-file"),
+  debugLog: document.getElementById("debug-log"),
 };
 
-function showToast(message) {
-  els.toast.textContent = message;
-  els.toast.classList.remove("hidden");
-  setTimeout(() => els.toast.classList.add("hidden"), 8000);
+// ---- Notes (error/status toasts) --------------------------------------
+
+function showNote(message) {
+  const note = document.createElement("div");
+  note.className = "note";
+  note.textContent = message;
+  note.addEventListener("click", () => note.remove());
+  els.noteRoot.appendChild(note);
+  setTimeout(() => note.remove(), 8000);
 }
 
-function appendTranscriptLine({ ts, tag, text }) {
-  const line = document.createElement("div");
-  line.className = "line";
-  const tagHtml = tag ? `<span class="tag-${tag}">[${tag}]</span> ` : "";
-  line.innerHTML = `<span class="ts">${ts}</span> ${tagHtml}<span class="text"></span>`;
-  line.querySelector(".text").textContent = text; // avoid HTML-injecting transcript text
-  els.transcriptView.appendChild(line);
-  els.transcriptView.scrollTop = els.transcriptView.scrollHeight;
+// ---- Tabs ---------------------------------------------------------------
+
+function selectTab(name) {
+  const liveActive = name === "live";
+  els.tabLive.setAttribute("aria-selected", String(liveActive));
+  els.tabFile.setAttribute("aria-selected", String(!liveActive));
+  els.panelLive.hidden = !liveActive;
+  els.panelFile.hidden = liveActive;
+  updateTopline();
+}
+
+els.tabLive.addEventListener("click", () => {
+  if (!els.tabLive.disabled) selectTab("live");
+});
+els.tabFile.addEventListener("click", () => selectTab("file"));
+
+function activeTab() {
+  return els.tabLive.getAttribute("aria-selected") === "true" ? "live" : "file";
+}
+
+// ---- Settings drawer ------------------------------------------------------
+
+els.settingsToggle.addEventListener("click", () => {
+  const expanded = els.settingsToggle.getAttribute("aria-expanded") === "true";
+  els.settingsToggle.setAttribute("aria-expanded", String(!expanded));
+  els.settingsDrawer.hidden = expanded;
+});
+
+els.includeMicCheckbox.addEventListener("change", () => {
+  els.micDeviceField.hidden = !els.includeMicCheckbox.checked;
+});
+
+async function populateMicDevices() {
+  try {
+    const devices = await invoke("list_devices");
+    els.micDeviceSelect.innerHTML = "";
+    for (const device of devices.filter((d) => d.max_input_channels > 0)) {
+      const opt = document.createElement("option");
+      opt.value = device.index;
+      opt.textContent = `[${device.index}] ${device.name}`;
+      els.micDeviceSelect.appendChild(opt);
+    }
+  } catch (err) {
+    showNote(`Could not list audio devices: ${err}`);
+  }
+}
+
+// ---- Transcript lines -----------------------------------------------------
+
+// Only one sidecar session runs at a time; incoming transcript-line /
+// sidecar-log events belong to whichever flow most recently started.
+let currentFlow = null; // "live" | "file" | null
+
+function appendTranscriptLine(list, { ts, tag, text }) {
+  const item = document.createElement("li");
+  item.className = "transcript-line";
+  const tagHtml = tag ? `<span class="line-tag line-tag-${tag}">${tag}</span>` : "";
+  item.innerHTML = `
+    <span class="line-meta">
+      <span class="line-ts mono">${ts}</span>
+      ${tagHtml}
+    </span>
+    <span class="line-text"></span>
+  `;
+  item.querySelector(".line-text").textContent = text; // avoid HTML-injecting transcript text
+  list.appendChild(item);
+  list.hidden = false;
+  list.scrollTop = list.scrollHeight;
 }
 
 function appendDebugLine(line) {
@@ -46,78 +124,97 @@ function appendDebugLine(line) {
   els.debugLog.scrollTop = els.debugLog.scrollHeight;
 }
 
-async function populateDevices() {
-  try {
-    const devices = await invoke("list_devices");
-    const inputDevices = devices.filter((d) => d.max_input_channels > 0);
-    for (const select of [els.deviceSelect, els.micDeviceSelect]) {
-      select.innerHTML = "";
-      for (const device of inputDevices) {
-        const opt = document.createElement("option");
-        opt.value = device.index;
-        opt.textContent = `[${device.index}] ${device.name}`;
-        select.appendChild(opt);
-      }
-    }
-  } catch (err) {
-    showToast(`Could not list audio devices: ${err}`);
-  }
+// ---- Live session state ----------------------------------------------------
+
+// idle -> starting (invoke resolved, no output yet) -> active (first output
+// arrived) -> idle. Mirrors specs/desktop-gui "Start live capture" (shows a
+// starting state until output begins).
+let liveState = "idle";
+
+function setLiveState(next) {
+  liveState = next;
+  els.liveEmpty.hidden = next !== "idle";
+  els.startingStamp.hidden = next !== "starting";
+  els.liveStamp.hidden = next !== "active";
+  els.stopBtn.hidden = next === "idle";
+  els.stopBtn.disabled = next === "stopping";
+  updateTopline();
 }
 
-let liveSessionActive = false;
-
-function setLiveSessionActive(active) {
-  liveSessionActive = active;
-  els.startLiveBtn.classList.toggle("hidden", active);
-  els.stopLiveBtn.classList.toggle("hidden", !active);
+function updateTopline() {
+  const onLiveTab = activeTab() === "live";
+  els.liveStamp.hidden = !(onLiveTab && liveState === "active");
+  els.startingStamp.hidden = !(onLiveTab && liveState === "starting");
+  els.stopBtn.hidden = !(onLiveTab && liveState !== "idle");
+  els.busyStamp.hidden = !(activeTab() === "file" && fileBusy);
 }
 
 async function startLiveSession() {
-  els.transcriptView.innerHTML = "";
+  els.transcriptLive.innerHTML = "";
+  els.transcriptLive.hidden = true;
+  els.startLiveBtn.disabled = true;
+  currentFlow = "live";
   try {
     await invoke("start_live_session", {
       model: els.modelSelect.value,
       language: els.languageInput.value.trim() || null,
       includeMic: els.includeMicCheckbox.checked,
-      micDevice: els.includeMicCheckbox.checked
-        ? Number(els.micDeviceSelect.value)
-        : null,
+      micDevice: els.includeMicCheckbox.checked ? Number(els.micDeviceSelect.value) : null,
     });
-    setLiveSessionActive(true);
+    setLiveState("starting");
   } catch (err) {
-    showToast(`Could not start live capture: ${err}`);
+    showNote(`Could not start live capture: ${err}`);
+    setLiveState("idle");
+  } finally {
+    els.startLiveBtn.disabled = false;
   }
 }
 
 async function stopLiveSession() {
+  setLiveState("stopping");
   try {
     await invoke("stop_live_session");
   } catch (err) {
-    showToast(`Could not stop live capture: ${err}`);
+    showNote(`Could not stop live capture: ${err}`);
   } finally {
-    setLiveSessionActive(false);
+    setLiveState("idle");
   }
 }
+
+els.startLiveBtn.addEventListener("click", startLiveSession);
+els.stopBtn.addEventListener("click", stopLiveSession);
+
+// ---- File transcription -----------------------------------------------------
 
 // Mirrors transcriber.py's video_extensions | audio_extensions -- checked
 // client-side so an unsupported drop never spawns the sidecar
 // (specs/desktop-gui "Drop an unsupported file").
-const SUPPORTED_EXTENSIONS = new Set([
-  "mp4", "avi", "mkv", "mov", "wmv", "flv", "webm", "m4v",
-  "mp3", "wav", "flac", "m4a", "ogg", "opus", "wma",
-]);
+const VIDEO_EXTENSIONS = ["mp4", "avi", "mkv", "mov", "wmv", "flv", "webm", "m4v"];
+const AUDIO_EXTENSIONS = ["mp3", "wav", "flac", "m4a", "ogg", "opus", "wma"];
+const SUPPORTED_EXTENSIONS = new Set([...VIDEO_EXTENSIONS, ...AUDIO_EXTENSIONS]);
 
 function hasSupportedExtension(filePath) {
   const ext = filePath.split(".").pop()?.toLowerCase();
   return !!ext && SUPPORTED_EXTENSIONS.has(ext);
 }
 
+let fileBusy = false;
+
+function setFileBusy(busy) {
+  fileBusy = busy;
+  updateTopline();
+}
+
 async function transcribeFile(filePath) {
   if (!hasSupportedExtension(filePath)) {
-    showToast(`Unsupported file type: ${filePath}`);
+    showNote(`Unsupported file type: ${filePath}`);
     return;
   }
-  els.fileProgress.classList.remove("hidden");
+  selectTab("file");
+  els.transcriptFile.innerHTML = "";
+  els.transcriptFile.hidden = true;
+  currentFlow = "file";
+  setFileBusy(true);
   try {
     await invoke("start_file_transcription", {
       filePath,
@@ -127,24 +224,39 @@ async function transcribeFile(filePath) {
       language: els.languageInput.value.trim() || null,
     });
   } catch (err) {
-    showToast(`Could not transcribe file: ${err}`);
-    els.fileProgress.classList.add("hidden");
+    showNote(`Could not transcribe file: ${err}`);
+    setFileBusy(false);
   }
 }
+
+els.dropZone.addEventListener("click", async () => {
+  const path = await openFileDialog({
+    multiple: false,
+    filters: [
+      { name: "Video", extensions: VIDEO_EXTENSIONS },
+      { name: "Audio", extensions: AUDIO_EXTENSIONS },
+    ],
+  });
+  if (typeof path === "string") transcribeFile(path);
+});
 
 function setupDropZone() {
   // dragDropEnabled (tauri.conf.json) routes file drops through the
   // tauri://drag-drop window event rather than the browser's native drop
   // event.
   listen("tauri://drag-drop", (event) => {
+    els.dropZone.classList.remove("drag-over");
     const paths = event.payload?.paths ?? [];
-    if (paths.length > 0) {
-      transcribeFile(paths[0]);
-    }
+    if (paths.length > 0) transcribeFile(paths[0]);
   });
-  listen("tauri://drag-enter", () => els.dropZone.classList.add("drag-over"));
+  listen("tauri://drag-enter", () => {
+    selectTab("file");
+    els.dropZone.classList.add("drag-over");
+  });
   listen("tauri://drag-leave", () => els.dropZone.classList.remove("drag-over"));
 }
+
+// ---- Platform gate -----------------------------------------------------
 
 async function applyPlatformGate() {
   // specs/desktop-gui "Graceful macOS degradation": live capture stays
@@ -153,35 +265,37 @@ async function applyPlatformGate() {
   // (tasks.md section 5) is complete -- see tasks.md 5.8.
   const platform = await invoke("get_platform");
   if (platform === "macos") {
-    els.liveControls.classList.add("hidden");
-    els.macosNotice.classList.remove("hidden");
+    els.tabLive.disabled = true;
+    els.macosNotice.hidden = false;
+    els.liveEmpty.hidden = true;
+    selectTab("file");
   }
 }
 
-els.startLiveBtn.addEventListener("click", startLiveSession);
-els.stopLiveBtn.addEventListener("click", stopLiveSession);
-els.includeMicCheckbox.addEventListener("change", () => {
-  els.micDeviceLabel.classList.toggle("hidden", !els.includeMicCheckbox.checked);
-});
-els.dropZone.addEventListener("click", () => {
-  // Click-to-browse needs @tauri-apps/plugin-dialog, not yet added --
-  // drag-and-drop is the supported path for now.
-  showToast("Click-to-browse isn't wired up yet -- drag a file onto this area instead.");
+// ---- Event wiring -----------------------------------------------------
+
+listen("transcript-line", (event) => {
+  if (currentFlow === "live" && liveState === "starting") setLiveState("active");
+  const list = currentFlow === "file" ? els.transcriptFile : els.transcriptLive;
+  appendTranscriptLine(list, event.payload);
 });
 
-listen("transcript-line", (event) => appendTranscriptLine(event.payload));
-listen("sidecar-log", (event) => appendDebugLine(event.payload.line));
-listen("sidecar-crashed", (event) => {
-  setLiveSessionActive(false);
-  showToast(event.payload.message);
+listen("sidecar-log", (event) => {
+  if (currentFlow === "live" && liveState === "starting") setLiveState("active");
+  appendDebugLine(event.payload.line);
 });
+
+listen("sidecar-crashed", (event) => {
+  setLiveState("idle");
+  showNote(event.payload.message);
+});
+
 listen("file-transcription-complete", (event) => {
-  els.fileProgress.classList.add("hidden");
-  if (!event.payload) {
-    showToast("File transcription failed -- see debug log for details.");
-  }
+  setFileBusy(false);
+  showNote(event.payload ? "Transcript saved." : "File transcription failed — see the engine log for details.");
 });
 
 setupDropZone();
 applyPlatformGate();
-populateDevices();
+populateMicDevices();
+updateTopline();

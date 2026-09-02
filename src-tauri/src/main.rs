@@ -27,6 +27,7 @@ fn main() {
     // sidecar.rs, invoked by user action in the UI.
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(AppState {
             sidecar: Mutex::new(SidecarManager::new()),
         })

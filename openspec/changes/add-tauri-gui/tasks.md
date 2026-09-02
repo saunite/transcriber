@@ -35,6 +35,8 @@
 
   `fetch_sidecar_resources.py` stages the `base` model (via `faster_whisper.utils.download_model`) into `src-tauri/resources/model/`, matching `tauri.conf.json`'s `bundle.resources` (paths there resolve relative to `src-tauri/`, not the repo root -- initially got this wrong and had to move it). Verified: produced `model.bin` (145MB) + config/tokenizer files.
 
+  **Gap found and fixed later, by `add-portable-build`**: staging the files here was necessary but not sufficient -- `transcription_engine.py` was still loading the model by bare name (`WhisperModel("base", ...)`), which faster-whisper resolves via its own Hugging Face cache, not via these staged files. Went unnoticed because the dev machine already had `base` cached. `add-portable-build` adds an explicit `--model-path` (CLI + engine) and wires `sidecar.rs` to always pass the resolved bundled directory, so the GUI actually uses what's staged here instead of silently depending on an ambient cache/network lookup.
+
 - [ ] 2.6 Bundle a static ffmpeg binary into installer resources per OS
 
   Not done deliberately: unlike the model, there's no single unambiguous "official" static ffmpeg build source to hardcode with confidence, and guessing a download URL risked silently wiring in something wrong or unmaintained. `fetch_sidecar_resources.py`'s docstring flags this explicitly for whoever sets up the CI build matrix (task 7.2) to pin a specific, verified source per OS.
@@ -74,18 +76,44 @@
 
 The plain HTML/CSS/JS pass below proved the event wiring (`transcript-line`, `sidecar-log`, `file-transcription-complete`, `get_platform`) works end-to-end but was never given a design pass and has real gaps (no Browse dialog, no verified click-through). It stays in place as the functional reference while it's rebuilt; nothing here changes the Rust-side event contract, so the sidecar/backend tasks in sections 2-4 are unaffected.
 
-- [ ] 5.0 Run the `impeccable` skill against this app's screens (idle/home, live session, device/model/language/task settings, file transcription drop zone, error/toast states) to get an approved design direction + comp
-- [ ] 5.1 Rebuild idle/home screen per the comp: start live session, drop/browse a file (wire real `@tauri-apps/plugin-dialog` Browse this time — not stubbed), open settings
-- [ ] 5.2 Rebuild device picker, populated from the sidecar's JSON device list
-- [ ] 5.3 Rebuild model/language/task selection controls (mirroring `--model`/`--language`/`--task`; task stays file-panel-only since `transcribe_chunk` has no `task` param)
-- [ ] 5.4 Rebuild live transcript view: scrolling list of `transcript-line` events, `[SYS]`/`[MIC]` tag styling
-- [ ] 5.5 Rebuild collapsible debug/log panel fed by `sidecar-log` events
-- [ ] 5.6 Rebuild file transcription flow: drag-and-drop + working Browse, progress indicator (`file-transcription-complete`), output format choice (txt/srt/vtt)
-- [ ] 5.7 Rebuild error/toast surface for sidecar crash and unsupported file drops
-- [ ] 5.8 Rebuild platform-gate: detect macOS at runtime via `get_platform`, disable/hide live-capture controls with an explanatory message (stays gated pending `add-macos-capture`)
-- [ ] 5.9 impeccable finish-review pass against the approved comp; fix findings
+- [x] 5.0 Run the `impeccable` skill against this app's screens (idle/home, live session, device/model/language/task settings, file transcription drop zone, error/toast states) to get an approved design direction + comp
+
+  Code-led (no image generation available in this session, confirmed with the user). Wrote `PRODUCT.md`, rolled the direction dice (`concept-seed.mjs --scope direction --mode operate`, seed key `3935811c`), weighed the catalog's challengers against a grounded 7-direction shortlist derived from the product's own cultural territory (recording/reading back speech privately, offline), and presented assigned + pick + one competitive alternate to the user via AskUserQuestion. User chose **"Verbatim"** (a court-reporter transcript direction, IMPECCABLE'S PICK over the dice-assigned "Night-Watch Log"). Direction contract recorded at `.impeccable/surfaces/src-index-html.md`.
+
+- [x] 5.1 Rebuild idle/home screen per the comp: start live session, drop/browse a file (wire real `@tauri-apps/plugin-dialog` Browse this time — not stubbed), open settings
+
+  Rebuilt `src/index.html` + `src/main.js` + `src/style.css` from scratch around the Verbatim direction. Wired `tauri-plugin-dialog` for real (Cargo.toml, `main.rs` plugin registration, new `src-tauri/capabilities/default.json` granting `core:default`/`dialog:default` — no capabilities file existed before, so this also had to state the core grant explicitly rather than relying on Tauri's implicit default). Also dropped the original `device-select` control: it populated a device list but its value was never read anywhere in the old `start_live_session` call (WASAPI auto-selects its own loopback device server-side) — a real dead/non-functional control in the prior build, removed rather than re-skinned.
+
+- [x] 5.2 Rebuild device picker, populated from the sidecar's JSON device list
+
+  Kept as the microphone-only picker (see 5.1) — `populateMicDevices()` calls `list_devices` unchanged.
+
+- [x] 5.3 Rebuild model/language/task selection controls (mirroring `--model`/`--language`/`--task`; task stays file-panel-only since `transcribe_chunk` has no `task` param)
+- [x] 5.4 Rebuild live transcript view: scrolling list of `transcript-line` events, `[SYS]`/`[MIC]` tag styling
+
+  Speaker source is now carried by type style (upright vs. italic small caps) rather than color, per the Verbatim direction's one-accent (red = live) discipline — see DESIGN.md. Also fixed a real bug found while rebuilding: `start_file_transcription` emits the *same* `transcript-line`/`sidecar-log` events as live capture (confirmed in `sidecar.rs`'s shared `spawn_sidecar_events`), but the old frontend had one global listener appending everything into the "Live Transcript" panel regardless of which flow was running — so a file transcription's output was silently appearing mislabeled under "Live Transcript". Rebuilt frontend routes lines to whichever flow (`live`/`file`) actually started, into that tab's own transcript list.
+
+- [x] 5.5 Rebuild collapsible debug/log panel fed by `sidecar-log` events
+- [x] 5.6 Rebuild file transcription flow: drag-and-drop + working Browse, progress indicator (`file-transcription-complete`), output format choice (txt/srt/vtt)
+- [x] 5.7 Rebuild error/toast surface for sidecar crash and unsupported file drops
+
+  Replaced the flat red toast with the direction's "manila note" material (see DESIGN.md's "Note, Not a Badge" rule) so red stays reserved exclusively for the live-capture stamp.
+
+- [x] 5.8 Rebuild platform-gate: detect macOS at runtime via `get_platform`, disable/hide live-capture controls with an explanatory message (stays gated pending `add-macos-capture`)
+
+  Also now auto-switches to the File Transcription tab on macOS so the disabled Live tab isn't the default view.
+
+- [x] 5.9 impeccable finish-review pass against the approved comp; fix findings
+
+  **No screenshot-based review was possible in this session**: no Rust toolchain to build/run the actual Tauri app, and no browser-automation tool available to render the plain HTML/CSS/JS standalone (this is a code-only environment — same constraint noted throughout sections 1-3 of this file). Ran the mechanical static detector instead (`detect.mjs --json src/index.html src/main.js src/style.css`) — 0 findings, but it ran in **degraded mode** (no HTML/CSS parser deps available, regex-fallback only, explicitly not a clean bill of health) — computed contrast and selector matching were NOT evaluated. Did a manual code-level pass instead: cross-checked every element ID referenced in `main.js` against `index.html` (all present, no stale IDs left from the old markup), verified `[hidden]`/CSS state toggles are consistent, and found/fixed one real CSS bug (the "starting" stamp was inheriting the LIVE stamp's rotated stamp-impact animation, which the direction reserves for LIVE only). **This is a real gap**: an actual screenshot-based finish review (contrast ratios, spacing, real render) has not happened and should before this ships.
+
 - [ ] 5.10 Click through every flow for real (device list populating, start/stop live session, file drop + Browse, crash recovery, macOS platform-gate) — the prior pass never verified this behaviorally; use a real driver (e.g. WebView2/Playwright) instead of blind coordinate clicks
-- [ ] 5.11 impeccable documenter: record `DESIGN.md` for the rebuilt frontend
+
+  **Not done, same root cause as 5.9**: no Rust toolchain / running app in this environment to click through. This remains genuinely open — tracked here rather than in section 6 since it's frontend-specific interaction verification, distinct from 6.2's performance/responsiveness concern.
+
+- [x] 5.11 impeccable documenter: record `DESIGN.md` for the rebuilt frontend
+
+  Written directly (ground truth from the actual shipped CSS/HTML tokens) rather than via the subagent, since documentation doesn't benefit from a "fresh eyes" pass the way review does and this session already had full context of what was built. See `DESIGN.md` at the repo root.
 
 ## 6. Performance verification
 

@@ -37,18 +37,25 @@ class TranscriptionEngine:
         self,
         model_size: str = "base",
         device: str = "auto",
-        compute_type: str = "auto"
+        compute_type: str = "auto",
+        model_path: Optional[str] = None
     ):
         """
         Initialize the transcription engine.
-        
+
         Args:
             model_size: Model size (tiny, base, small, medium, large, turbo)
             device: Device to run on ("cpu", "cuda", or "auto")
             compute_type: Computation type ("int8", "float16", "float32", or "auto")
+            model_path: Optional local directory to load the model from directly,
+                bypassing faster-whisper's network/cache-based name lookup. Used
+                by bundled builds (GUI sidecar, portable build) that ship model
+                files alongside the executable instead of relying on an ambient
+                Hugging Face cache.
         """
         self.model_size = model_size
-        
+        self.model_path = model_path
+
         # Auto-detect best settings
         if device == "auto":
             try:
@@ -56,20 +63,30 @@ class TranscriptionEngine:
                 device = "cuda" if torch.cuda.is_available() else "cpu"
             except ImportError:
                 device = "cpu"
-        
+
         if compute_type == "auto":
             if device == "cuda":
                 compute_type = "float16"  # Fast on GPU
             else:
                 compute_type = "int8"  # Efficient on CPU
-        
+
         self.device = device
         self.compute_type = compute_type
 
-        print(f"Loading {model_size} model on {device} with {compute_type}...")
+        if model_path:
+            model_dir = Path(model_path)
+            if not (model_dir / "model.bin").exists():
+                raise FileNotFoundError(
+                    f"--model-path {model_path} does not exist or is missing model.bin"
+                )
+            print(f"Loading {model_size} model from {model_path} on {device} with {compute_type}...")
+        else:
+            model_dir = None
+            print(f"Loading {model_size} model on {device} with {compute_type}...")
+
         with _suppress_ssl_verification():
             self.model = WhisperModel(
-                model_size,
+                str(model_dir) if model_dir else model_size,
                 device=device,
                 compute_type=compute_type
             )

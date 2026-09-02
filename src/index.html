@@ -7,33 +7,27 @@
   </head>
   <body>
     <!--
-      UNVERIFIED against a running Tauri app (no Rust toolchain available
-      to build src-tauri on this machine -- see
-      openspec/changes/add-tauri-gui/design.md). Plain HTML/CSS/JS, no
-      build step or npm dependency: window.__TAURI__ is exposed via
-      app.withGlobalTauri in tauri.conf.json, so this loads directly as
-      frontendDist with no bundler in the loop (keeps the shell minimal,
-      matching the "lightweight" goal).
+      "Verbatim" direction -- see .impeccable/surfaces/src-index-html.md.
+      Plain HTML/CSS/JS, no build step: window.__TAURI__ is exposed via
+      app.withGlobalTauri in tauri.conf.json.
     -->
-    <div id="toast" class="toast hidden" role="alert"></div>
+    <div id="note-root" class="note-root" role="alert" aria-live="assertive"></div>
 
-    <header class="toolbar">
-      <h1>Transcriber</h1>
-      <div id="live-controls">
-        <button id="start-live-btn">Start Live Session</button>
-        <button id="stop-live-btn" class="hidden">Stop</button>
-      </div>
-      <div id="macos-live-notice" class="notice hidden">
-        Live capture isn't available on macOS yet.
-      </div>
+    <header class="masthead">
+      <h1 class="wordmark">Transcriber</h1>
+      <button
+        id="settings-toggle"
+        class="settings-toggle"
+        type="button"
+        aria-expanded="false"
+        aria-controls="settings-drawer"
+      >
+        Session Settings
+      </button>
     </header>
 
-    <section id="settings" class="panel">
-      <label>
-        Device
-        <select id="device-select"></select>
-      </label>
-      <label>
+    <section id="settings-drawer" class="settings-drawer" hidden>
+      <label class="field">
         Model
         <select id="model-select">
           <option value="tiny">tiny</option>
@@ -43,51 +37,74 @@
           <option value="large">large</option>
         </select>
       </label>
-      <label>
+      <label class="field">
         Language (blank = auto-detect)
         <input id="language-input" type="text" maxlength="8" />
       </label>
-      <label>
+      <label class="field field-check">
         <input id="include-mic-checkbox" type="checkbox" />
         Include microphone
       </label>
-      <label id="mic-device-label" class="hidden">
-        Mic device
+      <label id="mic-device-field" class="field" hidden>
+        Microphone
         <select id="mic-device-select"></select>
       </label>
     </section>
 
-    <main>
-      <section id="transcript-panel" class="panel">
-        <h2>Live Transcript</h2>
-        <div id="transcript-view"></div>
+    <nav class="tabs">
+      <button id="tab-live" class="tab" type="button" aria-selected="true">Live Session</button>
+      <button id="tab-file" class="tab" type="button" aria-selected="false">File Transcription</button>
+    </nav>
+
+    <main class="page">
+      <div class="page-topline">
+        <span id="live-stamp" class="stamp stamp-live" hidden>Live</span>
+        <span id="starting-stamp" class="stamp stamp-starting" hidden>Starting…</span>
+        <span id="busy-stamp" class="stamp stamp-busy" hidden>Transcribing…</span>
+        <button id="stop-btn" class="stop-btn" type="button" hidden>Stop</button>
+      </div>
+
+      <section id="panel-live" class="panel">
+        <div id="live-empty" class="empty-state">
+          <button id="start-live-btn" class="primary-action" type="button">Start Live Session</button>
+          <p class="hint">
+            Captures system audio, and your microphone if enabled, and transcribes it as you speak.
+          </p>
+        </div>
+        <div id="macos-live-notice" class="platform-notice" hidden>
+          Live capture isn't available on macOS yet — transcribe a file instead.
+        </div>
+        <ol id="transcript-live" class="transcript" hidden></ol>
       </section>
 
-      <section id="file-panel" class="panel">
-        <h2>File Transcription</h2>
-        <div id="drop-zone">Drop a video/audio file here, or click to browse</div>
-        <label>
-          Output format
-          <select id="format-select">
-            <option value="txt" selected>txt</option>
-            <option value="srt">srt</option>
-            <option value="vtt">vtt</option>
-          </select>
-        </label>
-        <label>
-          Task
-          <select id="task-select">
-            <option value="transcribe" selected>transcribe</option>
-            <option value="translate">translate</option>
-          </select>
-        </label>
-        <div id="file-progress" class="hidden">Transcribing…</div>
+      <section id="panel-file" class="panel" hidden>
+        <button id="drop-zone" class="drop-zone" type="button">
+          Drop a recording here, or click to choose a file
+        </button>
+        <div class="file-options">
+          <label class="field">
+            Output format
+            <select id="format-select">
+              <option value="txt" selected>txt</option>
+              <option value="srt">srt</option>
+              <option value="vtt">vtt</option>
+            </select>
+          </label>
+          <label class="field">
+            Task
+            <select id="task-select">
+              <option value="transcribe" selected>transcribe</option>
+              <option value="translate">translate</option>
+            </select>
+          </label>
+        </div>
+        <ol id="transcript-file" class="transcript" hidden></ol>
       </section>
     </main>
 
-    <details id="debug-panel">
-      <summary>Debug log</summary>
-      <div id="debug-log"></div>
+    <details id="debug-panel" class="debug-panel">
+      <summary>Engine log</summary>
+      <div id="debug-log" class="debug-log mono"></div>
     </details>
 
     <script src="main.js"></script>

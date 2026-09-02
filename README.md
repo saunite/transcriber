@@ -30,6 +30,17 @@ If you have a native Rust toolchain + [Tauri CLI](https://tauri.app/) available 
 
 The installer bundles the `base` Whisper model (~145MB) for a fully offline first run; ffmpeg bundling is not yet done (no single unambiguous static-build source was picked — see `tasks.md` task 2.6).
 
+### Portable build (no installer)
+
+For the dev/test loop, `build_portable.ps1` assembles a self-contained, no-installer folder from the same build outputs above — extract/copy it anywhere and run `transcriber-gui.exe` directly, no admin, no registry entries. Run it after the usual build steps (`build_sidecar.py`, `fetch_sidecar_resources.py`, then either `.\docker\build.ps1` or a native `cargo tauri build`):
+
+```powershell
+.\build_portable.ps1 -Zip
+# folder: dist\portable\Transcriber\  (zip: dist\portable\Transcriber.zip)
+```
+
+See `openspec/changes/add-portable-build/` for why this exists — most importantly, the GUI sidecar now always passes an explicit `--model-path` pointing at its bundled model directory (resolved relative to the running exe, so it works the same whether installed or portable), instead of relying on faster-whisper's network/cache-based model lookup. The CLI gained the same `--model-path <dir>` flag for anyone running from a bundled build directly.
+
 ## Requirements
 
 ### System Dependencies
