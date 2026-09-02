@@ -16,9 +16,17 @@ import sys
 # which can't encode the unicode symbols (checkmarks, emoji) used
 # throughout this codebase's print() calls, crashing on the first one.
 # Force UTF-8 regardless of how/where this is launched from.
+#
+# Also force line buffering on stdout: a piped stdout is block-buffered by
+# default, so during a long-running --live session the GUI's transcript
+# view would see nothing until the OS pipe buffer filled or the process
+# exited (verified: a live session's banner/status lines only appeared
+# once the process was killed, never while it was running normally).
 for _stream in (sys.stdout, sys.stderr):
     if _stream and _stream.encoding and _stream.encoding.lower() != "utf-8":
         _stream.reconfigure(encoding="utf-8", errors="replace")
+if sys.stdout:
+    sys.stdout.reconfigure(line_buffering=True)
 
 import signal
 import argparse

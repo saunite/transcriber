@@ -44,7 +44,14 @@ fn resolve_model_dir(app: &AppHandle) -> Result<String, String> {
         .map_err(|e| format!("could not resolve bundled resource directory: {e}"))?
         .join("resources")
         .join("model");
-    Ok(dir.to_string_lossy().into_owned())
+    let dir = dir.to_string_lossy().into_owned();
+    // ponytail: Tauri's resource_dir() canonicalizes to a `\\?\`-prefixed
+    // extended-length path on Windows; ctranslate2 (faster-whisper's C++
+    // backend) can't open files through that prefix ("Unable to open file
+    // 'model.bin'" -- verified by reproducing with/without the prefix
+    // directly against the sidecar). Strip it; strip_prefix is a no-op on
+    // other OSes where the prefix never appears.
+    Ok(dir.strip_prefix(r"\\?\").unwrap_or(&dir).to_string())
 }
 
 pub struct SidecarManager {
@@ -224,6 +231,20 @@ pub async fn stop_live_session(state: State<'_, AppState>) -> Result<(), String>
         // handler. Upgrade path: a stdin-based stop protocol in
         // transcriber.py if abrupt termination is found to drop buffered
         // transcript lines or leave partial WAV files in practice.
+        #[cfg(windows)]
+        {
+            // PyInstaller's --onefile bootloader relaunches into a child
+            // process on Windows (extracts to a temp dir, then execs into
+            // it); child.kill() below only terminates that bootloader and
+            // orphans the actual worker process, which keeps running and
+            // holding the audio device -- verified by stopping a live
+            // session and finding transcriber-sidecar.exe still alive
+            // afterward. taskkill /T kills the whole process tree instead.
+            let _ = std::process::Command::new("taskkill")
+                .args(["/F", "/T", "/PID", &child.pid().to_string()])
+                .output();
+        }
+        #[cfg(not(windows))]
         child.kill().map_err(|e| e.to_string())?;
     }
     Ok(())
