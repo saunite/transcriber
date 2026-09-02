@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Transcriber",
+  "version": "0.1.0",
+  "identifier": "com.transcriber.app",
+  "build": {
+    "frontendDist": "../src"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "Transcriber",
+        "width": 900,
+        "height": 640,
+        "minWidth": 640,
+        "minHeight": 480,
+        "resizable": true,
+        "visible": true,
+        "dragDropEnabled": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "appimage", "deb"],
+    "externalBin": [
+      "binaries/transcriber-sidecar"
+    ],
+    "resources": [
+      "resources/model/**/*"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "both"
+      }
+    }
+  }
+}

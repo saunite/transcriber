@@ -10,6 +10,16 @@ import os
 os.environ.pop("TZ", None)
 
 import sys
+
+# A piped/detached stdout (no console attached -- exactly how the Tauri
+# sidecar spawns this process) falls back to the Windows ANSI codepage,
+# which can't encode the unicode symbols (checkmarks, emoji) used
+# throughout this codebase's print() calls, crashing on the first one.
+# Force UTF-8 regardless of how/where this is launched from.
+for _stream in (sys.stdout, sys.stderr):
+    if _stream and _stream.encoding and _stream.encoding.lower() != "utf-8":
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
 import signal
 import argparse
 import platform
@@ -195,19 +205,30 @@ Examples:
         action='store_true',
         help='List available audio devices and exit'
     )
-    
+
+    parser.add_argument(
+        '--list-devices-json',
+        action='store_true',
+        help='List available audio devices as JSON and exit (for GUI consumers)'
+    )
+
     parser.add_argument(
         '--setup-help',
         action='store_true',
         help='Show instructions for setting up audio loopback and exit'
     )
-    
+
     args = parser.parse_args()
-    
+
     # Handle utility options
     if args.list_devices:
         capture = AudioCapture()
         capture.list_devices()
+        return 0
+
+    if args.list_devices_json:
+        capture = AudioCapture()
+        capture.list_devices_json()
         return 0
     
     if args.setup_help:

@@ -1,0 +1,98 @@
+name: Build GUI installers
+
+# UNVERIFIED: written without a working local Rust toolchain to test
+# against (see openspec/changes/add-tauri-gui/tasks.md section 3-4). Treat
+# as a first draft -- the first real run on GitHub's runners is this
+# workflow's actual test.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src-tauri/**"
+      - "src/**"
+      - "transcriber.py"
+      - "transcription_engine.py"
+      - "audio_capture.py"
+      - "wasapi_capture.py"
+      - "macos_capture.py"
+      - "audio_extractor.py"
+      - "build_sidecar.py"
+      - "fetch_sidecar_resources.py"
+      - ".github/workflows/build-gui.yml"
+
+jobs:
+  build:
+    # macOS is intentionally excluded for now -- shell-only there pending
+    # add-macos-capture, and not a current priority (Windows first).
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rust-target: x86_64-pc-windows-msvc
+          - os: ubuntu-latest
+            rust-target: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            pip install -r requirements.txt
+          else
+            pip install -r requirements-linux.txt
+          fi
+          pip install pyinstaller
+
+      - name: Freeze sidecar
+        run: python build_sidecar.py
+
+      - name: Stage sidecar into Tauri externalBin location
+        shell: bash
+        run: |
+          mkdir -p src-tauri/binaries
+          system=$(echo "${{ matrix.os }}" | cut -d- -f1)
+          if [ "$system" = "windows" ]; then
+            src="dist/windows/transcriber-sidecar.exe"
+            dest="src-tauri/binaries/transcriber-sidecar-${{ matrix.rust-target }}.exe"
+          else
+            src="dist/linux/transcriber-sidecar"
+            dest="src-tauri/binaries/transcriber-sidecar-${{ matrix.rust-target }}"
+          fi
+          cp "$src" "$dest"
+          chmod +x "$dest" || true
+
+      - name: Stage model resources
+        run: python fetch_sidecar_resources.py
+
+      # ffmpeg resources are intentionally not staged here -- see
+      # fetch_sidecar_resources.py's docstring (task 2.6). Add a step here
+      # once a specific, verified per-OS ffmpeg source is chosen.
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --target ${{ matrix.rust-target }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: transcriber-gui-${{ matrix.os }}
+          path: src-tauri/target/${{ matrix.rust-target }}/release/bundle/**

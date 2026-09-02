@@ -73,6 +73,13 @@ Build pipeline per OS (CI matrix, one job per target):
 
 **Alternative considered**: download the model on first run to keep the installer small. Rejected per explicit user requirement — offline-first-run matters more than installer size here.
 
+### 6. Frontend rebuild via the impeccable skill
+The first frontend pass (`src/index.html`, `style.css`, `main.js`) is plain, unstyled HTML/CSS/JS with no framework — it proved the IPC/event wiring works but was never given a real design pass, and shipped with known gaps (Browse button stubbed, no interaction click-through, no verified light/dark or responsive behavior). Since this app's whole premise is removing friction for a non-technical user, "it renders the right controls" isn't a high enough bar.
+
+The rebuild uses the `impeccable` skill's workflow (design direction → comp → implementation → finish-review against the comp → `DESIGN.md`) to redo the same screens (idle/home, live session, file transcription, settings/device picker, error/toast states) as an actual designed UI. This only replaces the markup/CSS/JS layer — it does not change any decision above: same Tauri webview, same `transcript-line`/`sidecar-log`/`file-transcription-complete` events from the Rust backend, same platform-gate command. The rebuilt frontend consumes the identical event contract the existing `sidecar.rs` already emits.
+
+**Alternative considered**: keep iterating on the hand-rolled CSS. Rejected — impeccable's direction/comp/finish-review loop is a smaller effort than manually re-deriving a coherent visual system, and this proposal's own motivation (non-technical user, remove friction) argues for treating visual quality as a real requirement, not a polish pass.
+
 ## Risks / Trade-offs
 
 - **[Risk]** Regex-based stdout parsing couples the GUI to the exact wording/format of engine log lines → engine changes could silently break the GUI's transcript view. **Mitigation**: a small fixture test in the sidecar-wrapper test suite that runs the real engine against a short sample and asserts the regex captures every emitted transcript line; CI fails loudly on drift instead of the GUI silently misparsing in the field.

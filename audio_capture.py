@@ -3,6 +3,7 @@ Real-time audio capture utilities for cross-platform system audio recording.
 Supports capturing system audio output (loopback) on Windows and Linux.
 """
 
+import json
 import platform
 import sys
 import time
@@ -37,6 +38,24 @@ class AudioCapture:
             print(f"    Max Input Channels: {device['max_input_channels']}")
             print(f"    Default Sample Rate: {device['default_samplerate']}")
         print()
+
+    def list_devices_json(self) -> None:
+        """Print all available audio devices as a JSON array (for GUI consumers).
+
+        Additive alongside list_devices(): that method's human-readable
+        output is unchanged by this one existing.
+        """
+        devices = sd.query_devices()
+        device_list = [
+            {
+                "index": idx,
+                "name": device["name"],
+                "max_input_channels": device["max_input_channels"],
+                "default_samplerate": device["default_samplerate"],
+            }
+            for idx, device in enumerate(devices)
+        ]
+        print(json.dumps(device_list))
     
     def get_loopback_device(self) -> Optional[int]:
         """

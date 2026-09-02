@@ -10,10 +10,16 @@
 // of authoring, but exact symbol availability, error codes, and the
 // delivered stream format need confirmation on real hardware before this
 // is trusted (see tasks.md section 5).
+//
+// The pure header-construction logic lives in AudioTapCore (see
+// ../AudioTapCore/PCMHeader.swift) so it's covered by `swift test` in CI
+// without needing a real tap; everything below this point talks to actual
+// Core Audio and can only be exercised on real hardware.
 
 import Foundation
 import CoreAudio
 import AudioToolbox
+import AudioTapCore
 
 // MARK: - Exit codes (documented contract with macos_capture.py)
 
@@ -95,17 +101,10 @@ checkStatus(
     "reading the capture stream format"
 )
 
-// Header consumed by macos_capture.py: sample rate (uint32 LE), channel
-// count (uint16 LE), reserved (uint16 LE, always 0). Frames follow as raw
-// interleaved Float32LE PCM matching streamFormat.
 let sampleRate = UInt32(streamFormat.mSampleRate)
 let channelCount = UInt16(streamFormat.mChannelsPerFrame)
 
-var header = Data()
-withUnsafeBytes(of: sampleRate.littleEndian) { header.append(contentsOf: $0) }
-withUnsafeBytes(of: channelCount.littleEndian) { header.append(contentsOf: $0) }
-withUnsafeBytes(of: UInt16(0).littleEndian) { header.append(contentsOf: $0) }
-FileHandle.standardOutput.write(header)
+FileHandle.standardOutput.write(makePCMHeader(sampleRate: sampleRate, channelCount: channelCount))
 
 // MARK: - Stream captured audio to stdout via an IOProc
 

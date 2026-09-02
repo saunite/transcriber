@@ -28,9 +28,9 @@
 
 - [x] 4.1 Unit tests for `macos_capture.py`'s PCM parsing/resampling against synthetic stdin data (bypassing the real native helper)
 - [x] 4.2 Unit tests for CLI flag validation (platform-mismatch rejection, version-gate fail-fast path) using a mocked `platform.mac_ver()`
-- [ ] 4.3 Native helper: unit-testable logic (argument parsing, PCM framing) separated from the untestable-without-hardware tap-creation call, so as much as possible is covered by CI
+- [x] 4.3 Native helper: unit-testable logic (argument parsing, PCM framing) separated from the untestable-without-hardware tap-creation call, so as much as possible is covered by CI
 
-  Not done: no Swift/XCTest target exists yet — this session has no Xcode/macOS to create or run one. `main.swift` has no separate argument-parsing step to extract (it takes no CLI args), so what remains here is adding an XCTest target for the header-construction logic once someone has a Mac to set it up.
+  Restructured `macos/audiotap-helper/` from a single `swiftc`-invoked file into a Swift Package: `Sources/AudioTapCore/PCMHeader.swift` holds the pure header-construction logic (`makePCMHeader`, no Core Audio calls, no CLI args to parse — the helper takes none), `Sources/audiotap-helper/main.swift` keeps all the untestable-without-hardware Core Audio/tap/aggregate-device logic and just calls into `AudioTapCore`, and `Tests/AudioTapCoreTests/PCMHeaderTests.swift` asserts the exact byte layout (stereo/mono/boundary cases) via XCTest — runnable in CI via `swift test`, no macOS hardware or Xcode GUI needed, just a Swift toolchain. `build.sh` updated to `swift build` (`--arch arm64 --arch x86_64` for a universal binary) and copies the result to the flat `./audiotap-helper` path `macos_capture.py` already expects, so no Python-side change was needed. Still unverified: whether this actually compiles with a real Swift toolchain (no Xcode/macOS available in this session, same caveat as the rest of section 1).
 
 ## 5. Hardware-dependent verification (deferred — requires real macOS 14.4+ hardware)
 

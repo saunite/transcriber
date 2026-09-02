@@ -11,6 +11,25 @@ A cross-platform CLI tool for transcribing audio from video files and live audio
 - ⚡ Fast transcription with faster-whisper (MIT license)
 - 🎯 Multiple output formats (TXT, SRT, VTT)
 
+## Desktop GUI (in development)
+
+A native desktop app (Tauri shell + this CLI as a bundled sidecar) is in progress under `src-tauri/` and `src/` — see `openspec/changes/add-tauri-gui/` for the design and current status. Windows builds and installs (per-user, no admin required); the app has not yet been tested interactively (device list, live capture, file drop — see `tasks.md` section 5). Linux/macOS are unverified.
+
+**No local Rust toolchain needed** — a Docker image (`docker/tauri-build.Dockerfile`) cross-compiles the Windows installer from a Linux container (mingw-w64 GNU target + NSIS), which is the path actually used and verified during development:
+
+```powershell
+python build_sidecar.py                                          # freeze transcriber.py -> dist/windows/transcriber-sidecar.exe
+python fetch_sidecar_resources.py                                # stage the `base` model into src-tauri/resources/model/
+copy dist\windows\transcriber-sidecar.exe src-tauri\binaries\transcriber-sidecar-x86_64-pc-windows-gnu.exe
+
+.\docker\build.ps1
+# installer lands at: src-tauri\target\x86_64-pc-windows-gnu\release\bundle\nsis\Transcriber_<version>_x64-setup.exe
+```
+
+If you have a native Rust toolchain + [Tauri CLI](https://tauri.app/) available instead (e.g. Linux, or Windows without this machine's toolchain-install restriction), the usual `cargo tauri dev` / `cargo tauri build` from `src-tauri/` works the same way, after staging the sidecar binary under `src-tauri/binaries/transcriber-sidecar-<target-triple>.exe`.
+
+The installer bundles the `base` Whisper model (~145MB) for a fully offline first run; ffmpeg bundling is not yet done (no single unambiguous static-build source was picked — see `tasks.md` task 2.6).
+
 ## Requirements
 
 ### System Dependencies

@@ -1,0 +1,108 @@
+/* Minimal, dependency-free styling -- no CSS framework, matching the
+   "lightweight" goal (design.md). UNVERIFIED against a running app. */
+
+:root {
+  color-scheme: light dark;
+  --sys-color: #2b6cb0;
+  --mic-color: #b83280;
+  --border: #ccc;
+}
+
+body {
+  font-family: system-ui, sans-serif;
+  margin: 0;
+  padding: 0 1rem 1rem;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.toolbar h1 {
+  font-size: 1.1rem;
+  margin: 0;
+  flex: 1;
+}
+
+.panel {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.75rem;
+  margin-top: 1rem;
+}
+
+main {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1rem;
+}
+
+#transcript-view {
+  height: 320px;
+  overflow-y: auto;
+  font-family: ui-monospace, monospace;
+  font-size: 0.9rem;
+}
+
+#transcript-view .line {
+  padding: 0.15rem 0;
+}
+
+#transcript-view .tag-SYS {
+  color: var(--sys-color);
+  font-weight: 600;
+}
+
+#transcript-view .tag-MIC {
+  color: var(--mic-color);
+  font-weight: 600;
+}
+
+#drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: 6px;
+  padding: 2rem 1rem;
+  text-align: center;
+  cursor: pointer;
+}
+
+#drop-zone.drag-over {
+  border-color: var(--sys-color);
+}
+
+.toast {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  background: #c53030;
+  color: white;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  max-width: 24rem;
+  z-index: 10;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.notice {
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+#debug-panel {
+  margin-top: 1rem;
+}
+
+#debug-log {
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+  max-height: 160px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}

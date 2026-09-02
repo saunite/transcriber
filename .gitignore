@@ -44,3 +44,16 @@ models/
 
 # Logs
 *.log
+
+# PyInstaller sidecar build output (openspec/changes/add-tauri-gui)
+/build/
+/dist/
+
+# Staged installer resources (model, ffmpeg) -- resolved relative to src-tauri/
+src-tauri/resources/
+
+# Tauri/Rust build output
+src-tauri/target/
+
+# Staged sidecar binary (copied from dist/ into Tauri's externalBin location)
+src-tauri/binaries/

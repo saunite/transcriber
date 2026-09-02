@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Transcriber</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!--
+      UNVERIFIED against a running Tauri app (no Rust toolchain available
+      to build src-tauri on this machine -- see
+      openspec/changes/add-tauri-gui/design.md). Plain HTML/CSS/JS, no
+      build step or npm dependency: window.__TAURI__ is exposed via
+      app.withGlobalTauri in tauri.conf.json, so this loads directly as
+      frontendDist with no bundler in the loop (keeps the shell minimal,
+      matching the "lightweight" goal).
+    -->
+    <div id="toast" class="toast hidden" role="alert"></div>
+
+    <header class="toolbar">
+      <h1>Transcriber</h1>
+      <div id="live-controls">
+        <button id="start-live-btn">Start Live Session</button>
+        <button id="stop-live-btn" class="hidden">Stop</button>
+      </div>
+      <div id="macos-live-notice" class="notice hidden">
+        Live capture isn't available on macOS yet.
+      </div>
+    </header>
+
+    <section id="settings" class="panel">
+      <label>
+        Device
+        <select id="device-select"></select>
+      </label>
+      <label>
+        Model
+        <select id="model-select">
+          <option value="tiny">tiny</option>
+          <option value="base" selected>base</option>
+          <option value="small">small</option>
+          <option value="medium">medium</option>
+          <option value="large">large</option>
+        </select>
+      </label>
+      <label>
+        Language (blank = auto-detect)
+        <input id="language-input" type="text" maxlength="8" />
+      </label>
+      <label>
+        <input id="include-mic-checkbox" type="checkbox" />
+        Include microphone
+      </label>
+      <label id="mic-device-label" class="hidden">
+        Mic device
+        <select id="mic-device-select"></select>
+      </label>
+    </section>
+
+    <main>
+      <section id="transcript-panel" class="panel">
+        <h2>Live Transcript</h2>
+        <div id="transcript-view"></div>
+      </section>
+
+      <section id="file-panel" class="panel">
+        <h2>File Transcription</h2>
+        <div id="drop-zone">Drop a video/audio file here, or click to browse</div>
+        <label>
+          Output format
+          <select id="format-select">
+            <option value="txt" selected>txt</option>
+            <option value="srt">srt</option>
+            <option value="vtt">vtt</option>
+          </select>
+        </label>
+        <label>
+          Task
+          <select id="task-select">
+            <option value="transcribe" selected>transcribe</option>
+            <option value="translate">translate</option>
+          </select>
+        </label>
+        <div id="file-progress" class="hidden">Transcribing…</div>
+      </section>
+    </main>
+
+    <details id="debug-panel">
+      <summary>Debug log</summary>
+      <div id="debug-log"></div>
+    </details>
+
+    <script src="main.js"></script>
+  </body>
+</html>
