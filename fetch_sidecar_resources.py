@@ -6,11 +6,10 @@ model into src-tauri/resources/model/, matching tauri.conf.json's
 bundle.resources entry (Tauri resolves bundle.resources paths relative to
 src-tauri/, not the repo root).
 
-ffmpeg is NOT fetched here: there's no single canonical "official" static
-build URL to hardcode with confidence (unlike the model, which has one
-unambiguous source via faster_whisper's own downloader). Whoever wires up
-the CI build matrix (tasks.md 7.2) should pin a specific, verified ffmpeg
-build source into resources/ffmpeg/ for each OS.
+No ffmpeg binary is fetched, and none is needed: the sidecar decodes audio
+and video via PyAV (bundled with faster-whisper, frozen into the sidecar
+by build_sidecar.py), not an external ffmpeg process. See
+openspec/changes/drop-ffmpeg-dependency/.
 
 Usage: python fetch_sidecar_resources.py
 """
@@ -24,7 +23,6 @@ MODEL_SIZE = "base"  # matches the CLI's --model default
 def main() -> int:
     path = download_model(MODEL_SIZE, output_dir="src-tauri/resources/model")
     print(f"Staged '{MODEL_SIZE}' model at: {path}")
-    print("ffmpeg is not fetched by this script -- see the module docstring.")
     return 0
 
 

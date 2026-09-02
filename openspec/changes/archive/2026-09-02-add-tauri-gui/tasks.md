@@ -37,9 +37,11 @@
 
   **Gap found and fixed later, by `add-portable-build`**: staging the files here was necessary but not sufficient -- `transcription_engine.py` was still loading the model by bare name (`WhisperModel("base", ...)`), which faster-whisper resolves via its own Hugging Face cache, not via these staged files. Went unnoticed because the dev machine already had `base` cached. `add-portable-build` adds an explicit `--model-path` (CLI + engine) and wires `sidecar.rs` to always pass the resolved bundled directory, so the GUI actually uses what's staged here instead of silently depending on an ambient cache/network lookup.
 
-- [ ] 2.6 Bundle a static ffmpeg binary into installer resources per OS
+- [x] ~~2.6~~ Bundle a static ffmpeg binary into installer resources per OS — **closed, won't do**
 
   Not done deliberately: unlike the model, there's no single unambiguous "official" static ffmpeg build source to hardcode with confidence, and guessing a download URL risked silently wiring in something wrong or unmaintained. `fetch_sidecar_resources.py`'s docstring flags this explicitly for whoever sets up the CI build matrix (task 7.2) to pin a specific, verified source per OS.
+
+  **Closed by `openspec/changes/drop-ffmpeg-dependency`**: turned out unnecessary rather than merely undone. `faster-whisper` already decodes via PyAV, whose wheels bundle FFmpeg's libraries — the sidecar never needed an external ffmpeg binary at all. That change deletes the one call site that did shell out to one (a redundant video-extraction pre-step) and replaces the other (SYS+MIC WAV merge) with stdlib `wave` + numpy. No ffmpeg bundling of any kind is needed.
 
 ## 3. Tauri shell scaffold
 

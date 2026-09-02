@@ -17,7 +17,6 @@ on:
       - "audio_capture.py"
       - "wasapi_capture.py"
       - "macos_capture.py"
-      - "audio_extractor.py"
       - "build_sidecar.py"
       - "fetch_sidecar_resources.py"
       - ".github/workflows/build-gui.yml"
@@ -74,9 +73,9 @@ jobs:
       - name: Stage model resources
         run: python fetch_sidecar_resources.py
 
-      # ffmpeg resources are intentionally not staged here -- see
-      # fetch_sidecar_resources.py's docstring (task 2.6). Add a step here
-      # once a specific, verified per-OS ffmpeg source is chosen.
+      # No ffmpeg staging step: the sidecar decodes audio/video via PyAV
+      # (bundled with faster-whisper), not an external ffmpeg binary. See
+      # openspec/changes/drop-ffmpeg-dependency/.
 
       - uses: dtolnay/rust-toolchain@stable
         with:

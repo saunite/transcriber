@@ -26,7 +26,7 @@ import platform
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
-from audio_extractor import AudioExtractor
+import av.error
 from audio_capture import AudioCapture, setup_loopback_instructions
 from transcription_engine import TranscriptionEngine
 import time
@@ -300,33 +300,27 @@ def transcribe_file(engine: TranscriptionEngine, args) -> int:
         print(f"❌ File not found: {file_path}")
         return 1
     
-    # Determine if we need to extract audio from video
+    # Cosmetic classification only -- the engine decodes audio and video
+    # files the same way (via PyAV, bundled with faster-whisper), so this
+    # no longer drives any different code path, just the log line.
     video_extensions = {'.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v'}
     audio_extensions = {'.mp3', '.wav', '.flac', '.m4a', '.ogg', '.opus', '.wma'}
-    
+
     file_ext = file_path.suffix.lower()
     audio_file = str(file_path)
-    temp_audio = None
-    
-    try:
-        # Extract audio if it's a video file
-        if file_ext in video_extensions:
-            print(f"📹 Video file detected: {file_path.name}")
-            extractor = AudioExtractor()
-            audio_file = extractor.extract_audio(str(file_path))
-            temp_audio = audio_file
-            print(f"✓ Audio extracted to: {audio_file}\n")
-        
-        elif file_ext in audio_extensions:
-            print(f"🎵 Audio file detected: {file_path.name}\n")
-        
-        else:
-            print(f"⚠️  Unknown file type: {file_ext}")
-            print("Attempting to process as audio file...\n")
-        
-        base_time = datetime.now() if args.actual_time else None
 
-        # Transcribe (with incremental saving)
+    if file_ext in video_extensions:
+        print(f"📹 Video file detected: {file_path.name}\n")
+    elif file_ext in audio_extensions:
+        print(f"🎵 Audio file detected: {file_path.name}\n")
+    else:
+        print(f"⚠️  Unknown file type: {file_ext}")
+        print("Attempting to process as audio file...\n")
+
+    base_time = datetime.now() if args.actual_time else None
+
+    # Transcribe (with incremental saving)
+    try:
         segments, info = engine.transcribe_file(
             audio_file,
             language=args.language,
@@ -335,44 +329,39 @@ def transcribe_file(engine: TranscriptionEngine, args) -> int:
             use_actual_time=args.actual_time,
             base_time=base_time
         )
-        
-        # Determine output path
-        if args.output:
-            output_path = Path(args.output)
-        else:
-            output_name = f"{file_path.stem}_transcript.{args.format}"
-            output_path = Path.cwd() / output_name
-        
-        # Save transcript
-        engine.save_transcript(
-            segments,
-            str(output_path),
-            format_type=args.format,
-            include_timestamps=not args.no_timestamps,
-            use_actual_time=args.actual_time,
-            base_time=base_time
-        )
-        
-        # Print summary
-        print(f"\n{'='*60}")
-        print("Transcription Summary")
-        print(f"{'='*60}")
-        print(f"Input file: {file_path}")
-        print(f"Language: {info['language']} (confidence: {info['language_probability']:.1%})")
-        print(f"Duration: {info['duration']:.1f} seconds")
-        print(f"Segments: {len(segments)}")
-        print(f"Output: {output_path}")
-        print(f"{'='*60}\n")
-        
-        return 0
-    
-    finally:
-        # Clean up temporary audio file
-        if temp_audio:
-            try:
-                extractor.cleanup_temp_audio(temp_audio)
-            except Exception as e:
-                print(f"⚠️  Warning: Could not clean up temp file: {e}")
+    except av.error.FFmpegError as e:
+        print(f"❌ Could not decode {file_path.name}: unsupported or corrupt media ({e})")
+        return 1
+
+    # Determine output path
+    if args.output:
+        output_path = Path(args.output)
+    else:
+        output_name = f"{file_path.stem}_transcript.{args.format}"
+        output_path = Path.cwd() / output_name
+
+    # Save transcript
+    engine.save_transcript(
+        segments,
+        str(output_path),
+        format_type=args.format,
+        include_timestamps=not args.no_timestamps,
+        use_actual_time=args.actual_time,
+        base_time=base_time
+    )
+
+    # Print summary
+    print(f"\n{'='*60}")
+    print("Transcription Summary")
+    print(f"{'='*60}")
+    print(f"Input file: {file_path}")
+    print(f"Language: {info['language']} (confidence: {info['language_probability']:.1%})")
+    print(f"Duration: {info['duration']:.1f} seconds")
+    print(f"Segments: {len(segments)}")
+    print(f"Output: {output_path}")
+    print(f"{'='*60}\n")
+
+    return 0
 
 
 def _process_audio_chunk(
@@ -498,6 +487,35 @@ def _print_summary(all_segments: list, args, output_path: Optional[str] = None, 
     if merged_audio_save_path:
         print(f"Merged audio saved to: {merged_audio_save_path}")
     print(f"{'='*60}\n")
+
+
+def _merge_sys_mic_wav(sys_path: str, mic_path: str, out_path: str) -> None:
+    """
+    Merge mono 16-bit system and mic WAV recordings into one stereo WAV
+    (system on the left channel, mic on the right), truncated to the
+    shorter of the two -- matching ffmpeg's amerge duration=shortest
+    behavior this replaces. Both inputs are files this same module just
+    wrote via `wave.open(..., 'wb')`, so their format is known: mono,
+    16-bit, 16000 Hz.
+    """
+    import wave
+    import numpy as np
+
+    with wave.open(sys_path, 'rb') as sys_wav, wave.open(mic_path, 'rb') as mic_wav:
+        params = sys_wav.getparams()
+        sys_samples = np.frombuffer(sys_wav.readframes(sys_wav.getnframes()), dtype=np.int16)
+        mic_samples = np.frombuffer(mic_wav.readframes(mic_wav.getnframes()), dtype=np.int16)
+
+    n = min(len(sys_samples), len(mic_samples))
+    stereo = np.empty(n * 2, dtype=np.int16)
+    stereo[0::2] = sys_samples[:n]
+    stereo[1::2] = mic_samples[:n]
+
+    with wave.open(out_path, 'wb') as out_wav:
+        out_wav.setnchannels(2)
+        out_wav.setsampwidth(params.sampwidth)
+        out_wav.setframerate(params.framerate)
+        out_wav.writeframes(stereo.tobytes())
 
 
 def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
@@ -869,20 +887,12 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
     # Merge sys + mic WAV into a stereo file if both were recorded
     merged_audio_save_path = None
     if sys_audio_save_path and mic_audio_save_path:
-        import subprocess
         base_stem = Path(sys_audio_save_path).stem.replace('_sys', '')
         base_dir = Path(sys_audio_save_path).parent
         merged_audio_save_path = str(base_dir / f"{base_stem}_merged.wav")
         print("\nMerging system and microphone audio...")
         try:
-            # Stack sys (L) and mic (R) mono 16kHz WAVs, trimming to the shorter input
-            subprocess.run(
-                ["ffmpeg", "-y", "-i", sys_audio_save_path, "-i", mic_audio_save_path,
-                 "-filter_complex", "[0:a][1:a]amerge=inputs=2:duration=shortest",
-                 merged_audio_save_path],
-                check=True,
-                capture_output=True
-            )
+            _merge_sys_mic_wav(sys_audio_save_path, mic_audio_save_path, merged_audio_save_path)
             print(f"✓ Merged audio saved to: {merged_audio_save_path}")
         except Exception as e:
             print(f"⚠️  Could not merge audio files: {e}")
@@ -1132,19 +1142,12 @@ def transcribe_live_coreaudio_tap(engine: TranscriptionEngine, args) -> int:
     # Merge sys + mic WAV into a stereo file if both were recorded
     merged_audio_save_path = None
     if sys_audio_save_path and mic_audio_save_path:
-        import subprocess
         base_stem = Path(sys_audio_save_path).stem.replace('_sys', '')
         base_dir = Path(sys_audio_save_path).parent
         merged_audio_save_path = str(base_dir / f"{base_stem}_merged.wav")
         print("\nMerging system and microphone audio...")
         try:
-            subprocess.run(
-                ["ffmpeg", "-y", "-i", sys_audio_save_path, "-i", mic_audio_save_path,
-                 "-filter_complex", "[0:a][1:a]amerge=inputs=2:duration=shortest",
-                 merged_audio_save_path],
-                check=True,
-                capture_output=True
-            )
+            _merge_sys_mic_wav(sys_audio_save_path, mic_audio_save_path, merged_audio_save_path)
             print(f"✓ Merged audio saved to: {merged_audio_save_path}")
         except Exception as e:
             print(f"⚠️  Could not merge audio files: {e}")

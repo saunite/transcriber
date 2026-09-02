@@ -28,7 +28,7 @@ copy dist\windows\transcriber-sidecar.exe src-tauri\binaries\transcriber-sidecar
 
 If you have a native Rust toolchain + [Tauri CLI](https://tauri.app/) available instead (e.g. Linux, or Windows without this machine's toolchain-install restriction), the usual `cargo tauri dev` / `cargo tauri build` from `src-tauri/` works the same way, after staging the sidecar binary under `src-tauri/binaries/transcriber-sidecar-<target-triple>.exe`.
 
-The installer bundles the `base` Whisper model (~145MB) for a fully offline first run; ffmpeg bundling is not yet done (no single unambiguous static-build source was picked — see `tasks.md` task 2.6).
+The installer bundles the `base` Whisper model (~145MB) for a fully offline first run. No ffmpeg bundling is needed — the sidecar decodes audio and video via PyAV (bundled with faster-whisper), not an external ffmpeg binary; see `openspec/changes/drop-ffmpeg-dependency/`.
 
 ### Portable build (no installer)
 
@@ -47,28 +47,8 @@ See `openspec/changes/add-portable-build/` for why this exists — most importan
 
 **Both Windows and Linux:**
 - Python 3.9 or higher
-- ffmpeg (for audio extraction from videos)
 
-**Installation:**
-
-**Windows (PowerShell):**
-```powershell
-# Using Chocolatey
-choco install ffmpeg
-
-# Or using Scoop
-scoop install ffmpeg
-```
-
-**Linux (Ubuntu/Debian):**
-```bash
-sudo apt update && sudo apt install ffmpeg
-```
-
-**Linux (RHEL/Fedora):**
-```bash
-sudo dnf install ffmpeg  # or: sudo yum install ffmpeg
-```
+No external media tool is required -- audio and video files are decoded by PyAV (bundled with faster-whisper), not an external ffmpeg binary.
 
 ### Python Dependencies
 
@@ -196,7 +176,7 @@ python transcriber.py --live --wasapi --include-mic --mic-device 5
 - `--format <type>` - Output format: txt, srt, vtt (default: txt)
 - `--no-timestamps` - Exclude timestamps from text output
 - `--actual-time` - Use wall-clock timestamps (local time) instead of relative offsets
-- `--save-audio` - Save captured audio to WAV files alongside the transcript (live mode only). In WASAPI mode with `--include-mic`, this writes `<base>_sys.wav`, `<base>_mic.wav`, and a merged stereo `<base>_merged.wav` (merge uses ffmpeg)
+- `--save-audio` - Save captured audio to WAV files alongside the transcript (live mode only). In WASAPI mode with `--include-mic`, this writes `<base>_sys.wav`, `<base>_mic.wav`, and a merged stereo `<base>_merged.wav`
 - `--chunk-duration <seconds>` - Duration of audio chunks for streaming (default: 30)
 - `--silence-timeout <seconds>` - Auto-stop after N seconds of silence (default: 600 = 10 min, 0 = never)
 - `--audio-device <id>` - Audio device index for live capture (-1 = auto-detect)
