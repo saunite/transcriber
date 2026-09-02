@@ -6,7 +6,7 @@ A cross-platform CLI tool for transcribing audio from video files and live audio
 
 - 🎥 Transcribe audio from local video files (MP4, AVI, MKV, etc.)
 - 🎙️ **Real-time transcription** from system audio (live meetings, streaming videos)
-- 💻 Cross-platform: Works on Windows and Linux
+- 💻 Cross-platform: Works on Windows, Linux, and macOS (live capture on macOS requires 14.4+ or a virtual audio driver — see [macOS](#macos) below)
 - 🔒 100% offline and local - all data stays on your machine
 - ⚡ Fast transcription with faster-whisper (MIT license)
 - 🎯 Multiple output formats (TXT, SRT, VTT)
@@ -93,6 +93,9 @@ python transcriber.py --live
 
 # Custom chunk settings for better responsiveness
 python transcriber.py --live --chunk-duration 20
+
+# macOS: native system audio loopback (no virtual driver needed, macOS 14.4+)
+python transcriber.py --live --coreaudio-tap --include-mic --mic-device 3
 ```
 
 **Understanding the Labels:**
@@ -153,7 +156,8 @@ python transcriber.py --live --wasapi --include-mic --mic-device 5
 - `--file <path>` - Transcribe audio from a video/audio file
 - `--live` - Capture and transcribe system audio in real-time
 - `--wasapi` - Use WASAPI loopback mode (Windows only, Bluetooth-compatible)
-- `--include-mic` - Include microphone capture alongside system audio (use with --wasapi)
+- `--coreaudio-tap` - Use Core Audio Process Tap for native system-audio loopback (macOS only, requires macOS 14.4+, no virtual driver needed)
+- `--include-mic` - Include microphone capture alongside system audio (use with --wasapi or --coreaudio-tap)
 - `--mic-device <id>` - Microphone device index (use --list-devices to find)
 - `--model <size>` - Model size: tiny, base, small, medium, large, turbo (default: base)
 - `--language <code>` - Language code (e.g., en, es, fr) - auto-detect if not specified
@@ -218,6 +222,33 @@ The transcriber will auto-detect monitor devices automatically. You can also sta
 
 The script writes output to `transcription_<timestamp>.txt`, auto-stops after 10 minutes of silence (use `--silence-timeout 0` for continuous recording, or pass additional `transcriber.py` flags through as arguments).
 
+### macOS
+
+**Native Capture (Recommended - Core Audio Process Tap, macOS 14.4+):**
+
+No additional setup required — grant the audio-capture permission when macOS prompts on first use.
+
+```bash
+python transcriber.py --live --coreaudio-tap --include-mic --mic-device 3
+```
+
+> **Status:** this capture path was built and documented without access to macOS hardware to verify against. If it doesn't behave as documented, please file an issue — the fallback below is a reliable alternative in the meantime.
+
+**Fallback (older macOS, or if native capture doesn't work): Virtual Audio Driver**
+
+Install a virtual loopback driver and select it as the input device:
+
+1. Install [BlackHole](https://github.com/ExistentialAudio/BlackHole) or [Loopback](https://rogueamoeba.com/loopback/)
+2. Set it as (or aggregate it with) your output device so system audio is routed through it
+3. Find its device index:
+   ```bash
+   python transcriber.py --list-devices
+   ```
+4. Run live capture against it:
+   ```bash
+   python transcriber.py --live --audio-device N --include-mic --mic-device M
+   ```
+
 ## Performance Tips
 
 ### For Best Accuracy
@@ -245,6 +276,7 @@ This software uses faster-whisper (MIT License), compatible with GPLv2.
 ### "No loopback device found"
 - **Windows**: Enable Stereo Mix or install VB-Cable
 - **Linux**: Ensure PulseAudio/PipeWire is running
+- **macOS**: Use `--coreaudio-tap` (macOS 14.4+), or install BlackHole/Loopback and select it with `--audio-device`
 - Use `--list-devices` to see available devices
 - Use `--setup-help` for detailed setup instructions
 
