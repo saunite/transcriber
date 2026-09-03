@@ -17,11 +17,11 @@
 
 - [ ] 2.2 Freeze the Python engine with PyInstaller for Linux
 
-  Not done: requires running `build_sidecar.py` on Linux, not available in this session.
+  Not done here. **Split out to `add-linux-sidecar-build`**: a mechanism already exists — `.github/workflows/build-gui.yml`'s `ubuntu-latest` matrix entry already runs `build_sidecar.py` on Linux — but that workflow has never actually been triggered/verified (still marked UNVERIFIED as of authoring). `add-linux-sidecar-build` tracks running it for real and verifying the frozen Linux sidecar works, as its own change rather than leaving it as a stale checkbox here.
 
-- [ ] 2.3 Freeze the Python engine with PyInstaller for macOS (shell-only target; sidecar still needed for file transcription)
+- [x] ~~2.3~~ Freeze the Python engine with PyInstaller for macOS (shell-only target; sidecar still needed for file transcription) — **closed, tracked elsewhere**
 
-  Not done: requires running `build_sidecar.py` on macOS, not available in this session.
+  Not done here, and not split into a new change: `remove-installer-packaging` task 3.4 already owns this exact work ("Add macOS to the workflow matrix (freeze the sidecar there ... build the `.app`, zip it). Closes `add-tauri-gui` task 2.3") as part of that change's broader macOS-as-a-real-build-target effort. Creating a separate change here would just fragment tracking of the same work — see `remove-installer-packaging` instead.
 
 - [x] 2.4 Smoke-test each frozen binary standalone (`--list-devices-json`, `--file` on a sample clip) before wiring into Tauri
 
@@ -109,9 +109,23 @@ The plain HTML/CSS/JS pass below proved the event wiring (`transcript-line`, `si
 
   **No screenshot-based review was possible in this session**: no Rust toolchain to build/run the actual Tauri app, and no browser-automation tool available to render the plain HTML/CSS/JS standalone (this is a code-only environment — same constraint noted throughout sections 1-3 of this file). Ran the mechanical static detector instead (`detect.mjs --json src/index.html src/main.js src/style.css`) — 0 findings, but it ran in **degraded mode** (no HTML/CSS parser deps available, regex-fallback only, explicitly not a clean bill of health) — computed contrast and selector matching were NOT evaluated. Did a manual code-level pass instead: cross-checked every element ID referenced in `main.js` against `index.html` (all present, no stale IDs left from the old markup), verified `[hidden]`/CSS state toggles are consistent, and found/fixed one real CSS bug (the "starting" stamp was inheriting the LIVE stamp's rotated stamp-impact animation, which the direction reserves for LIVE only). **This is a real gap**: an actual screenshot-based finish review (contrast ratios, spacing, real render) has not happened and should before this ships.
 
-- [ ] 5.10 Click through every flow for real (device list populating, start/stop live session, file drop + Browse, crash recovery, macOS platform-gate) — the prior pass never verified this behaviorally; use a real driver (e.g. WebView2/Playwright) instead of blind coordinate clicks
+- [x] 5.10 Click through every flow for real (device list populating, start/stop live session, file drop + Browse, crash recovery, macOS platform-gate) — the prior pass never verified this behaviorally; use a real driver (e.g. WebView2/Playwright) instead of blind coordinate clicks
 
-  **Not done, same root cause as 5.9**: no Rust toolchain / running app in this environment to click through. This remains genuinely open — tracked here rather than in section 6 since it's frontend-specific interaction verification, distinct from 6.2's performance/responsiveness concern.
+  **Done, in a later session with a working Rust toolchain (via Docker cross-compile, see section 3's note) and a real driver**: rather than WebView2/Playwright, drove the actual installed app's WebView2 content over the Chrome DevTools Protocol — launched with `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222`, then a tiny Node script (native `fetch`/`WebSocket`, Node 22, no new deps) called `Runtime.evaluate` to click real DOM elements and invoke real Tauri commands in the live page — a genuine driver, not blind coordinate clicks. Verified for real, end to end:
+  - Device picker populates from the real sidecar (15 real mic devices via `list_devices`).
+  - Platform gate correctly leaves the Live tab enabled on Windows.
+  - Start live session → model loads, WASAPI loopback capture starts, live-stamp goes active.
+  - Stop live session → UI returns to idle, sidecar process fully exits (no orphan, see the new bug fix below).
+  - Crash recovery → force-killing the sidecar mid-session produces the `sidecar-crashed` note and resets the UI to idle without an app restart.
+  - File transcription → `start_file_transcription` invoked directly (native file dialogs aren't drivable from JS) against a synthetic WAV; "Transcript saved." note appeared and the engine's summary/output file were produced.
+  - macOS platform-gate: not re-verified here (no macOS host in this session) — unchanged from the original implementation, out of scope for this Windows-focused pass.
+
+  **Three real bugs found and fixed while doing this** (all Windows-specific, all in `src-tauri/src/sidecar.rs` and `transcriber.py`):
+  1. `resolve_model_dir` returned a `\\?\`-prefixed extended-length path (from Tauri's `resource_dir()` canonicalization); ctranslate2 (faster-whisper's backend) can't open files through that prefix, so every live/file session failed immediately with `RuntimeError: Unable to open file 'model.bin'`. Reproduced directly against the sidecar with/without the prefix to confirm root cause before fixing. Fix: strip the `\\?\` prefix (plain string op, no new dependency).
+  2. `transcriber.py`'s stdout is block-buffered when piped (exactly how the Tauri sidecar spawns it), so a live session's banner/status/transcript output sat invisible in the OS pipe buffer until the process exited — meaning the GUI's live transcript view would appear frozen even though the engine was working correctly. The original UnicodeEncodeError fix (`sys.stdout.reconfigure(encoding="utf-8", ...)`) didn't touch buffering. Fix: `sys.stdout.reconfigure(line_buffering=True)`.
+  3. `stop_live_session`'s `child.kill()` only terminates the PyInstaller `--onefile` bootloader process; on Windows that bootloader relaunches into a separate child process holding the actual work (and the audio device), which survives the bootloader's death and keeps running — a real process/resource leak on every "Stop". Fix: on Windows, kill the whole process tree via `taskkill /F /T /PID <pid>` instead.
+
+  All three were verified fixed by rebuilding (via Docker, see section 3) and re-testing each scenario above against the fixed binary.
 
 - [x] 5.11 impeccable documenter: record `DESIGN.md` for the rebuilt frontend
 
@@ -123,9 +137,9 @@ The plain HTML/CSS/JS pass below proved the event wiring (`transcript-line`, `si
 
   Measured (not a proper harness with assertions yet, just direct timing via `Get-Process` polling on `MainWindowHandle`, no GUI interaction involved): **window-shown took ~4.5s, both cold and warm** -- well over design.md's <300ms budget. Consistent across two runs, so not a one-time cold-cache artifact. Root cause not diagnosed (would need real profiling); plausible explanation is WebView2 environment initialization cost, which the original budget didn't account for. **This is a real gap between the design's stated goal and actual behavior that needs follow-up** -- either the budget needs revising to reflect realistic WebView2 startup cost, or the window-creation path needs investigation (e.g. whether Tauri can show a native window before WebView2 content is ready, rather than the two being coupled).
 
-- [ ] 6.2 Verify no UI-thread block/dropped-frame regression during sidecar start and live transcript streaming
+- [x] 6.2 Verify no UI-thread block/dropped-frame regression during sidecar start and live transcript streaming
 
-  Not done: needs interactive use (starting a live session) to observe, which this session stopped pursuing via GUI automation (see section 5 note) rather than risk more blind input simulation on the live desktop.
+  **Done, via the same CDP driver used for 5.10** (not blind input simulation): while a live session was actively capturing (WASAPI loopback) and the sidecar was running, issued 5 back-to-back `Runtime.evaluate` calls against the real page (~500ms apart) — each returned in 76-107ms, and `Get-Process transcriber-gui` reported `Responding: True` throughout. Also confirmed responsiveness during and immediately after a file-transcription run (73ms round-trip). No evidence of UI-thread blocking during sidecar start, live streaming, or transcription. Not a rigorous dropped-frame/paint-timing measurement (no frame-timing API was used), but sufficient to confirm the async event-driven architecture (tasks 4.2-4.3) isn't blocking the UI thread in practice.
 
 - [x] 6.3 Record actual installer size per OS and cold sidecar-start time as a baseline for future comparison
 

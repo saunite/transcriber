@@ -54,6 +54,21 @@ The system SHALL route live capture through WASAPI loopback on Windows when `--w
 - **WHEN** a user runs `--live --wasapi` without `--include-mic`
 - **THEN** the system captures only system audio via WASAPI loopback
 
+### Requirement: Accept an explicit local model path
+The system SHALL provide `--model-path <dir>` to load the whisper model from a local directory directly, bypassing the network/cache-based model name lookup, for both file and live transcription modes.
+
+#### Scenario: File transcription with explicit model path
+- **WHEN** a user runs `--file audio.wav --model-path C:\path\to\model`
+- **THEN** the system loads the model from the given directory instead of resolving `--model` by name
+
+#### Scenario: Live capture with explicit model path
+- **WHEN** a user runs `--live --model-path C:\path\to\model`
+- **THEN** the system loads the model from the given directory instead of resolving `--model` by name
+
+#### Scenario: No model path given
+- **WHEN** `--model-path` is not passed
+- **THEN** the system behaves exactly as before, resolving `--model` by name
+
 ### Requirement: Handle interruption gracefully
 The system SHALL handle Ctrl+C by stopping capture, finalizing the transcript, cleaning up resources, and exiting without a crash.
 

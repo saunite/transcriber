@@ -29,4 +29,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN rustup target add x86_64-pc-windows-gnu \
     && cargo install --locked tauri-cli --version "^2"
 
+# Copied into the image's own (native, Linux) filesystem rather than
+# bind-mounted from the Windows host -- see
+# openspec/changes/fix-docker-build-filesystem/design.md. cargo/makensis
+# I/O against a bind-mounted NTFS checkout was the dominant cost of a
+# Windows build, not actual compilation/packaging work.
 WORKDIR /app
+COPY . /app
