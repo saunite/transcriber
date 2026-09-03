@@ -1,10 +1,5 @@
 name: Build GUI installers
 
-# UNVERIFIED: written without a working local Rust toolchain to test
-# against (see openspec/changes/add-tauri-gui/tasks.md section 3-4). Treat
-# as a first draft -- the first real run on GitHub's runners is this
-# workflow's actual test.
-
 on:
   workflow_dispatch:
   push:

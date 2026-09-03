@@ -6,5 +6,5 @@
 
 ## 2. CI verification
 
-- [ ] 2.1 Trigger `.github/workflows/build-gui.yml` for real (`workflow_dispatch`) and confirm the `ubuntu-latest` job completes and uploads its artifact
-- [ ] 2.2 Remove the `UNVERIFIED` header comment from `build-gui.yml` once the run passes
+- [x] 2.1 Trigger `.github/workflows/build-gui.yml` for real (`workflow_dispatch`) and confirm the `ubuntu-latest` job completes and uploads its artifact
+- [x] 2.2 Remove the `UNVERIFIED` header comment from `build-gui.yml` once the run passes
