@@ -110,4 +110,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: transcriber-gui-${{ matrix.os }}
-          path: dist/portable/**
+          # Only the final artifact -- build_portable.py's Windows path
+          # also leaves the unzipped folder it zipped from in dist/portable/
+          # for local dev convenience, which a bare `dist/portable/**` glob
+          # would otherwise upload redundantly alongside the zip.
+          path: |
+            dist/portable/*.zip
+            dist/portable/*.AppImage
