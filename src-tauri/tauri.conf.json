@@ -27,6 +27,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis", "appimage", "deb"],
+    "icon": ["icons/icon.png", "icons/icon.ico"],
     "externalBin": [
       "binaries/transcriber-sidecar"
     ],
