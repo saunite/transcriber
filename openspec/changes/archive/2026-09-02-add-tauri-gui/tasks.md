@@ -151,11 +151,15 @@ The plain HTML/CSS/JS pass below proved the event wiring (`transcript-line`, `si
 
   `tauri.conf.json`: `bundle.targets: ["nsis", "appimage", "deb"]`, plus `bundle.windows.nsis.installMode: "both"`. **Verified for real**: built and installed the actual NSIS installer (see 7.2) with no arguments (the default a user double-clicking would get) -- it installed to `%LOCALAPPDATA%\Programs\Transcriber` with **no UAC prompt**, confirming the default is per-user, no-admin-required, exactly as asked. The "both" mode's system-wide option (which would need admin) was not separately exercised.
 
+  **Superseded by `openspec/changes/remove-installer-packaging`**: the NSIS/`.deb` installer targets configured here are gone; `bundle.targets` is now the portable-artifact targets only (`appimage`, `app`). This entry stays as the historical record of what shipped at the time.
+
 - [x] 7.2 CI build matrix / reproducible build environment producing the installer
 
   Superseded the "GitHub-hosted 3-OS matrix" framing with a locally-runnable Docker path (`docker/tauri-build.Dockerfile`, `docker/build.ps1`) that cross-compiles the Windows NSIS installer entirely from a Linux container -- no MSVC, Wine, or native Windows Rust needed. **This is real, verified, end-to-end**: `docker build` succeeded, `cargo tauri build --target x86_64-pc-windows-gnu --bundles nsis` succeeded, producing `Transcriber_0.1.0_x64-setup.exe` (259MB, dominated by the bundled `base` model). `.github/workflows/build-gui.yml` (the GitHub Actions matrix) still exists as a separate, still-unrun path for later, updated to drop macOS and align with the nsis/mingw target -- but the Docker path is what was actually proven to work this session.
 
 - [x] 7.3 Manual install test confirming no-admin-by-default install (fully-offline testing deferred)
+
+  **Superseded by `openspec/changes/remove-installer-packaging`**: there is no longer an installer to test admin-prompt behavior for; the portable artifacts' no-admin-required verification lives in that change's own tasks.md section 5. This entry stays as the historical record of what shipped at the time.
 
   **Verified**: ran the installer silently (`/S`, no mode flag) as a normal, unelevated user -- completed with exit code 0, no UAC prompt, installed to `%LOCALAPPDATA%\Programs\Transcriber` (per-user). Launched the installed `transcriber-gui.exe`: window opened, titled "Transcriber", stayed responsive, and a screenshot confirmed the full UI rendered correctly. **Not done**: the fully-offline (network-disabled) part of this task, and any interactive click-through testing -- see the note at the end of section 5 on why that was cut short (a blind-input-simulation attempt risked hitting the wrong window on the live desktop, so it was stopped rather than pushed further).
 

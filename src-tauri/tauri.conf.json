@@ -26,18 +26,13 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "appimage", "deb"],
+    "targets": ["appimage", "app"],
     "icon": ["icons/icon.png", "icons/icon.ico"],
     "externalBin": [
       "binaries/transcriber-sidecar"
     ],
     "resources": [
       "resources/model/**/*"
-    ],
-    "windows": {
-      "nsis": {
-        "installMode": "both"
-      }
-    }
+    ]
   }
 }

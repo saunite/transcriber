@@ -18,8 +18,6 @@ on:
 
 jobs:
   build:
-    # macOS is intentionally excluded for now -- shell-only there pending
-    # add-macos-capture, and not a current priority (Windows first).
     strategy:
       fail-fast: false
       matrix:
@@ -28,6 +26,8 @@ jobs:
             rust-target: x86_64-pc-windows-msvc
           - os: ubuntu-latest
             rust-target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            rust-target: aarch64-apple-darwin
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -66,14 +66,20 @@ jobs:
         shell: bash
         run: |
           mkdir -p src-tauri/binaries
-          system=$(echo "${{ matrix.os }}" | cut -d- -f1)
-          if [ "$system" = "windows" ]; then
-            src="dist/windows/transcriber-sidecar.exe"
-            dest="src-tauri/binaries/transcriber-sidecar-${{ matrix.rust-target }}.exe"
-          else
-            src="dist/linux/transcriber-sidecar"
-            dest="src-tauri/binaries/transcriber-sidecar-${{ matrix.rust-target }}"
-          fi
+          case "${{ matrix.os }}" in
+            windows-latest)
+              src="dist/windows/transcriber-sidecar.exe"
+              dest="src-tauri/binaries/transcriber-sidecar-${{ matrix.rust-target }}.exe"
+              ;;
+            macos-latest)
+              src="dist/darwin/transcriber-sidecar"
+              dest="src-tauri/binaries/transcriber-sidecar-${{ matrix.rust-target }}"
+              ;;
+            *)
+              src="dist/linux/transcriber-sidecar"
+              dest="src-tauri/binaries/transcriber-sidecar-${{ matrix.rust-target }}"
+              ;;
+          esac
           cp "$src" "$dest"
           chmod +x "$dest" || true
 
@@ -98,7 +104,10 @@ jobs:
         with:
           args: --target ${{ matrix.rust-target }}
 
+      - name: Assemble portable artifact
+        run: python build_portable.py --target ${{ matrix.rust-target }}
+
       - uses: actions/upload-artifact@v4
         with:
           name: transcriber-gui-${{ matrix.os }}
-          path: src-tauri/target/${{ matrix.rust-target }}/release/bundle/**
+          path: dist/portable/**

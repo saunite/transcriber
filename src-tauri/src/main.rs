@@ -1,6 +1,4 @@
-// UNVERIFIED: written without a working Rust/Cargo toolchain on this
-// machine (see openspec/changes/add-tauri-gui/design.md). Treat as a
-// first draft to `cargo build` and iterate on.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod sidecar;
 
