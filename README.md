@@ -44,6 +44,28 @@ cargo tauri build          # from src-tauri/
 python build_portable.py   # assembles the portable artifact for the current OS into dist/portable/
 ```
 
+#### Native Linux build from WSL (no Docker, no container)
+
+**Check out the repo on WSL's own (ext4) filesystem, not under `/mnt/c/...`.** `/mnt/c` is a 9p/DrvFs mount of the Windows drive — `CARGO_TARGET_DIR` (below) keeps cargo's *output* off it, but the *source* (`Cargo.toml`, every `src-tauri/src/*.rs`, `tauri.conf.json`) still has to be read from wherever the checkout lives, and Tauri writes generated schema files into `src-tauri/gen/` on every build. From a native path (e.g. `~/repos/transcriber`) none of that touches the Windows filesystem at all. Confirmed working from `~/repos/transcriber`: the `.venv` Windows Python interop (used to freeze the Windows sidecar, see the Windows build notes) still reaches the venv fine via WSL's `\\wsl.localhost\...` path — only that one-shot freeze crosses the boundary, in the direction that doesn't matter for build speed.
+
+Building directly in a WSL (or any native Linux) environment needs the same system packages the CI Linux job and the Docker image (`docker/tauri-build.Dockerfile`) use, plus `rustup` and the Tauri CLI:
+
+```bash
+sudo apt-get install -y build-essential pkg-config libssl-dev \
+    libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+    librsvg2-dev patchelf
+rustup default stable
+cargo install --locked tauri-cli --version "^2"
+```
+
+Point cargo's `target/` directory at a native (ext4) filesystem path — if the repo is checked out on a Windows-mounted path (e.g. `/mnt/c/...` under WSL), cargo's incremental-compile I/O against that mount is the dominant cost of a build, not the compilation itself:
+
+```bash
+export CARGO_TARGET_DIR="$HOME/.cache/transcriber-target"
+```
+
+Then build as above (`cargo tauri build` from `src-tauri/`, `python build_portable.py`) — `build_portable.py` honors `CARGO_TARGET_DIR` automatically.
+
 The bundled artifact ships the `base` Whisper model (~145MB) for a fully offline first run. No ffmpeg bundling is needed — the sidecar decodes audio and video via PyAV (bundled with faster-whisper), not an external ffmpeg binary; see `openspec/changes/drop-ffmpeg-dependency/`.
 
 The GUI sidecar always passes an explicit `--model-path` pointing at its bundled model directory (resolved relative to the running app, so it works the same whether run from the extracted Windows folder, the AppImage, or the `.app`), instead of relying on faster-whisper's network/cache-based model lookup. The CLI gained the same `--model-path <dir>` flag for anyone running from a bundled build directly.

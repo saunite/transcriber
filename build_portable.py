@@ -25,8 +25,10 @@ Usage: python build_portable.py [--target x86_64-pc-windows-gnu]
 from __future__ import annotations
 
 import argparse
+import json
 import platform
 import shutil
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
@@ -34,8 +36,28 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent
 
 
+def _cargo_target_dir() -> Path | None:
+    # Ask cargo itself where it writes (openspec/changes/02-add-wsl-linux-build)
+    # -- e.g. to relocate build output off a Windows-mounted (/mnt/c) path
+    # under WSL. cargo resolves this from $CARGO_TARGET_DIR, then
+    # ~/.cargo/config.toml's build.target-dir, then the in-tree default;
+    # asking cargo directly (rather than re-checking only the env var)
+    # matches whichever of those actually applied for the real build.
+    try:
+        result = subprocess.run(
+            ["cargo", "metadata", "--format-version", "1", "--no-deps"],
+            cwd=REPO_ROOT / "src-tauri",
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return Path(json.loads(result.stdout)["target_directory"])
+    except (OSError, subprocess.CalledProcessError, KeyError, json.JSONDecodeError):
+        return None
+
+
 def _release_dir(target: str | None) -> Path:
-    base = REPO_ROOT / "src-tauri" / "target"
+    base = _cargo_target_dir() or (REPO_ROOT / "src-tauri" / "target")
     return (base / target / "release") if target else (base / "release")
 
 

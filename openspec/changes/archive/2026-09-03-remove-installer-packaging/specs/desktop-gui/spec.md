@@ -55,3 +55,9 @@ The application SHALL open its own window and nothing else when launched by a us
 #### Scenario: Development builds keep their console
 - **WHEN** a developer runs a debug build of the application
 - **THEN** console output remains available, so the release-build console suppression does not hinder development
+
+## REMOVED Requirements
+
+### Requirement: Portable build available alongside the installer
+**Reason**: Superseded by "Single no-install artifact per platform" above — the portable build is no longer an alternative packaging form offered alongside an installer; it is the only distributed form, and the installer is removed entirely.
+**Migration**: See "Single no-install artifact per platform" for the current requirement covering the same functionality (a self-contained, no-install artifact per platform).

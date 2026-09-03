@@ -1,0 +1,44 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(openspec *)",
+      "PowerShell(python -m py_compile transcriber.py transcription_engine.py; echo \"exit=$LASTEXITCODE\")",
+      "PowerShell(head *)",
+      "PowerShell(cd C:\\\\Users\\\\e-AndreSaunite\\\\vscode\\\\transcriber; $env:TZ = $null; python test_tz_fix.py)",
+      "PowerShell(cd C:\\\\Users\\\\e-AndreSaunite\\\\vscode\\\\transcriber; $env:TZ = \"America/New_York\"; python test_tz_fix.py)",
+      "PowerShell(cd C:\\\\Users\\\\e-AndreSaunite\\\\vscode\\\\transcriber; $env:TZ = \"America/New_York\"; python test_tz_broken.py)",
+      "PowerShell(openspec instructions *)",
+      "Skill(openspec-sync-specs)",
+      "PowerShell(Get-ChildItem -File -Path \"C:\\\\Users\\\\e-AndreSaunite\\\\vscode\\\\transcriber\" | Where-Object { $_.Extension -eq \".py\" -or $_.Extension -eq \".md\" -or $_.Extension -eq \".txt\" -or $_.Extension -eq \".yml\" -or $_.Extension -eq \".yaml\" -or $_.Extension -eq \".json\" -or $_.Extension -eq \".sh\" -or $_.Extension -eq \".ps1\" } | Select-Object Name)",
+      "PowerShell(Get-ChildItem -Recurse -Path \"C:\\\\Users\\\\e-AndreSaunite\\\\vscode\\\\transcriber\\\\openspec\" -File | Select-Object FullName | ForEach-Object { $_.FullName -replace [regex]::Escape\\(\"C:\\\\Users\\\\e-AndreSaunite\\\\vscode\\\\transcriber\\\\\"\\), \"\" })"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ ! -f '/root/.claude/skills/impeccable/scripts/hook.mjs' ] || node '/root/.claude/skills/impeccable/scripts/hook.mjs'",
+            "timeout": 5,
+            "statusMessage": "Checking UI changes"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ ! -f '/root/.claude/skills/impeccable/scripts/hook.mjs' ] || node '/root/.claude/skills/impeccable/scripts/hook.mjs'",
+            "timeout": 30,
+            "statusMessage": "Design deep pass"
+          }
+        ]
+      }
+    ]
+  },
+  "description": "Impeccable design detector: immediate-tier checks after Edit/Write on UI files, full-rule deep pass on Stop."
+}

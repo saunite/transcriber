@@ -18,9 +18,17 @@ context: |
 rules:
   proposal:
     - ALWAYS use the ponytail skill on any change to ensure it is optimized. If the skill is not available, continue normally but inform the user.
+    - If this work needs genuinely different implementation per platform (e.g. Windows vs Linux) for any part to be complete, split it into separate changes -- one platform-agnostic change plus one change per platform needing distinct implementation -- rather than one change covering every platform. Work merely verified on multiple platforms with no implementation divergence does not need to split.
+    - When creating multiple related changes together (e.g. a platform split), prefix each change's directory name with a two-digit number reflecting its intended application order (e.g. 01-foo, 02-foo-linux, 03-foo-windows).
   specs:
     - ALWAYS use the ponytail skill on any change to ensure it is optimized. If the skill is not available, continue normally but inform the user.
+    - If this work needs genuinely different implementation per platform (e.g. Windows vs Linux) for any part to be complete, split it into separate changes -- one platform-agnostic change plus one change per platform needing distinct implementation -- rather than one change covering every platform. Work merely verified on multiple platforms with no implementation divergence does not need to split.
+    - When creating multiple related changes together (e.g. a platform split), prefix each change's directory name with a two-digit number reflecting its intended application order (e.g. 01-foo, 02-foo-linux, 03-foo-windows).
   design:
     - ALWAYS use the ponytail skill on any change to ensure it is optimized. If the skill is not available, continue normally but inform the user.
+    - If this work needs genuinely different implementation per platform (e.g. Windows vs Linux) for any part to be complete, split it into separate changes -- one platform-agnostic change plus one change per platform needing distinct implementation -- rather than one change covering every platform. Work merely verified on multiple platforms with no implementation divergence does not need to split.
+    - When creating multiple related changes together (e.g. a platform split), prefix each change's directory name with a two-digit number reflecting its intended application order (e.g. 01-foo, 02-foo-linux, 03-foo-windows).
   tasks:
     - ALWAYS use the ponytail skill on any change to ensure it is optimized. If the skill is not available, continue normally but inform the user.
+    - If this work needs genuinely different implementation per platform (e.g. Windows vs Linux) for any part to be complete, split it into separate changes -- one platform-agnostic change plus one change per platform needing distinct implementation -- rather than one change covering every platform. Work merely verified on multiple platforms with no implementation divergence does not need to split.
+    - When creating multiple related changes together (e.g. a platform split), prefix each change's directory name with a two-digit number reflecting its intended application order (e.g. 01-foo, 02-foo-linux, 03-foo-windows).
