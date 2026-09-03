@@ -50,13 +50,17 @@ def _zip_dir(src_dir: Path, zip_path: Path) -> None:
 
 def build_windows(target: str | None) -> Path:
     release_dir = _release_dir(target)
-    required = ["transcriber-gui.exe", "transcriber-sidecar.exe", "WebView2Loader.dll"]
+    required = ["transcriber-gui.exe", "transcriber-sidecar.exe"]
     for name in required:
         if not (release_dir / name).exists():
             raise SystemExit(
                 f"Missing {name} in {release_dir} -- run the build first "
                 f"(see docker/build.ps1 or 'cargo tauri build')."
             )
+    # WebView2Loader.dll is a sibling file on the mingw target (statically
+    # linked on MSVC instead, so it won't exist there) -- see design.md
+    # Decision 2, point 2. Copy it when present, don't require it.
+    optional = ["WebView2Loader.dll"]
 
     model_dir = REPO_ROOT / "src-tauri" / "resources" / "model"
     if not (model_dir / "model.bin").exists():
@@ -69,6 +73,9 @@ def build_windows(target: str | None) -> Path:
 
     for name in required:
         shutil.copy2(release_dir / name, out_dir / name)
+    for name in optional:
+        if (release_dir / name).exists():
+            shutil.copy2(release_dir / name, out_dir / name)
 
     out_model_dir = out_dir / "resources" / "model"
     shutil.copytree(model_dir, out_model_dir)
