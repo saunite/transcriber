@@ -7,104 +7,194 @@
   </head>
   <body>
     <!--
-      "Verbatim" direction -- see .impeccable/surfaces/src-index-html.md.
       Plain HTML/CSS/JS, no build step: window.__TAURI__ is exposed via
       app.withGlobalTauri in tauri.conf.json.
     -->
     <div id="note-root" class="note-root" role="alert" aria-live="assertive"></div>
 
-    <header class="masthead">
+    <header class="titleblock">
       <h1 class="wordmark">Transcriber</h1>
-      <button
-        id="settings-toggle"
-        class="settings-toggle"
-        type="button"
-        aria-expanded="false"
-        aria-controls="settings-drawer"
-      >
-        Session Settings
-      </button>
+
+      <div class="titleblock-fields">
+        <label class="tb-field tb-field-wide">
+          <span class="tb-label">Record to</span>
+          <span class="tb-input-row">
+            <input id="output-path-input" type="text" spellcheck="false" />
+            <button id="output-browse-btn" class="btn-quiet" type="button">Browse…</button>
+          </span>
+        </label>
+
+        <label class="tb-field">
+          <span class="tb-label">Model</span>
+          <select id="model-select">
+            <option value="tiny">tiny</option>
+            <option value="base" selected>base</option>
+            <option value="small">small</option>
+            <option value="medium">medium</option>
+            <option value="large">large</option>
+          </select>
+        </label>
+
+        <label class="tb-field">
+          <span class="tb-label">Language</span>
+          <select id="language-select"></select>
+        </label>
+      </div>
     </header>
 
-    <section id="settings-drawer" class="settings-drawer" hidden>
-      <label class="field">
-        Model
-        <select id="model-select">
-          <option value="tiny">tiny</option>
-          <option value="base" selected>base</option>
-          <option value="small">small</option>
-          <option value="medium">medium</option>
-          <option value="large">large</option>
-        </select>
-      </label>
-      <label class="field">
-        Language (blank = auto-detect)
-        <input id="language-input" type="text" maxlength="8" />
-      </label>
-      <label class="field field-check">
-        <input id="include-mic-checkbox" type="checkbox" />
-        Include microphone
-      </label>
-      <label id="mic-device-field" class="field" hidden>
-        Microphone
-        <select id="mic-device-select"></select>
-      </label>
-    </section>
-
-    <nav class="tabs">
-      <button id="tab-live" class="tab" type="button" aria-selected="true">Live Session</button>
-      <button id="tab-file" class="tab" type="button" aria-selected="false">File Transcription</button>
-    </nav>
-
-    <main class="page">
-      <div class="page-topline">
-        <span id="live-stamp" class="stamp stamp-live" hidden>Live</span>
-        <span id="starting-stamp" class="stamp stamp-starting" hidden>Starting…</span>
-        <span id="busy-stamp" class="stamp stamp-busy" hidden>Transcribing…</span>
-        <button id="stop-btn" class="stop-btn" type="button" hidden>Stop</button>
-      </div>
-
-      <section id="panel-live" class="panel">
-        <div id="live-empty" class="empty-state">
-          <button id="start-live-btn" class="primary-action" type="button">Start Live Session</button>
-          <p class="hint">
-            Captures system audio, and your microphone if enabled, and transcribes it as you speak.
-          </p>
+    <div class="instrument">
+      <aside class="rail">
+        <div class="mode-switch" role="tablist" aria-label="Source">
+          <button id="tab-live" class="mode" type="button" role="tab" aria-selected="true">Live</button>
+          <button id="tab-file" class="mode" type="button" role="tab" aria-selected="false">File</button>
         </div>
-        <div id="macos-live-notice" class="platform-notice" hidden>
-          Live capture isn't available on macOS yet — transcribe a file instead.
-        </div>
-        <ol id="transcript-live" class="transcript" hidden></ol>
-      </section>
 
-      <section id="panel-file" class="panel" hidden>
-        <button id="drop-zone" class="drop-zone" type="button">
-          Drop a recording here, or click to choose a file
-        </button>
-        <div class="file-options">
-          <label class="field">
-            Output format
+        <!-- LIVE controls -->
+        <section id="panel-live" class="rail-panel">
+          <div class="transport">
+            <button id="start-live-btn" class="btn-record" type="button">
+              <span class="btn-record-pen" aria-hidden="true"></span>
+              <span>Start recording</span>
+            </button>
+            <button id="stop-btn" class="btn-quiet btn-stop" type="button" hidden>Stop recording</button>
+          </div>
+
+          <div id="run-state" class="run-state" data-state="idle">
+            <span class="run-dot" aria-hidden="true"></span>
+            <span id="run-state-label" class="run-state-label">Not recording</span>
+            <span id="run-elapsed" class="run-elapsed mono" hidden>0:00</span>
+          </div>
+          <p id="run-detail" class="run-detail" hidden></p>
+
+          <div class="pens">
+            <div class="pen pen-sys" data-armed="true">
+              <span class="pen-swatch" aria-hidden="true"></span>
+              <span class="pen-name">SYS</span>
+              <span class="pen-desc">System audio</span>
+              <span class="pen-state">Armed</span>
+            </div>
+            <label class="pen pen-mic" data-armed="true">
+              <span class="pen-swatch" aria-hidden="true"></span>
+              <span class="pen-name">MIC</span>
+              <span class="pen-desc">Microphone</span>
+              <input id="include-mic-checkbox" type="checkbox" checked />
+              <span class="pen-state" data-on="Armed" data-off="Lifted">Armed</span>
+            </label>
+          </div>
+
+          <label id="mic-device-field" class="rail-field">
+            <span class="rail-label">Microphone device</span>
+            <select id="mic-device-select"></select>
+          </label>
+
+          <label class="rail-field">
+            <span class="rail-label">System audio device override</span>
+            <input id="audio-device-input" type="number" min="0" step="1" placeholder="auto" />
+            <span class="rail-hint">
+              Default: auto-detected WASAPI device (recommended). Overriding is not recommended
+              unless the wrong device is being captured.
+            </span>
+          </label>
+        </section>
+
+        <!-- FILE controls -->
+        <section id="panel-file" class="rail-panel" hidden>
+          <button id="drop-zone" class="drop-zone" type="button">
+            <span class="drop-zone-line">Drop a recording</span>
+            <span class="drop-zone-sub">or click to choose a file</span>
+          </button>
+
+          <label class="rail-field">
+            <span class="rail-label">Output format</span>
             <select id="format-select">
               <option value="txt" selected>txt</option>
               <option value="srt">srt</option>
               <option value="vtt">vtt</option>
             </select>
           </label>
-          <label class="field">
-            Task
+
+          <label class="rail-field">
+            <span class="rail-label">Task</span>
             <select id="task-select">
               <option value="transcribe" selected>transcribe</option>
               <option value="translate">translate</option>
             </select>
           </label>
+
+          <div id="file-state" class="run-state" data-state="idle" hidden>
+            <span class="run-dot" aria-hidden="true"></span>
+            <span class="run-state-label">Transcribing</span>
+          </div>
+        </section>
+
+        <!-- Chart speed: the signature control, shared by both flows -->
+        <div class="rail-field speed">
+          <span class="rail-label">Chart speed</span>
+          <input
+            id="chart-speed"
+            type="range"
+            min="0"
+            max="100"
+            value="62"
+            aria-describedby="chart-speed-readout"
+          />
+          <span id="chart-speed-readout" class="rail-readout mono">reading</span>
+          <span class="rail-hint">Compress the whole session to see its shape, or open it out to read.</span>
         </div>
-        <ol id="transcript-file" class="transcript" hidden></ol>
-      </section>
-    </main>
+
+        <label class="rail-field">
+          <span class="rail-label">Timestamps</span>
+          <select id="time-mode">
+            <option value="clock" selected>Clock time</option>
+            <option value="elapsed">Time into session</option>
+          </select>
+          <span id="time-mode-hint" class="rail-hint" hidden>
+            A transcribed file carries no clock time, so these stay relative to the start of the recording.
+          </span>
+        </label>
+
+        <label class="rail-field filter-field">
+          <span class="rail-label">Show</span>
+          <select id="pen-filter">
+            <option value="all" selected>Both sources</option>
+            <option value="SYS">SYS only</option>
+            <option value="MIC">MIC only</option>
+          </select>
+        </label>
+
+        <label class="rail-field">
+          <span class="rail-label">Find in chart</span>
+          <input id="chart-search" type="search" placeholder="search text" spellcheck="false" />
+          <span id="search-count" class="rail-readout mono" hidden></span>
+        </label>
+      </aside>
+
+      <main class="chart-area">
+        <div id="macos-live-notice" class="platform-notice" hidden>
+          Live capture isn't available on macOS yet — transcribe a file instead.
+        </div>
+
+        <div id="chart-live" class="chart" data-scale-mode="reading">
+          <ol id="transcript-live" class="roll"></ol>
+          <p id="live-empty" class="chart-empty">
+            Nothing recorded yet.<br />
+            Press <strong>Start recording</strong> to capture this meeting.
+          </p>
+        </div>
+
+        <div id="chart-file" class="chart" data-scale-mode="reading" hidden>
+          <ol id="transcript-file" class="roll"></ol>
+          <p id="file-empty" class="chart-empty">
+            No recording loaded.<br />
+            Drop a file, or choose one, to draw it onto the chart.
+          </p>
+        </div>
+      </main>
+    </div>
 
     <details id="debug-panel" class="debug-panel">
       <summary>Engine log</summary>
-      <div id="debug-log" class="debug-log mono"></div>
+      <div id="debug-log" class="debug-log mono" role="log"></div>
     </details>
 
     <script src="main.js"></script>

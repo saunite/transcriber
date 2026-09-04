@@ -39,7 +39,8 @@ class WASAPICapture:
     def capture_stream(
         self,
         callback: Callable[[np.ndarray], None],
-        device_index: Optional[int] = None
+        device_index: Optional[int] = None,
+        verbose: bool = False
     ):
         """
         Capture audio from WASAPI loopback device.
@@ -52,6 +53,8 @@ class WASAPICapture:
         Args:
             callback: Function called with each audio chunk (numpy array)
             device_index: WASAPI loopback device index (None = auto-detect)
+            verbose: print device/start/stop detail (transcriber.py's compact
+                default already covers this via its own status lines)
         """
         # Get device
         if device_index is None:
@@ -61,7 +64,8 @@ class WASAPICapture:
         else:
             device_info = self.p.get_device_info_by_index(device_index)
 
-        print(f"🎙️  Capturing from: {device_info['name']}")
+        if verbose:
+            print(f"🎙️  Capturing from: {device_info['name']}")
 
         # Audio parameters
         CHANNELS = device_info['maxInputChannels']
@@ -107,7 +111,8 @@ class WASAPICapture:
         reader_thread.start()
 
         try:
-            print("🎙️  Capturing audio... Press Ctrl+C to stop\n")
+            if verbose:
+                print("🎙️  Capturing audio... Press Ctrl+C to stop\n")
 
             while self.is_capturing:
                 try:
@@ -117,7 +122,8 @@ class WASAPICapture:
                 callback(audio_chunk)
 
         except KeyboardInterrupt:
-            print("\n✓ Capture stopped by user")
+            if verbose:
+                print("\n✓ Capture stopped by user")
         finally:
             self.is_capturing = False
             stream.stop_stream()

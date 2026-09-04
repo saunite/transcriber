@@ -25,30 +25,18 @@ There is no installer, no admin prompt, and no uninstaller — each platform shi
 
 ### Building it yourself
 
-**No local Rust toolchain needed on Windows** — a Docker image (`docker/tauri-build.Dockerfile`) cross-compiles the Windows portable build from a Linux container (mingw-w64 GNU target), and builds the Linux AppImage natively in the same container:
-
-```powershell
-python build_sidecar.py                                          # freeze transcriber.py -> dist/windows/transcriber-sidecar.exe
-python fetch_sidecar_resources.py                                # stage the `base` model into src-tauri/resources/model/
-copy dist\windows\transcriber-sidecar.exe src-tauri\binaries\transcriber-sidecar-x86_64-pc-windows-gnu.exe
-
-.\docker\build.ps1
-# Windows artifact: dist\portable\Transcriber.zip
-# Linux artifact:   dist\portable\*.AppImage
-```
-
-If you have a native Rust toolchain + [Tauri CLI](https://tauri.app/) available instead (e.g. Linux, macOS, or Windows without this machine's toolchain-install restriction), stage the sidecar binary under `src-tauri/binaries/transcriber-sidecar-<target-triple>.exe`, then:
+All development happens on Linux/WSL; the sections below cover the Windows and Linux artifacts from there. On macOS (or any other platform with a native Rust toolchain + [Tauri CLI](https://tauri.app/) already set up), stage the sidecar binary under `src-tauri/binaries/transcriber-sidecar-<target-triple>.exe`, then:
 
 ```bash
 cargo tauri build          # from src-tauri/
 python build_portable.py   # assembles the portable artifact for the current OS into dist/portable/
 ```
 
-#### Native Linux build from WSL (no Docker, no container)
+#### Linux build (WSL or native Linux)
 
 **Check out the repo on WSL's own (ext4) filesystem, not under `/mnt/c/...`.** `/mnt/c` is a 9p/DrvFs mount of the Windows drive — `CARGO_TARGET_DIR` (below) keeps cargo's *output* off it, but the *source* (`Cargo.toml`, every `src-tauri/src/*.rs`, `tauri.conf.json`) still has to be read from wherever the checkout lives, and Tauri writes generated schema files into `src-tauri/gen/` on every build. From a native path (e.g. `~/repos/transcriber`) none of that touches the Windows filesystem at all. Confirmed working from `~/repos/transcriber`: the `.venv` Windows Python interop (used to freeze the Windows sidecar, see the Windows build notes) still reaches the venv fine via WSL's `\\wsl.localhost\...` path — only that one-shot freeze crosses the boundary, in the direction that doesn't matter for build speed.
 
-Building directly in a WSL (or any native Linux) environment needs the same system packages the CI Linux job and the Docker image (`docker/tauri-build.Dockerfile`) use, plus `rustup` and the Tauri CLI:
+Building directly in a WSL (or any native Linux) environment needs these system packages, plus `rustup` and the Tauri CLI:
 
 ```bash
 sudo apt-get install -y build-essential pkg-config libssl-dev \
@@ -58,13 +46,50 @@ rustup default stable
 cargo install --locked tauri-cli --version "^2"
 ```
 
-Point cargo's `target/` directory at a native (ext4) filesystem path — if the repo is checked out on a Windows-mounted path (e.g. `/mnt/c/...` under WSL), cargo's incremental-compile I/O against that mount is the dominant cost of a build, not the compilation itself:
+Point cargo's `target/` directory at a native (ext4) filesystem path, persistently — via `~/.cargo/config.toml` rather than an exported env var, so it doesn't depend on remembering to set it in every shell:
 
-```bash
-export CARGO_TARGET_DIR="$HOME/.cache/transcriber-target"
+```toml
+# ~/.cargo/config.toml (machine-local, not part of this repo)
+[build]
+target-dir = "/home/YOU/.cache/transcriber-target"
 ```
 
-Then build as above (`cargo tauri build` from `src-tauri/`, `python build_portable.py`) — `build_portable.py` honors `CARGO_TARGET_DIR` automatically.
+An exported `CARGO_TARGET_DIR` still works too and takes precedence if set. `build_portable.py` finds the real location either way (it asks `cargo metadata` directly, rather than only checking the env var).
+
+#### Windows build (from WSL)
+
+The Windows shell (Tauri) cross-compiles cleanly from WSL, but the Windows sidecar is a PyInstaller freeze, and PyInstaller does not cross-compile — it must run under a real Windows Python. WSL can execute Windows `.exe` binaries directly, so this uses a Windows Python venv reached from WSL rather than a separate Windows build step.
+
+Add the mingw cross-toolchain (on top of the base toolchain from the Linux section above):
+
+```bash
+sudo apt-get install -y gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64
+rustup target add x86_64-pc-windows-gnu
+```
+
+If `.venv/` (a Windows-targeted venv) doesn't already exist, create it from WSL via Windows Python and install the sidecar's dependencies:
+
+```bash
+python.exe -m venv .venv
+./.venv/Scripts/python.exe -m pip install -r requirements.txt pyinstaller
+```
+
+Freeze the Windows sidecar through that venv. This checks for the specific venv interpreter, not just any `python.exe` on `PATH` — a generic `PATH` lookup can resolve to an unrelated interpreter (e.g. the Windows Store's stub launcher) that lacks the sidecar's dependencies, which would pass a looser check and then fail confusingly inside the freeze itself instead of failing clearly up front:
+
+```bash
+[ -x .venv/Scripts/python.exe ] || { echo "ERROR: no Windows Python venv at .venv/Scripts/python.exe -- see venv setup above" >&2; exit 1; }
+./.venv/Scripts/python.exe build_sidecar.py
+cp dist/windows/transcriber-sidecar.exe src-tauri/binaries/transcriber-sidecar-x86_64-pc-windows-gnu.exe
+```
+
+Then the rest of the Windows build, same as any other target:
+
+```bash
+cargo tauri build --target x86_64-pc-windows-gnu   # from src-tauri/
+python fetch_sidecar_resources.py                  # stage the model, if not already staged
+python build_portable.py --target x86_64-pc-windows-gnu
+# Windows artifact: dist/portable/Transcriber.zip
+```
 
 The bundled artifact ships the `base` Whisper model (~145MB) for a fully offline first run. No ffmpeg bundling is needed — the sidecar decodes audio and video via PyAV (bundled with faster-whisper), not an external ffmpeg binary; see `openspec/changes/drop-ffmpeg-dependency/`.
 

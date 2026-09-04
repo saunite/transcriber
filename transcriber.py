@@ -39,10 +39,15 @@ from audio_capture import AudioCapture, setup_loopback_instructions
 from transcription_engine import TranscriptionEngine
 import time
 
-def signal_handler(signum, frame):
-    """Handle Ctrl+C gracefully."""
-    print("\n\n⏹️  Shutdown requested, stopping transcription...")
-    raise KeyboardInterrupt
+def _make_signal_handler(verbose: bool):
+    """Ctrl+C handler, gated on --verbose -- the compact default prints its
+    own one-line stop summary once cleanup finishes (see _print_summary),
+    so this immediate acknowledgement is only needed as extra detail."""
+    def signal_handler(signum, frame):
+        if verbose:
+            print("\n\n⏹️  Shutdown requested, stopping transcription...")
+        raise KeyboardInterrupt
+    return signal_handler
 
 
 def main():
@@ -150,6 +155,13 @@ Examples:
         '--save-audio',
         action='store_true',
         help='Save captured audio to a WAV file alongside the transcript (live mode only)'
+    )
+
+    parser.add_argument(
+        '--verbose', '-v',
+        action='store_true',
+        help='Print full startup/device-detection/shutdown detail during live capture '
+             '(default: a compact summary instead)'
     )
 
     # Device options
@@ -260,12 +272,13 @@ Examples:
     
     try:
         # Initialize transcription engine
-        print(f"\n{'='*60}")
-        print("Audio Transcriber")
-        print(f"{'='*60}\n")
-        
+        if args.verbose:
+            print(f"\n{'='*60}")
+            print("Audio Transcriber")
+            print(f"{'='*60}\n")
+
         # Set up signal handler for Ctrl+C
-        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGINT, _make_signal_handler(args.verbose))
         
         engine = TranscriptionEngine(
             model_size=args.model,
@@ -341,11 +354,15 @@ def transcribe_file(engine: TranscriptionEngine, args) -> int:
         print(f"❌ Could not decode {file_path.name}: unsupported or corrupt media ({e})")
         return 1
 
-    # Determine output path
+    # Determine output path. Auto-derived names are stamped so transcribing
+    # the same file twice never silently overwrites the first result --
+    # the GUI never passes --output for file mode, so this is the path it
+    # always takes.
     if args.output:
         output_path = Path(args.output)
     else:
-        output_name = f"{file_path.stem}_transcript.{args.format}"
+        stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        output_name = f"{file_path.stem}_transcript_{stamp}.{args.format}"
         output_path = Path.cwd() / output_name
 
     # Save transcript
@@ -478,6 +495,17 @@ def _setup_output_files(args, native_rate: int = 16000, include_mic: bool = Fals
     return output_file, wav_file, audio_save_path
 
 
+def _print_compact_stop(all_segments: list, output_path: Optional[str]) -> None:
+    """One-line stop summary, printed regardless of --verbose -- the compact
+    counterpart to _print_summary's full banner
+    (openspec/changes/compact-live-cli-output)."""
+    n = len(all_segments)
+    if output_path:
+        print(f"Stopped — {n} segment{'s' if n != 1 else ''} saved to {output_path}")
+    else:
+        print(f"Stopped — {n} segment{'s' if n != 1 else ''} (not saved to a file)")
+
+
 def _print_summary(all_segments: list, args, output_path: Optional[str] = None, audio_save_path: Optional[str] = None, sys_audio_save_path: Optional[str] = None, mic_audio_save_path: Optional[str] = None, merged_audio_save_path: Optional[str] = None) -> None:
     """Print summary of transcription completion."""
     print(f"\n{'='*60}")
@@ -541,7 +569,8 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
         native_rate = 48000
 
     # Print header
-    _print_header(args.model, args.language, args.chunk_duration)
+    if args.verbose:
+        _print_header(args.model, args.language, args.chunk_duration)
 
     # Initialize audio capture with native sample rate
     capture = AudioCapture(sample_rate=native_rate, channels=1)
@@ -641,7 +670,9 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
             wav_file.close()
 
     # Print summary
-    _print_summary(all_segments, args, output_path=args.output, audio_save_path=audio_save_path)
+    if args.verbose:
+        _print_summary(all_segments, args, output_path=args.output, audio_save_path=audio_save_path)
+    _print_compact_stop(all_segments, args.output)
 
     return 0
 
@@ -657,7 +688,8 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
     import wave
 
     # Print header
-    _print_header(args.model, args.language, args.chunk_duration, "WASAPI Loopback (Bluetooth-compatible)")
+    if args.verbose:
+        _print_header(args.model, args.language, args.chunk_duration, "WASAPI Loopback (Bluetooth-compatible)")
 
     # Initialize WASAPI capture for system audio
     capture = WASAPICapture()
@@ -669,15 +701,23 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
         # Auto-detect default loopback
         device_info = capture.get_default_loopback_device()
         if not device_info:
+            # --list-devices/--list-devices-json enumerate sounddevice's
+            # device list, a separate index space from pyaudiowpatch's
+            # WASAPI loopback devices -- they can't produce a usable
+            # --audio-device value, so don't send anyone there
+            # (openspec/changes/add-wasapi-device-override).
             print("❌ No WASAPI loopback device found!")
-            print("Run with --list-devices to see available devices.")
+            print("Check that an audio output device is enabled in Windows Sound settings, or specify --audio-device <n> if you know the device index.")
             return 1
         device_index = device_info['index']
-        print(f"Auto-detected loopback: {device_info['name']}\n")
-    
+        loopback_name = device_info['name']
+        if args.verbose:
+            print(f"Auto-detected loopback: {loopback_name}\n")
+
     # Get microphone device if requested
     mic_stream = None
     mic_channels = 1  # Default to mono
+    mic_name = None
     if args.include_mic:
         if args.mic_device >= 0:
             mic_device = args.mic_device
@@ -686,7 +726,8 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
             try:
                 mic_info = sd.query_devices(kind='input')
                 mic_device = mic_info['index'] if isinstance(mic_info, dict) else None
-                print(f"Auto-detected microphone: {mic_info['name']}\n")
+                if args.verbose:
+                    print(f"Auto-detected microphone: {mic_info['name']}\n")
             except:
                 print("⚠️  Could not auto-detect microphone")
                 return 1
@@ -702,12 +743,27 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
                 return 1
             # Use device's max channels (usually 1 for headset, 2 for arrays)
             mic_channels = min(max_input_channels, 2)
-            print(f"Microphone capture enabled (device {mic_device})")
-            print(f"   Device: {mic_info['name']}")
-            print(f"   Channels: {mic_channels}\n")
+            mic_name = mic_info['name']
+            if args.verbose:
+                print(f"Microphone capture enabled (device {mic_device})")
+                print(f"   Device: {mic_name}")
+                print(f"   Channels: {mic_channels}\n")
         except Exception as e:
             print(f"❌ Error querying microphone device {mic_device}: {e}")
             return 1
+
+    # Compact default status: identity, model/language/mode/device summary,
+    # and a listening confirmation -- the one thing every run needs to show,
+    # regardless of --verbose (openspec/changes/compact-live-cli-output).
+    print(f"Transcriber → {args.output}" if args.output else "Transcriber (not saving a transcript file)")
+    mode_summary = "WASAPI"
+    if args.include_mic:
+        mode_summary += f" + mic ({mic_name})" if mic_name else " + mic"
+    print(f"{args.model} model ({engine.device}/{engine.compute_type}), {args.language or 'auto-detect'} language, {mode_summary}")
+    listen_line = "Listening... (Ctrl+C to stop"
+    if args.silence_timeout > 0:
+        listen_line += f", auto-stop after {args.silence_timeout/60:.1f}m silence"
+    print(listen_line + ")")
 
     # Storage
     all_segments = []
@@ -765,10 +821,6 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
             mic_wav_file.setsampwidth(2)  # int16
             mic_wav_file.setframerate(16000)
             print(f"💾 Recording microphone to: {mic_audio_save_path}")
-
-    print("Listening... (Press Ctrl+C to stop)\n")
-    if silence_timeout_enabled:
-        print(f"Auto-stop after {args.silence_timeout/60:.1f} minutes of silence\n")
 
     # Microphone callback: write to disk and enqueue, never blocks
     def mic_callback(indata, frames, time_info, status):
@@ -872,7 +924,8 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
         # Start capturing (callbacks only enqueue audio now, never block)
         capture.capture_stream(
             callback=audio_callback,
-            device_index=device_index
+            device_index=device_index,
+            verbose=args.verbose
         )
     except KeyboardInterrupt:
         print("\n\nStopping transcription...")
@@ -907,7 +960,9 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
             merged_audio_save_path = None
 
     # Print summary
-    _print_summary(all_segments, args, output_path=args.output, sys_audio_save_path=sys_audio_save_path, mic_audio_save_path=mic_audio_save_path, merged_audio_save_path=merged_audio_save_path)
+    if args.verbose:
+        _print_summary(all_segments, args, output_path=args.output, sys_audio_save_path=sys_audio_save_path, mic_audio_save_path=mic_audio_save_path, merged_audio_save_path=merged_audio_save_path)
+    _print_compact_stop(all_segments, args.output)
 
     return 0
 
@@ -934,7 +989,8 @@ def transcribe_live_coreaudio_tap(engine: TranscriptionEngine, args) -> int:
     import threading
     import wave
 
-    _print_header(args.model, args.language, args.chunk_duration, "Core Audio Process Tap (macOS)")
+    if args.verbose:
+        _print_header(args.model, args.language, args.chunk_duration, "Core Audio Process Tap (macOS)")
 
     capture = MacOSCapture()
     device_info = capture.get_default_loopback_device()
@@ -942,11 +998,13 @@ def transcribe_live_coreaudio_tap(engine: TranscriptionEngine, args) -> int:
         print("❌ Native system-audio capture requires macOS 14.4+.")
         print("Use --live --audio-device N with a virtual audio driver (BlackHole/Loopback) instead.")
         return 1
-    print(f"Using: {device_info['name']}\n")
+    if args.verbose:
+        print(f"Using: {device_info['name']}\n")
 
     # Get microphone device if requested
     mic_stream = None
     mic_channels = 1
+    mic_name = None
     if args.include_mic:
         if args.mic_device >= 0:
             mic_device = args.mic_device
@@ -954,7 +1012,8 @@ def transcribe_live_coreaudio_tap(engine: TranscriptionEngine, args) -> int:
             try:
                 mic_info = sd.query_devices(kind='input')
                 mic_device = mic_info['index'] if isinstance(mic_info, dict) else None
-                print(f"Auto-detected microphone: {mic_info['name']}\n")
+                if args.verbose:
+                    print(f"Auto-detected microphone: {mic_info['name']}\n")
             except Exception:
                 print("⚠️  Could not auto-detect microphone")
                 return 1
@@ -968,12 +1027,26 @@ def transcribe_live_coreaudio_tap(engine: TranscriptionEngine, args) -> int:
                 print("\nUse --list-devices to find your microphone device number")
                 return 1
             mic_channels = min(max_input_channels, 2)
-            print(f"Microphone capture enabled (device {mic_device})")
-            print(f"   Device: {mic_info['name']}")
-            print(f"   Channels: {mic_channels}\n")
+            mic_name = mic_info['name']
+            if args.verbose:
+                print(f"Microphone capture enabled (device {mic_device})")
+                print(f"   Device: {mic_name}")
+                print(f"   Channels: {mic_channels}\n")
         except Exception as e:
             print(f"❌ Error querying microphone device {mic_device}: {e}")
             return 1
+
+    # Compact default status -- mirrors transcribe_live_wasapi
+    # (openspec/changes/compact-live-cli-output).
+    print(f"Transcriber → {args.output}" if args.output else "Transcriber (not saving a transcript file)")
+    mode_summary = "Core Audio tap"
+    if args.include_mic:
+        mode_summary += f" + mic ({mic_name})" if mic_name else " + mic"
+    print(f"{args.model} model ({engine.device}/{engine.compute_type}), {args.language or 'auto-detect'} language, {mode_summary}")
+    listen_line = "Listening... (Ctrl+C to stop"
+    if args.silence_timeout > 0:
+        listen_line += f", auto-stop after {args.silence_timeout/60:.1f}m silence"
+    print(listen_line + ")")
 
     # Storage
     all_segments = []
@@ -1022,10 +1095,6 @@ def transcribe_live_coreaudio_tap(engine: TranscriptionEngine, args) -> int:
             mic_wav_file.setsampwidth(2)
             mic_wav_file.setframerate(16000)
             print(f"💾 Recording microphone to: {mic_audio_save_path}")
-
-    print("Listening... (Press Ctrl+C to stop)\n")
-    if silence_timeout_enabled:
-        print(f"Auto-stop after {args.silence_timeout/60:.1f} minutes of silence\n")
 
     def mic_callback(indata, frames, time_info, status):
         if status and "overflow" not in str(status).lower():
@@ -1125,7 +1194,7 @@ def transcribe_live_coreaudio_tap(engine: TranscriptionEngine, args) -> int:
 
     exit_code = 0
     try:
-        capture.capture_stream(callback=sys_callback, device_index=device_info['index'])
+        capture.capture_stream(callback=sys_callback, device_index=device_info['index'], verbose=args.verbose)
     except KeyboardInterrupt:
         print("\n\nStopping transcription...")
     except (UnsupportedMacOSVersionError, AudioCapturePermissionError, MacOSCaptureError) as e:
@@ -1162,7 +1231,9 @@ def transcribe_live_coreaudio_tap(engine: TranscriptionEngine, args) -> int:
             merged_audio_save_path = None
 
     # Print summary
-    _print_summary(all_segments, args, output_path=args.output, sys_audio_save_path=sys_audio_save_path, mic_audio_save_path=mic_audio_save_path, merged_audio_save_path=merged_audio_save_path)
+    if args.verbose:
+        _print_summary(all_segments, args, output_path=args.output, sys_audio_save_path=sys_audio_save_path, mic_audio_save_path=mic_audio_save_path, merged_audio_save_path=merged_audio_save_path)
+    _print_compact_stop(all_segments, args.output)
 
     return exit_code
 

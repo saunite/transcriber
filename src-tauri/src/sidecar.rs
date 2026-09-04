@@ -31,6 +31,29 @@ static TRANSCRIPT_LINE_RE: Lazy<Regex> = Lazy::new(|| {
 /// Logical name registered under `bundle.externalBin` in tauri.conf.json.
 const SIDECAR_NAME: &str = "transcriber-sidecar";
 
+/// Strips Windows' `\\?\`-prefixed extended-length path forms down to a
+/// path ctranslate2 (faster-whisper's C++ backend) can actually open --
+/// verified by reproducing "Unable to open file 'model.bin'" with the
+/// prefix present and confirming it opens fine without it. A no-op on
+/// other OSes and on already-plain Windows paths, where the prefix never
+/// appears.
+///
+/// Windows has two extended-length forms: `\\?\C:\...` for local drives
+/// and `\\?\UNC\server\share\...` for network paths (e.g. running from
+/// \\wsl.localhost\... during WSL-based development/testing, or any
+/// network-mapped install location). Stripping only `\\?\` from the UNC
+/// form leaves the literal text `UNC\server\share\...`, not a valid path
+/// (it needs `\\server\share\...`) -- reproduced for real: a Windows build
+/// run from a WSL-mounted checkout failed with `FileNotFoundError:
+/// --model-path UNC\wsl.localhost\...\model does not exist`.
+fn strip_extended_length_prefix(dir: &str) -> String {
+    let dir = dir.strip_prefix(r"\\?\").unwrap_or(dir);
+    match dir.strip_prefix(r"UNC\") {
+        Some(unc_rest) => format!(r"\\{unc_rest}"),
+        None => dir.to_string(),
+    }
+}
+
 /// Resolves the bundled model directory relative to the running app's own
 /// location via Tauri's path API, so this works identically whether the app
 /// is installed (NSIS) or run from a portable, extract-anywhere folder --
@@ -44,14 +67,77 @@ fn resolve_model_dir(app: &AppHandle) -> Result<String, String> {
         .map_err(|e| format!("could not resolve bundled resource directory: {e}"))?
         .join("resources")
         .join("model");
-    let dir = dir.to_string_lossy().into_owned();
-    // ponytail: Tauri's resource_dir() canonicalizes to a `\\?\`-prefixed
-    // extended-length path on Windows; ctranslate2 (faster-whisper's C++
-    // backend) can't open files through that prefix ("Unable to open file
-    // 'model.bin'" -- verified by reproducing with/without the prefix
-    // directly against the sidecar). Strip it; strip_prefix is a no-op on
-    // other OSes where the prefix never appears.
-    Ok(dir.strip_prefix(r"\\?\").unwrap_or(&dir).to_string())
+    Ok(strip_extended_length_prefix(&dir.to_string_lossy()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{build_live_session_args, strip_extended_length_prefix};
+
+    #[test]
+    fn strips_local_drive_extended_prefix() {
+        assert_eq!(
+            strip_extended_length_prefix(r"\\?\C:\Users\me\Transcriber\resources\model"),
+            r"C:\Users\me\Transcriber\resources\model"
+        );
+    }
+
+    #[test]
+    fn strips_unc_extended_prefix_to_valid_unc_path() {
+        assert_eq!(
+            strip_extended_length_prefix(
+                r"\\?\UNC\wsl.localhost\Ubuntu\home\andre\repos\transcriber\resources\model"
+            ),
+            r"\\wsl.localhost\Ubuntu\home\andre\repos\transcriber\resources\model"
+        );
+    }
+
+    #[test]
+    fn passes_through_plain_paths_unchanged() {
+        assert_eq!(
+            strip_extended_length_prefix(r"C:\Users\me\Transcriber\resources\model"),
+            r"C:\Users\me\Transcriber\resources\model"
+        );
+        assert_eq!(
+            strip_extended_length_prefix("/home/andre/repos/transcriber/resources/model"),
+            "/home/andre/repos/transcriber/resources/model"
+        );
+    }
+
+    #[test]
+    fn omits_audio_device_when_unset() {
+        let args = build_live_session_args(
+            "base".to_string(),
+            "/model/dir".to_string(),
+            None,
+            false,
+            None,
+            None,
+            None,
+        );
+        assert!(
+            !args.contains(&"--audio-device".to_string()),
+            "auto-detect (today's default) must stay untouched when no override is given: {args:?}"
+        );
+    }
+
+    #[test]
+    fn passes_audio_device_override_when_set() {
+        let args = build_live_session_args(
+            "base".to_string(),
+            "/model/dir".to_string(),
+            None,
+            false,
+            None,
+            None,
+            Some(7),
+        );
+        let idx = args
+            .iter()
+            .position(|a| a == "--audio-device")
+            .expect("--audio-device should be present when overridden");
+        assert_eq!(args[idx + 1], "7");
+    }
 }
 
 pub struct SidecarManager {
@@ -169,28 +255,42 @@ fn spawn_sidecar_events(
     });
 }
 
-#[tauri::command]
-pub async fn start_live_session(
-    app: AppHandle,
-    state: State<'_, AppState>,
+/// Builds `start_live_session`'s sidecar argument list. Pulled out of the
+/// `#[tauri::command]` itself (which needs a live `AppHandle` for
+/// `resolve_model_dir()`, unavailable in a unit test) so the actual
+/// flag-assembly logic -- what's always-on, what's conditional, what's
+/// omitted by default -- is directly testable.
+///
+/// ponytail: hardcodes --wasapi (Windows). --coreaudio-tap (macOS) and
+/// Linux's flag-less simple mode need the same branch here once the
+/// platform-gate (tasks.md 5.8) is lifted for a given OS -- this command
+/// isn't reachable from the UI on macOS yet (see main.rs get_platform /
+/// src/main.js), so it's scoped to Windows for now.
+fn build_live_session_args(
     model: String,
+    model_dir: String,
     language: Option<String>,
     include_mic: bool,
     mic_device: Option<i32>,
-) -> Result<(), String> {
+    output_path: Option<String>,
+    audio_device: Option<i32>,
+) -> Vec<String> {
     let mut args = vec![
         "--live".to_string(),
         "--wasapi".to_string(),
         "--model".to_string(),
         model,
         "--model-path".to_string(),
-        resolve_model_dir(&app)?,
+        model_dir,
+        // Mirrors start_teams_transcription.bat's default invocation:
+        // --chunk-duration 10 --actual-time. Not user-configurable (the
+        // .bat doesn't expose them either) -- output_path and audio_device
+        // below are the pieces of that invocation this UI does let the
+        // user override.
+        "--chunk-duration".to_string(),
+        "10".to_string(),
+        "--actual-time".to_string(),
     ];
-    // ponytail: hardcodes --wasapi (Windows). --coreaudio-tap (macOS) and
-    // Linux's flag-less simple mode need the same branch here once the
-    // platform-gate (tasks.md 5.8) is lifted for a given OS -- this
-    // command isn't reachable from the UI on macOS yet (see main.rs
-    // get_platform / src/main.js), so it's scoped to Windows for now.
     if let Some(lang) = language {
         args.push("--language".to_string());
         args.push(lang);
@@ -202,6 +302,42 @@ pub async fn start_live_session(
             args.push(dev.to_string());
         }
     }
+    if let Some(path) = output_path.filter(|p| !p.is_empty()) {
+        args.push("--output".to_string());
+        args.push(path);
+    }
+    // Advanced, discouraged override of the auto-detected WASAPI loopback
+    // device (openspec/changes/add-wasapi-device-override) -- omitted
+    // entirely when unset, so auto-detection (transcriber.py's own
+    // `args.audio_device >= 0` check) is untouched by default.
+    if let Some(dev) = audio_device {
+        args.push("--audio-device".to_string());
+        args.push(dev.to_string());
+    }
+    args
+}
+
+#[tauri::command]
+pub async fn start_live_session(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    model: String,
+    language: Option<String>,
+    include_mic: bool,
+    mic_device: Option<i32>,
+    output_path: Option<String>,
+    audio_device: Option<i32>,
+) -> Result<(), String> {
+    let model_dir = resolve_model_dir(&app)?;
+    let args = build_live_session_args(
+        model,
+        model_dir,
+        language,
+        include_mic,
+        mic_device,
+        output_path,
+        audio_device,
+    );
 
     let sidecar_command = app
         .shell()
@@ -221,7 +357,7 @@ pub async fn start_live_session(
 }
 
 #[tauri::command]
-pub async fn stop_live_session(state: State<'_, AppState>) -> Result<(), String> {
+pub async fn stop_live_session(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     let mut sidecar = state.sidecar.lock().unwrap();
     sidecar.session_active = false;
     if let Some(child) = sidecar.child.take() {
@@ -240,9 +376,30 @@ pub async fn stop_live_session(state: State<'_, AppState>) -> Result<(), String>
             // holding the audio device -- verified by stopping a live
             // session and finding transcriber-sidecar.exe still alive
             // afterward. taskkill /T kills the whole process tree instead.
-            let _ = std::process::Command::new("taskkill")
+            // CREATE_NO_WINDOW: taskkill is a console program, and
+            // std::process::Command does not suppress its console the way
+            // tauri-plugin-shell does for the sidecar itself -- without this
+            // flag a terminal visibly flashes on every stop, which breaks
+            // specs/desktop-gui "Launches without a console or terminal
+            // window" ("none SHALL appear ... for any process it spawns").
+            // Reported from real Windows testing.
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            let result = std::process::Command::new("taskkill")
                 .args(["/F", "/T", "/PID", &child.pid().to_string()])
+                .creation_flags(CREATE_NO_WINDOW)
                 .output();
+            let line = match result {
+                Ok(output) if output.status.success() => {
+                    "Capture engine stopped.".to_string()
+                }
+                Ok(output) => format!(
+                    "Failed to stop the capture engine (taskkill exit code {:?}).",
+                    output.status.code()
+                ),
+                Err(e) => format!("Failed to stop the capture engine: {e}"),
+            };
+            let _ = app.emit("sidecar-log", SidecarLogPayload { line });
         }
         #[cfg(not(windows))]
         child.kill().map_err(|e| e.to_string())?;

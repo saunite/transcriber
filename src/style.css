@@ -1,603 +1,933 @@
-/* Transcriber -- "Verbatim" direction (.impeccable/surfaces/src-index-html.md).
-   A verbatim record, not a chat app: paper, ink, and one red mark reserved
-   for "recording is live." No framework, no build step -- plain CSS shipped
-   as-is to the Tauri webview. */
+/* Transcriber — chart-recorder world.
+   Direction contract: .impeccable/surfaces/src-index-html.md */
 
 :root {
-  color-scheme: light;
-  --paper: #fbfaf6;
-  --paper-raised: #ffffff;
-  --ink: #1c1a16;
-  --ink-soft: #6b6355;
-  --ink-faint: #a49c8c;
-  --rule: #ddd6c7;
-  --rule-strong: #c7bfab;
-  --live: #a3271d;
-  --live-ink: #fdf4f2;
-  --manila: #ecdfb8;
-  --manila-ink: #453a1e;
-  --focus: #a3271d;
-  --shadow: rgba(28, 26, 22, 0.14);
-}
+  /* Chart stock and its printed grid */
+  --stock: #e9f0ea;
+  --stock-edge: #dde6de;
+  --stock-raised: #f4f8f4;
+  /* Ruling: confined to the time gutter, so it can stay legible as a scale
+     without competing with the transcript text for the same pixels. */
+  --grid-minor: #d8e0d8;
+  --grid-major: #cbb4ac;
+  --gutter: #e3ebe4;
+  --gutter-w: 6.75rem;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --paper: #17140f;
-    --paper-raised: #1f1b14;
-    --ink: #ece5d6;
-    --ink-soft: #b3a891;
-    --ink-faint: #746b58;
-    --rule: #38321f;
-    --rule-strong: #4a4227;
-    --live: #e0645a;
-    --live-ink: #2a1613;
-    --manila: #4a3f22;
-    --manila-ink: #f1e6c4;
-    --focus: #e0645a;
-    --shadow: rgba(0, 0, 0, 0.45);
-  }
+  /* Pen inks */
+  --pen-sys: #16233a;
+  --pen-mic: #b4231d;
+
+  /* Ink hierarchy, tinted from the stock's hue rather than gray */
+  --ink: #17231b;
+  --ink-soft: #4e6152;
+  --ink-faint: #7c8f80;
+
+  /* Instrument body: the panel the chart is mounted in */
+  --panel: #d5ddd4;
+  --panel-edge: #bcc7bb;
+  --panel-deep: #c6cfc5;
+
+  --shadow: rgba(23, 35, 27, 0.22);
+  --focus: #16233a;
+
+  --mono: ui-monospace, "Cascadia Code", "SF Mono", "Segoe UI Mono", Consolas, monospace;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+  /* Chart speed: px per second of elapsed time. Set by main.js. */
+  --chart-scale: 6;
+  --row-min: 1.5rem;
+
+  color-scheme: light;
 }
 
 * {
   box-sizing: border-box;
 }
 
+/* Every element this UI toggles via the `hidden` attribute also carries an
+   author `display:` rule, and an author rule beats the UA stylesheet's
+   `[hidden] { display: none }` -- without this, `hidden` is silently a no-op
+   and impossible states render at once (empty overlay over live content,
+   Start and Stop both showing, both rail panels stacked). */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   height: 100%;
+  margin: 0;
 }
 
 body {
-  margin: 0;
-  background: var(--paper);
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
   color: var(--ink);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  font-size: 15px;
-  line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
+  font: 400 15px/1.5 var(--sans);
+  overflow: hidden;
 }
 
+.mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Browser surfaces themed from the palette rather than left at defaults */
 ::selection {
-  background: var(--ink);
-  color: var(--paper);
+  background: #cfe0d2;
+  color: var(--ink);
 }
 
-*:focus-visible {
+:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
-::-webkit-scrollbar {
-  width: 11px;
-  height: 11px;
+input,
+select,
+button,
+textarea {
+  font: inherit;
+  caret-color: var(--pen-sys);
 }
 
-::-webkit-scrollbar-track {
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--panel-edge) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
   background: transparent;
 }
 
-::-webkit-scrollbar-thumb {
-  background: var(--rule-strong);
-  border: 3px solid var(--paper);
-  border-radius: 999px;
+*::-webkit-scrollbar-thumb {
+  background: var(--panel-edge);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 6px;
 }
 
-::-webkit-scrollbar-thumb:hover {
+*::-webkit-scrollbar-thumb:hover {
   background: var(--ink-faint);
+  border: 3px solid transparent;
+  background-clip: content-box;
 }
 
-button {
-  font: inherit;
-  color: inherit;
-}
+/* ---- Title block: the header a chart run is labelled with ---------------- */
 
-.mono {
-  font-family: ui-monospace, "Cascadia Code", "SF Mono", "Segoe UI Mono", Consolas, monospace;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Masthead */
-
-.masthead {
+.titleblock {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1.1rem 1.5rem 0.9rem;
+  align-items: flex-end;
+  gap: 1.5rem;
+  padding: 0.75rem 1.25rem 0.7rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--panel-edge);
+  flex: none;
 }
 
 .wordmark {
   margin: 0;
   font-size: 0.8125rem;
   font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.settings-toggle {
-  appearance: none;
-  background: none;
-  border: 1px solid var(--rule-strong);
-  border-radius: 3px;
-  padding: 0.4rem 0.7rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--ink-soft);
-  cursor: pointer;
-  transition: border-color 120ms ease-out, color 120ms ease-out;
+  white-space: nowrap;
+  padding-bottom: 0.3rem;
 }
 
-.settings-toggle:hover {
-  border-color: var(--ink-faint);
-  color: var(--ink);
+.titleblock-fields {
+  display: flex;
+  gap: 1rem;
+  flex: 1;
+  min-width: 0;
+  align-items: flex-end;
 }
 
-.settings-toggle[aria-expanded="true"] {
-  color: var(--ink);
-  border-color: var(--ink);
-}
-
-/* Settings drawer */
-
-.settings-drawer {
-  margin: 0 1.5rem 0.75rem;
-  padding: 1rem 1.1rem;
-  background: var(--paper-raised);
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
-  gap: 0.9rem 1.25rem;
-}
-
-.field {
+.tb-field {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--ink-soft);
+  gap: 0.2rem;
+  min-width: 0;
 }
 
-.field select,
-.field input[type="text"] {
-  font: inherit;
-  font-size: 0.9rem;
-  font-weight: 400;
+.tb-field-wide {
+  flex: 1;
+  min-width: 8rem;
+}
+
+.tb-label,
+.rail-label {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.tb-input-row {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.tb-input-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+input[type="text"],
+input[type="number"],
+input[type="search"],
+select {
+  background: var(--stock-raised);
   color: var(--ink);
-  background: var(--paper);
-  border: 1px solid var(--rule-strong);
-  border-radius: 4px;
-  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--panel-edge);
+  border-radius: 2px;
+  padding: 0.3rem 0.4rem;
+  font-size: 0.8125rem;
+  min-width: 0;
 }
 
-.field select:focus-visible,
-.field input[type="text"]:focus-visible {
+input::placeholder {
+  color: var(--ink-faint);
+}
+
+input[type="text"]:focus-visible,
+input[type="number"]:focus-visible,
+input[type="search"]:focus-visible,
+select:focus-visible {
   border-color: var(--focus);
 }
 
-.field-check {
-  flex-direction: row;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 600;
+/* ---- Instrument: rail + chart ------------------------------------------- */
+
+.instrument {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 16.5rem 1fr;
+  min-height: 0;
 }
 
-.field-check input {
-  width: 1rem;
-  height: 1rem;
-  accent-color: var(--ink);
-}
-
-/* Tabs */
-
-.tabs {
+.rail {
   display: flex;
-  gap: 0.25rem;
-  padding: 0 1.5rem;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 0.9rem 1rem 1.2rem;
+  background: var(--panel);
+  border-right: 1px solid var(--panel-edge);
+  overflow-y: auto;
+  flex: none;
 }
 
-.tab {
+.mode-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--panel-edge);
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--panel-deep);
+  flex: none;
+}
+
+.mode {
   appearance: none;
-  background: none;
-  border: 1px solid var(--rule);
-  border-bottom: none;
-  border-radius: 5px 5px 0 0;
-  padding: 0.55rem 1.1rem;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  border: 0;
+  background: transparent;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-soft);
   cursor: pointer;
-  position: relative;
-  top: 1px;
 }
 
-.tab[aria-selected="true"] {
-  background: var(--paper-raised);
-  border-color: var(--rule-strong);
+.mode[aria-selected="true"] {
+  background: var(--stock);
   color: var(--ink);
+  box-shadow: inset 0 -2px 0 var(--pen-sys);
 }
 
-.tab:disabled {
+.mode:disabled {
   color: var(--ink-faint);
   cursor: not-allowed;
 }
 
-/* Page */
-
-.page {
-  max-width: 42rem;
-  margin: 0 auto;
-  padding: 0 1.5rem 2rem;
+.rail-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
 }
 
-.page-topline {
+.rail-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.rail-hint {
+  font-size: 0.6875rem;
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+
+.rail-readout {
+  font-size: 0.6875rem;
+  color: var(--ink-soft);
+  letter-spacing: 0.04em;
+}
+
+/* ---- Transport ---------------------------------------------------------- */
+
+.transport {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.btn-record {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 0.75rem;
-  min-height: 1.75rem;
-  margin-bottom: 0.5rem;
-}
-
-.panel {
-  background: var(--paper-raised);
-  border: 1px solid var(--rule-strong);
-  border-radius: 0 6px 6px 6px;
-  box-shadow: 0 6px 18px -12px var(--shadow);
-  padding: 1.75rem 1.75rem 1.5rem;
-  min-height: 22rem;
-}
-
-.stamp {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding: 0.3rem 0.6rem;
+  justify-content: center;
+  gap: 0.5rem;
+  appearance: none;
+  border: 1px solid var(--pen-sys);
   border-radius: 3px;
-  animation: stamp-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  background: var(--pen-sys);
+  color: var(--stock);
+  padding: 0.7rem 1rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  box-shadow: 0 5px 14px -8px var(--shadow);
+  transition: transform 140ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 140ms ease-out;
 }
 
-.stamp-live {
-  color: var(--live);
-  border: 1.5px solid var(--live);
-  background: var(--live-ink);
-  transform: rotate(-2deg);
+.btn-record:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px -8px var(--shadow);
 }
 
-.stamp-live::before {
-  content: "";
-  width: 0.45rem;
-  height: 0.45rem;
-  border-radius: 50%;
-  background: var(--live);
+.btn-record:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* The pen: a drawn nib, not a glyph */
+.btn-record-pen {
+  width: 9px;
+  height: 12px;
+  background: var(--pen-mic);
+  clip-path: polygon(0 0, 100% 0, 100% 62%, 50% 100%, 0 62%);
   flex: none;
 }
 
-.stamp-busy,
-.stamp-starting {
-  color: var(--ink-soft);
-  border: 1.5px solid var(--rule-strong);
-  background: var(--paper);
-}
-
-@keyframes stamp-in {
-  from {
-    opacity: 0;
-    transform: scale(0.85) rotate(-2deg);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) rotate(-2deg);
-  }
-}
-
-.stamp-busy,
-.stamp-starting {
-  animation-name: stamp-in-flat;
-}
-
-@keyframes stamp-in-flat {
-  from {
-    opacity: 0;
-    transform: scale(0.92);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-.stop-btn {
+.btn-quiet {
   appearance: none;
-  background: none;
-  border: 1px solid var(--rule-strong);
-  border-radius: 4px;
-  padding: 0.35rem 0.75rem;
-  font-size: 0.8rem;
+  background: var(--stock-raised);
+  border: 1px solid var(--panel-edge);
+  border-radius: 2px;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.75rem;
   font-weight: 600;
   color: var(--ink-soft);
   cursor: pointer;
+  transition: border-color 140ms ease-out, color 140ms ease-out;
 }
 
-.stop-btn:hover:not(:disabled) {
-  border-color: var(--live);
-  color: var(--live);
+.btn-quiet:hover:not(:disabled) {
+  border-color: var(--ink-faint);
+  color: var(--ink);
 }
 
-.stop-btn:disabled {
+.btn-quiet:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-/* Empty state / primary action */
+.btn-stop {
+  padding: 0.5rem 0.6rem;
+}
 
-.empty-state {
+/* ---- Run state: the instrument itself changing, never a badge on top ----- */
+
+.run-state {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+}
+
+.run-dot {
+  width: 9px;
+  height: 12px;
+  flex: none;
+  background: var(--ink-faint);
+  clip-path: polygon(0 0, 100% 0, 100% 62%, 50% 100%, 0 62%);
+  transition: background-color 200ms ease-out, transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* pens down and drawing */
+.run-state[data-state="advancing"] .run-dot {
+  background: var(--pen-mic);
+  transform: translateY(2px);
+}
+
+.run-state[data-state="advancing"] .run-state-label {
+  color: var(--ink);
+}
+
+/* warming up — pens lowered, nothing drawn yet */
+.run-state[data-state="loaded"] .run-dot,
+.run-state[data-state="listening"] .run-dot {
+  background: var(--ink-soft);
+  transform: translateY(1px);
+}
+
+/* engine is up and waiting for speech: pen down, drawing a flat trace.
+   Visibly distinct from a pen lift, which is the whole point. */
+.run-state[data-state="listening"] .run-dot {
+  background: var(--pen-sys);
+  transform: translateY(2px);
+}
+
+/* pen lifted mid-run: the fault state, visibly different from a quiet room */
+.run-state[data-state="penlift"] .run-dot {
+  background: var(--pen-mic);
+  transform: translateY(-4px);
+}
+
+.run-state[data-state="penlift"] .run-state-label {
+  color: var(--pen-mic);
+}
+
+.run-state[data-state="stopping"] .run-dot {
+  background: var(--ink-soft);
+  transform: translateY(-4px);
+}
+
+.run-elapsed {
+  margin-left: auto;
+  font-size: 0.6875rem;
+  color: var(--ink-faint);
+}
+
+.run-detail {
+  margin: -0.5rem 0 0;
+  font-size: 0.6875rem;
+  line-height: 1.4;
+  color: var(--pen-mic);
+}
+
+/* ---- Pens --------------------------------------------------------------- */
+
+.pens {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  border-top: 1px solid var(--panel-edge);
+  border-bottom: 1px solid var(--panel-edge);
+  padding: 0.6rem 0;
+}
+
+.pen {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  cursor: default;
+}
+
+.pen-mic {
+  cursor: pointer;
+}
+
+.pen-swatch {
+  width: 3px;
+  height: 1.05rem;
+  border-radius: 1px;
+}
+
+.pen-sys .pen-swatch {
+  background: var(--pen-sys);
+}
+
+.pen-mic .pen-swatch {
+  background: var(--pen-mic);
+}
+
+.pen-name {
+  font-family: var(--mono);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+}
+
+.pen-desc {
+  color: var(--ink-faint);
+  font-size: 0.6875rem;
+}
+
+.pen-state {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.pen[data-armed="false"] .pen-swatch {
+  background: var(--panel-edge);
+}
+
+.pen[data-armed="false"] .pen-name,
+.pen[data-armed="false"] .pen-state {
+  color: var(--ink-faint);
+}
+
+.pen input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pen-mic:focus-within {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* ---- Chart speed slider ------------------------------------------------- */
+
+.speed {
+  border-top: 1px solid var(--panel-edge);
+  padding-top: 0.8rem;
+  margin-top: auto;
+}
+
+input[type="range"] {
+  appearance: none;
+  width: 100%;
+  height: 20px;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px;
+  background: var(--panel-edge);
+  border-radius: 2px;
+}
+
+input[type="range"]::-moz-range-track {
+  height: 3px;
+  background: var(--panel-edge);
+  border-radius: 2px;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 7px;
+  height: 17px;
+  margin-top: -7px;
+  border-radius: 1px;
+  background: var(--pen-sys);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 7px;
+  height: 17px;
+  border: 0;
+  border-radius: 1px;
+  background: var(--pen-sys);
+}
+
+.filter-field select {
+  width: 100%;
+}
+
+/* ---- Chart area --------------------------------------------------------- */
+
+.chart-area {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--stock);
+  border-left: 1px solid var(--stock-edge);
+}
+
+.chart {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  position: relative;
+}
+
+/* The ruling lives in the time gutter, where time is actually measured —
+   not under the prose. A grid printed across the reading column is true to
+   chart paper and hostile to the moment this app exists for, which is
+   reading the transcript afterward. The calibrated scale keeps its identity;
+   the text gets clean stock. */
+.roll {
+  list-style: none;
+  margin: 0;
+  padding: 1.25rem 1.5rem 4rem;
+  min-height: 100%;
+  background-image:
+    repeating-linear-gradient(to bottom, var(--grid-major) 0 1px, transparent 1px 60px),
+    repeating-linear-gradient(to bottom, var(--grid-minor) 0 1px, transparent 1px 12px),
+    linear-gradient(var(--gutter), var(--gutter));
+  background-size: var(--gutter-w) 100%;
+  background-repeat: no-repeat;
+  background-position: 0 0;
+}
+
+.chart-empty {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  text-align: center;
-  gap: 0.9rem;
-  min-height: 18rem;
-}
-
-.primary-action {
-  appearance: none;
-  background: var(--ink);
-  color: var(--paper);
-  border: none;
-  border-radius: 5px;
-  padding: 0.85rem 1.9rem;
-  font-size: 1.0625rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: transform 120ms ease-out, box-shadow 120ms ease-out;
-  box-shadow: 0 8px 20px -10px var(--shadow);
-}
-
-.primary-action:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 10px 24px -10px var(--shadow);
-}
-
-.primary-action:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.hint {
   margin: 0;
-  max-width: 26rem;
-  font-size: 0.85rem;
+  padding: 2rem;
+  text-align: center;
+  line-height: 1.7;
   color: var(--ink-soft);
+  background: color-mix(in srgb, var(--stock) 88%, transparent);
 }
 
 .platform-notice {
-  text-align: center;
-  padding: 2.5rem 1rem;
+  padding: 1rem 1.25rem;
+  background: var(--stock-raised);
+  border-bottom: 1px solid var(--stock-edge);
   color: var(--ink-soft);
-  font-size: 0.9rem;
+  font-size: 0.875rem;
 }
 
-/* Transcript */
+/* ---- The trace: transcript lines positioned on the time axis ------------- */
 
-.transcript {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  max-height: 22rem;
-  overflow-y: auto;
-}
-
-.transcript-line {
+.trace {
   display: grid;
-  grid-template-columns: 5.5rem 1fr;
-  gap: 0.75rem;
-  padding: 0.5rem 0;
-  border-bottom: 1px solid var(--rule);
-  animation: line-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  grid-template-columns: 5.25rem 1fr;
+  gap: 0 0.85rem;
+  align-items: baseline;
+  position: relative;
+  /* margin-top is set per-line by main.js from elapsed time × chart scale */
 }
 
-.transcript-line:last-child {
-  border-bottom: none;
+.trace-time {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.6875rem;
+  color: var(--ink-faint);
+  text-align: right;
+  white-space: nowrap;
+  padding-top: 0.15rem;
 }
 
-@keyframes line-in {
+.trace-body {
+  position: relative;
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--panel-edge);
+  min-width: 0;
+}
+
+/* the pen's mark: where this line met the paper */
+.trace-body::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 0.55em;
+  width: 7px;
+  height: 2px;
+}
+
+.trace-sys .trace-body::before {
+  background: var(--pen-sys);
+}
+
+.trace-mic .trace-body::before {
+  background: var(--pen-mic);
+}
+
+.trace-source {
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  margin-right: 0.5rem;
+}
+
+.trace-sys .trace-source {
+  color: var(--pen-sys);
+}
+
+.trace-mic .trace-source {
+  color: var(--pen-mic);
+}
+
+.trace-text {
+  max-width: 68ch;
+}
+
+.trace-sys .trace-text {
+  color: var(--pen-sys);
+}
+
+.trace-mic .trace-text {
+  color: var(--pen-mic);
+}
+
+/* The one authored motion: a mark landing on the paper. */
+@keyframes mark-lands {
   from {
     opacity: 0;
-    transform: translateY(3px);
+    transform: translateX(-6px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: none;
   }
 }
 
-.line-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
+.trace-new {
+  animation: mark-lands 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.line-ts {
-  font-size: 0.75rem;
-  color: var(--ink-faint);
+@media (prefers-reduced-motion: reduce) {
+  .trace-new {
+    animation: none;
+  }
+
+  .btn-record,
+  .run-dot {
+    transition: none;
+  }
 }
 
-.line-tag {
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-}
-
-.line-tag-SYS {
-  font-variant-caps: all-small-caps;
-}
-
-.line-tag-MIC {
-  font-variant-caps: all-small-caps;
-  font-style: italic;
-}
-
-.line-text {
-  font-size: 0.9375rem;
-  line-height: 1.55;
-}
-
-/* File tab */
-
-.drop-zone {
-  appearance: none;
-  width: 100%;
-  background: none;
-  border: 2px dashed var(--rule-strong);
-  border-radius: 6px;
-  padding: 2.5rem 1rem;
-  text-align: center;
-  font-size: 0.95rem;
-  color: var(--ink-soft);
-  cursor: pointer;
-  transition: border-color 120ms ease-out, background-color 120ms ease-out;
-}
-
-.drop-zone:hover {
-  border-color: var(--ink-faint);
-}
-
-.drop-zone.drag-over {
-  border-color: var(--live);
-  color: var(--ink);
-  background: var(--live-ink);
-}
-
-.file-options {
-  display: flex;
-  gap: 1.25rem;
-  margin-top: 1.1rem;
-}
-
-.file-options .field {
-  flex: 1;
-}
-
-/* Debug panel */
-
-.debug-panel {
-  max-width: 42rem;
-  margin: 0 auto 2rem;
-  padding: 0 1.5rem;
-}
-
-.debug-panel summary {
-  cursor: pointer;
-  font-size: 0.75rem;
-  font-weight: 600;
+/* A gap long enough to read as silence names its own duration. */
+.gap-note {
+  position: absolute;
+  left: 6.1rem;
+  top: -1.1rem;
+  font-family: var(--mono);
+  font-size: 0.625rem;
   letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--ink-faint);
-  padding: 0.5rem 0;
-  border-top: 1px dashed var(--rule-strong);
+  background: var(--stock);
+  padding: 0 0.4rem;
 }
 
-.debug-panel summary::-webkit-details-marker {
+/* Compressed scales: the trace becomes marks, and the shape of the session
+   is what you read instead of the words. */
+.chart[data-scale-mode="marks"] .trace-text,
+.chart[data-scale-mode="marks"] .trace-source {
   display: none;
 }
 
-.debug-panel summary::before {
-  content: "+ ";
+.chart[data-scale-mode="marks"] .trace {
+  grid-template-columns: 5.25rem 1fr;
 }
 
-.debug-panel[open] summary::before {
-  content: "− ";
+.chart[data-scale-mode="marks"] .trace-body {
+  height: 3px;
 }
 
-.debug-log {
-  font-size: 0.75rem;
-  color: var(--ink-soft);
-  max-height: 10rem;
-  overflow-y: auto;
-  white-space: pre-wrap;
-  padding-bottom: 0.75rem;
+.chart[data-scale-mode="marks"] .trace-body::before {
+  top: 0;
+  width: 34px;
+  height: 3px;
 }
 
-/* Notes (toasts) */
+.chart[data-scale-mode="marks"] .trace-time {
+  font-size: 0.625rem;
+  padding-top: 0;
+}
+
+.chart[data-scale-mode="marks"] .gap-note {
+  top: -0.85rem;
+}
+
+.chart[data-scale-mode="compact"] .trace-text {
+  font-size: 0.8125rem;
+}
+
+/* Search and pen filtering */
+.trace[hidden] {
+  display: none;
+}
+
+.trace-hit .trace-text {
+  background: #f2e08c;
+  box-shadow: 0 0 0 2px #f2e08c;
+}
+
+/* ---- Notes -------------------------------------------------------------- */
 
 .note-root {
   position: fixed;
-  top: 1rem;
-  right: 1rem;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 20;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  z-index: 10;
-  max-width: 20rem;
+  max-width: min(24rem, calc(100vw - 1.5rem));
 }
 
 .note {
-  background: var(--manila);
-  color: var(--manila-ink);
-  padding: 0.7rem 0.9rem;
-  border-radius: 2px 8px 8px 8px;
-  font-size: 0.85rem;
-  line-height: 1.4;
-  box-shadow: 0 10px 24px -10px var(--shadow);
+  background: var(--pen-sys);
+  color: var(--stock);
+  padding: 0.6rem 0.8rem;
+  border-radius: 2px;
+  font-size: 0.8125rem;
+  line-height: 1.45;
   cursor: pointer;
-  animation: note-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 10px 24px -12px var(--shadow);
+  animation: note-in 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @keyframes note-in {
   from {
     opacity: 0;
-    transform: translateX(12px);
+    transform: translateX(10px);
   }
   to {
     opacity: 1;
-    transform: translateX(0);
+    transform: none;
   }
 }
 
-[hidden] {
-  display: none !important;
+/* ---- Drop zone ---------------------------------------------------------- */
+
+.drop-zone {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem 1rem;
+  background: var(--stock-raised);
+  border: 1px dashed var(--panel-edge);
+  border-radius: 2px;
+  cursor: pointer;
+  color: var(--ink-soft);
+  text-align: center;
+  transition: border-color 140ms ease-out, color 140ms ease-out;
 }
 
-@media (max-width: 30rem) {
-  .masthead,
-  .tabs,
-  .page,
+.drop-zone:hover {
+  border-color: var(--ink-faint);
+  color: var(--ink);
+}
+
+.drop-zone.drag-over {
+  border-color: var(--pen-sys);
+  border-style: solid;
+  color: var(--ink);
+}
+
+.drop-zone-line {
+  font-weight: 600;
+  font-size: 0.8125rem;
+}
+
+.drop-zone-sub {
+  font-size: 0.6875rem;
+  color: var(--ink-faint);
+}
+
+/* ---- Engine log --------------------------------------------------------- */
+
+.debug-panel {
+  flex: none;
+  border-top: 1px solid var(--panel-edge);
+  background: var(--panel);
+  max-height: 40vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.debug-panel > summary {
+  cursor: pointer;
+  padding: 0.45rem 1.25rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  flex: none;
+}
+
+.debug-panel > summary:hover {
+  color: var(--ink);
+}
+
+/* Session boundaries in the log are the app speaking, not engine output —
+   they read differently so stale scrollback above them is obvious. */
+.debug-marker {
+  margin: 0.5rem 0 0.35rem;
+  color: var(--ink);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.debug-log {
+  padding: 0 1.25rem 0.9rem;
+  font-size: 0.6875rem;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-y: auto;
+  max-height: 30vh;
+}
+
+/* ---- Narrow windows (app minimum is 640×480) ---------------------------- */
+
+@media (max-width: 52rem) {
+  .instrument {
+    grid-template-columns: 13.5rem 1fr;
+  }
+
+  .titleblock {
+    flex-wrap: wrap;
+    gap: 0.6rem 1rem;
+  }
+
+  .titleblock-fields {
+    flex-basis: 100%;
+  }
+
+  .trace {
+    grid-template-columns: 4.25rem 1fr;
+  }
+
+  .roll {
+    --gutter-w: 5.75rem; /* padding-left + narrowed time column */
+  }
+
+  .gap-note {
+    left: 5rem;
+  }
+}
+
+@media (max-height: 34rem) {
   .debug-panel {
-    padding-left: 1rem;
-    padding-right: 1rem;
-  }
-
-  .panel {
-    padding: 1.25rem;
-  }
-
-  .transcript-line {
-    grid-template-columns: 4rem 1fr;
-  }
-
-  .file-options {
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .stamp,
-  .transcript-line,
-  .note {
-    animation: none;
+    max-height: 30vh;
   }
 }

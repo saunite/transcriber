@@ -32,6 +32,17 @@ The system SHALL spawn the bundled Python sidecar only when the user starts a li
 - **WHEN** the sidecar process exits unexpectedly while a session is active
 - **THEN** the system shows an error with the sidecar's last output and returns the UI to idle state, without requiring an app restart
 
+### Requirement: Live session stop is confirmed genuinely, not cosmetically
+When a user stops a live session, the system SHALL report whether the stop actually succeeded, based on the real result of terminating the sidecar process, rather than assuming success.
+
+#### Scenario: Stop succeeds
+- **WHEN** a user stops an active live session and the sidecar process is successfully terminated
+- **THEN** the system logs a confirmation that the session stopped
+
+#### Scenario: Stop fails
+- **WHEN** a user stops an active live session and terminating the sidecar process does not succeed
+- **THEN** the system logs that the stop did not succeed, rather than silently reporting nothing
+
 ### Requirement: Live transcript view
 The system SHALL display live transcript lines as they are produced, tagged by source (`SYS`/`MIC`) when dual-capture is active, by parsing the sidecar's existing stdout output.
 
@@ -138,3 +149,40 @@ The application SHALL open its own window and nothing else when launched by a us
 #### Scenario: Development builds keep their console
 - **WHEN** a developer runs a debug build of the application
 - **THEN** console output remains available, so the release-build console suppression does not hinder development
+
+### Requirement: Live session transcript is saved to a file
+The system SHALL save every live session's transcript to a file, defaulting to an auto-generated, timestamped filename when the user has not specified one, and SHALL let the user choose a different file location and name via a native save dialog before starting a session.
+
+#### Scenario: Default output filename
+- **WHEN** a user starts a live session without changing the output file field
+- **THEN** the transcript is saved using an auto-generated timestamped filename, and the file exists after the session ends
+
+#### Scenario: User picks a custom output location
+- **WHEN** a user selects "Browse…" and chooses a file location and name before starting a live session
+- **THEN** the transcript is saved to that location instead of the default
+
+### Requirement: Live capture defaults to dual-source (system + microphone) capture
+The system SHALL default a new live session to capturing both system audio and the microphone, with a 10-second transcription chunk duration and wall-clock timestamps, while still letting the user disable microphone capture before starting.
+
+#### Scenario: Default session captures both sources
+- **WHEN** a user starts a live session without changing the microphone setting
+- **THEN** both system audio and microphone audio are captured and tagged accordingly in the transcript
+
+#### Scenario: User disables microphone capture
+- **WHEN** a user unchecks "Include microphone" before starting a live session
+- **THEN** only system audio is captured
+
+### Requirement: WASAPI loopback device can be overridden, with a discouraging default message
+The system SHALL default live capture to an auto-detected WASAPI loopback device, SHALL let the user optionally specify a different device by index, and SHALL display a message stating that the default is auto-detected WASAPI and that overriding is not recommended.
+
+#### Scenario: Default session uses auto-detection
+- **WHEN** a user starts a live session without setting a device override
+- **THEN** the system uses the auto-detected WASAPI loopback device, exactly as it did before this override existed
+
+#### Scenario: Override message is visible
+- **WHEN** a user opens Session Settings
+- **THEN** a message near the device override field states that the default is the auto-detected WASAPI device and that overriding is not recommended
+
+#### Scenario: User overrides the device
+- **WHEN** a user enters a specific device index in the override field and starts a live session
+- **THEN** the system uses that device index instead of auto-detection

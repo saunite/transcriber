@@ -77,7 +77,7 @@ def build_windows(target: str | None) -> Path:
         if not (release_dir / name).exists():
             raise SystemExit(
                 f"Missing {name} in {release_dir} -- run the build first "
-                f"(see docker/build.ps1 or 'cargo tauri build')."
+                f"(see README.md's WSL build section or 'cargo tauri build')."
             )
     # WebView2Loader.dll is a sibling file on the mingw target (statically
     # linked on MSVC instead, so it won't exist there) -- see design.md
@@ -153,15 +153,28 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    system = platform.system()
-    if system == "Windows":
+    # Dispatch on the --target triple when given (openspec/changes/03-add-wsl-windows-build)
+    # -- e.g. `--target x86_64-pc-windows-gnu` run under WSL's own (Linux-reporting)
+    # Python must still take the Windows branch. platform.system() reflects the
+    # running interpreter, not the target, so it's only a correct fallback when
+    # no --target was given (every existing caller already passes one explicitly).
+    target = args.target or ""
+    if "windows" in target:
         artifact = build_windows(args.target)
-    elif system == "Linux":
+    elif "linux" in target:
         artifact = build_linux(args.target)
-    elif system == "Darwin":
+    elif "darwin" in target:
         artifact = build_macos(args.target)
     else:
-        raise SystemExit(f"Unsupported platform: {system}")
+        system = platform.system()
+        if system == "Windows":
+            artifact = build_windows(args.target)
+        elif system == "Linux":
+            artifact = build_linux(args.target)
+        elif system == "Darwin":
+            artifact = build_macos(args.target)
+        else:
+            raise SystemExit(f"Unsupported platform: {system}")
 
     print(f"Portable artifact assembled at: {artifact}")
     return 0

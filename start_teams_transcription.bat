@@ -41,21 +41,12 @@ for /f "tokens=2 delims==" %%I in ('wmic os get localdatetime /value') do set da
 set timestamp=%datetime:~0,8%_%datetime:~8,6%
 set output_file=%NAME_PREFIX%_%timestamp%.txt
 
-echo ============================================================
-echo Teams Meeting Transcriber
-echo ============================================================
-echo This will capture and transcribe:
-echo   [SYS] - System audio (other participants)
-echo   [MIC] - Your microphone (your voice)
-echo.
-echo Output will be saved to: %output_file%
-echo Auto-stop after 10 minutes of silence (use --silence-timeout 0 to disable)
-echo Press Ctrl+C to stop transcription when meeting ends
-echo ============================================================
-echo.
-
-REM Start transcription with WASAPI loopback + microphone
-python transcriber.py --live --wasapi --include-mic --model base --output "%output_file%" --chunk-duration 10 --actual-time %REST%
+REM Start transcription with WASAPI loopback + microphone. Built into one
+REM variable and both echoed and run from it, so the printed line can never
+REM drift from what's actually executed (openspec/changes/compact-live-cli-output).
+set "CMD=python transcriber.py --live --wasapi --include-mic --model base --output "%output_file%" --chunk-duration 10 --actual-time %REST%"
+echo %CMD%
+%CMD%
 
 echo.
 echo ============================================================

@@ -1,4 +1,4 @@
-# GNU/mingw-w64 cross-compilation target (see docker/tauri-build.Dockerfile).
+# GNU/mingw-w64 cross-compilation target (see README.md's WSL Windows build section).
 # Only affects builds targeting x86_64-pc-windows-gnu; native builds on
 # each host OS are unaffected.
 [target.x86_64-pc-windows-gnu]

@@ -122,6 +122,7 @@ class MacOSCapture:
         self,
         callback: Callable[[np.ndarray], None],
         device_index: Optional[int] = None,  # unused; kept for interface parity with WASAPICapture
+        verbose: bool = False,
     ):
         """
         Capture system audio via the native helper.
@@ -144,7 +145,8 @@ class MacOSCapture:
                 "macos/audiotap-helper/build.sh on a macOS machine."
             )
 
-        print("🎙️  Capturing system audio via Core Audio Process Tap...")
+        if verbose:
+            print("🎙️  Capturing system audio via Core Audio Process Tap...")
 
         self._process = subprocess.Popen(
             [helper_path],
@@ -176,7 +178,8 @@ class MacOSCapture:
         reader_thread.start()
 
         try:
-            print(f"🎙️  Capturing audio ({self.sample_rate} Hz, {self.channels} ch)... Press Ctrl+C to stop\n")
+            if verbose:
+                print(f"🎙️  Capturing audio ({self.sample_rate} Hz, {self.channels} ch)... Press Ctrl+C to stop\n")
             while self.is_capturing:
                 try:
                     chunk = audio_queue.get(timeout=0.1)
@@ -184,7 +187,8 @@ class MacOSCapture:
                     continue
                 callback(chunk)
         except KeyboardInterrupt:
-            print("\n✓ Capture stopped by user")
+            if verbose:
+                print("\n✓ Capture stopped by user")
         finally:
             self.is_capturing = False
             self._stop_helper()
