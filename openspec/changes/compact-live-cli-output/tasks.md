@@ -30,10 +30,10 @@
 
 - [ ] 4.1 Run the `.bat` launcher (no extra flags) on Windows hardware, confirm output matches the compact 3-line-preamble + 1-line-stop shape
 
-  **Needs Windows hardware** — not reachable from this WSL shell. This is also the real check on the `set "CMD=...` nested-quote form noted in 3.2.
+  **Partially confirmed on real Windows hardware.** The `set "CMD=..."` nested-quote construction (3.2) rendered and executed correctly — printed command matched exactly, including the quoted `--output "TEST_....txt"` argument. The 3-line compact preamble (`Transcriber → ...` / model+language+mode+device summary / `Listening...`) printed exactly as designed, and a live transcript line came through. **Not confirmed**: the 1-line stop summary (`Stopped — N segments saved to ...`) — in the actual test run, a second Ctrl+C appears to have landed during thread-join cleanup, which skips past both the new compact stop line *and* the function's own pre-existing (unchanged) "Stopping transcription..." print, landing straight in `main()`'s outer handler instead. That specific skip-the-summary risk on a double-interrupt predates this change (same code path, same behavior, before or after this diff) — not a regression — but the clean single-Ctrl+C case still needs one more confirming run.
 - [ ] 4.2 Run with `--verbose` passed through (`start_teams_transcription.bat NAME --verbose`), confirm today's full detail still appears, in addition to the compact lines
 
-  **Needs Windows hardware** — same reason as 4.1.
+  Not yet attempted.
 - [x] 4.3 Confirm the GUI's live session (`src-tauri/src/sidecar.rs`, which never passes `--verbose`) still parses transcript lines and shows the compact preamble/stop lines in its Engine log panel with no parsing regression (`TRANSCRIPT_LINE_RE` is unaffected, but confirm nothing compact-mode prints accidentally matches it and gets misrouted)
 
   Verified by running the shipped `TRANSCRIPT_LINE_RE` (`^\[(?P<ts>[^\]]+)\](?:\s\[(?P<tag>SYS|MIC)\])?\s(?P<text>.*)$`) against every new compact-mode line (`Transcriber → ...`, the model/language/mode summary, `Listening... (...)`, `Stopped — ...`) — none match, so all correctly fall through to `sidecar-log` exactly like today's banners did. No GUI code touched.
