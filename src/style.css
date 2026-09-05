@@ -8,8 +8,11 @@
   --stock-raised: #f4f8f4;
   /* Ruling: confined to the time gutter, so it can stay legible as a scale
      without competing with the transcript text for the same pixels. */
-  --grid-minor: #d8e0d8;
   --grid-major: #cbb4ac;
+  /* Minor weight is major's own hue at reduced opacity, not a separate hex --
+     ties the two rulings to one warm-red hue by construction instead of by
+     eyeballing a second color that can drift achromatic over edits. */
+  --grid-minor: rgb(203 180 172 / 0.35);
   --gutter: #e3ebe4;
   --gutter-w: 6.75rem;
 
@@ -162,13 +165,19 @@ textarea {
   min-width: 8rem;
 }
 
+/* Adaptation from the direction contract's "condensed caps on labels": the
+   system sans stack is used instead of a sourced condensed face. Bundling or
+   fetching a condensed webfont would add a build step (barred, see design.md
+   Non-Goals) or a network dependency this offline-first app can't assume on
+   first launch. Uppercase + wide tracking carries the labels' distinct
+   register without it. */
 .tb-label,
 .rail-label {
   font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--ink-faint);
+  color: var(--ink-soft);
 }
 
 .tb-input-row {
@@ -195,7 +204,7 @@ select {
 }
 
 input::placeholder {
-  color: var(--ink-faint);
+  color: var(--ink-soft);
 }
 
 input[type="text"]:focus-visible,
@@ -419,7 +428,7 @@ select:focus-visible {
 .run-elapsed {
   margin-left: auto;
   font-size: 0.6875rem;
-  color: var(--ink-faint);
+  color: var(--ink-soft);
 }
 
 .run-detail {
@@ -475,7 +484,7 @@ select:focus-visible {
 }
 
 .pen-desc {
-  color: var(--ink-faint);
+  color: var(--ink-soft);
   font-size: 0.6875rem;
 }
 
@@ -493,7 +502,7 @@ select:focus-visible {
 
 .pen[data-armed="false"] .pen-name,
 .pen[data-armed="false"] .pen-state {
-  color: var(--ink-faint);
+  color: var(--ink-soft);
 }
 
 .pen input[type="checkbox"] {
@@ -632,7 +641,7 @@ input[type="range"]::-moz-range-thumb {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
   font-size: 0.6875rem;
-  color: var(--ink-faint);
+  color: var(--ink-soft);
   text-align: right;
   white-space: nowrap;
   padding-top: 0.15rem;
@@ -726,7 +735,7 @@ input[type="range"]::-moz-range-thumb {
   font-family: var(--mono);
   font-size: 0.625rem;
   letter-spacing: 0.06em;
-  color: var(--ink-faint);
+  color: var(--ink-soft);
   background: var(--stock);
   padding: 0 0.4rem;
 }
@@ -847,7 +856,7 @@ input[type="range"]::-moz-range-thumb {
 
 .drop-zone-sub {
   font-size: 0.6875rem;
-  color: var(--ink-faint);
+  color: var(--ink-soft);
 }
 
 /* ---- Engine log --------------------------------------------------------- */
