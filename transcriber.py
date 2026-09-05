@@ -30,6 +30,7 @@ if sys.stdout:
 
 import signal
 import argparse
+import multiprocessing
 import platform
 from datetime import datetime
 from pathlib import Path
@@ -1239,4 +1240,11 @@ def transcribe_live_coreaudio_tap(engine: TranscriptionEngine, args) -> int:
 
 
 if __name__ == "__main__":
+    # Required for the frozen (PyInstaller) sidecar: multiprocessing's
+    # resource_tracker relaunches itself by re-invoking sys.executable,
+    # which in a frozen onefile build is this binary itself, not a real
+    # Python interpreter. freeze_support() intercepts that re-invocation
+    # before the app's own imports run -- without it, the relaunch re-runs
+    # this whole script from scratch and dies on a circular import.
+    multiprocessing.freeze_support()
     sys.exit(main())

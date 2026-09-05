@@ -56,6 +56,25 @@ target-dir = "/home/YOU/.cache/transcriber-target"
 
 An exported `CARGO_TARGET_DIR` still works too and takes precedence if set. `build_portable.py` finds the real location either way (it asks `cargo metadata` directly, rather than only checking the env var).
 
+Freeze the Linux sidecar from a **venv**, not the system Python — on distros where numpy/scipy are system packages (e.g. Fedora, linked against FlexiBLAS), building against system Python bundles a BLAS shim with no backend, and the frozen binary aborts on first transcription:
+
+```bash
+python3 -m venv .venv
+./.venv/bin/pip install -r requirements-linux.txt pyinstaller
+./.venv/bin/python build_sidecar.py
+mkdir -p src-tauri/binaries
+cp dist/linux/transcriber-sidecar src-tauri/binaries/transcriber-sidecar-x86_64-unknown-linux-gnu
+```
+
+Then the rest of the Linux build:
+
+```bash
+cargo tauri build            # from src-tauri/
+python fetch_sidecar_resources.py   # stage the model, if not already staged
+python build_portable.py
+# Linux artifact: dist/portable/*.AppImage
+```
+
 #### Windows build (from WSL)
 
 The Windows shell (Tauri) cross-compiles cleanly from WSL, but the Windows sidecar is a PyInstaller freeze, and PyInstaller does not cross-compile — it must run under a real Windows Python. WSL can execute Windows `.exe` binaries directly, so this uses a Windows Python venv reached from WSL rather than a separate Windows build step.

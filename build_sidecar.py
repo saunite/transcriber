@@ -27,7 +27,27 @@ def _faster_whisper_assets_dir() -> str:
     return str(Path(spec.origin).parent / "assets")
 
 
+def _in_virtualenv() -> bool:
+    return sys.prefix != sys.base_prefix
+
+
 def main() -> int:
+    # ponytail: only catches the plain "no venv at all" case (the actual
+    # cause of the flexiblas crash below), not a --system-site-packages venv.
+    if not _in_virtualenv():
+        print(
+            "ERROR: build_sidecar.py must run from a venv (python -m venv .venv; "
+            "source .venv/bin/activate; pip install -r requirements-linux.txt pyinstaller), "
+            "not the system Python.\n"
+            "System numpy/scipy on some distros (e.g. Fedora) link against FlexiBLAS, "
+            "which loads its actual math backend via dlopen() at runtime -- invisible to "
+            "PyInstaller's static analysis. The frozen binary then ships libflexiblas.so.3 "
+            "with no backend and aborts on first use. A venv's pip-installed numpy/scipy "
+            "wheels bundle their own BLAS statically, so this can't happen.",
+            file=sys.stderr,
+        )
+        return 1
+
     system = platform.system().lower()
     assets_dir = _faster_whisper_assets_dir()
     sep = ";" if platform.system() == "Windows" else ":"
