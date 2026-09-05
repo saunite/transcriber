@@ -4,15 +4,23 @@
   "title": "Design System: Transcriber",
   "extensions": {
     "colorMeta": {
-      "pen-sys": { "role": "primary", "displayName": "SYS Ink", "canonical": "#16233a", "tonalRamp": ["#0a1220", "#111c30", "#16233a", "#233350", "#39496b", "#5c6c8a", "#8b97ad", "#c4cbd8"] },
-      "pen-mic": { "role": "primary", "displayName": "MIC Ink", "canonical": "#b4231d", "tonalRamp": ["#3a0b09", "#5c120f", "#7f1915", "#a11f1a", "#b4231d", "#cc4e48", "#e08d88", "#f3cfcd"] },
-      "stock": { "role": "neutral", "displayName": "Chart Stock", "canonical": "#e9f0ea", "tonalRamp": ["#1c221d", "#33402f", "#556653", "#7c8f80", "#a9baa5", "#cddccb", "#e9f0ea", "#f7faf6"] },
-      "grid-major": { "role": "neutral", "displayName": "Grid, Major", "canonical": "#cbb4ac", "tonalRamp": ["#2e2320", "#4c3934", "#6f544d", "#95746a", "#b6928a", "#cbb4ac", "#e0d0ca", "#f2e8e4"] },
-      "grid-minor": { "role": "neutral", "displayName": "Grid, Minor", "canonical": "rgb(203 180 172 / 0.35)", "tonalRamp": ["grid-major at 0.35 alpha; not an independent ramp by construction"] },
-      "panel": { "role": "neutral", "displayName": "Panel", "canonical": "#d5ddd4", "tonalRamp": ["#191d19", "#2e352d", "#4d574b", "#727d6f", "#9ba69a", "#c1c9c0", "#d5ddd4", "#eef2ed"] },
-      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "#17231b", "tonalRamp": ["#0c110d", "#17231b", "#243527", "#3a5039", "#576f52", "#7d947a", "#adbdab", "#dbe4da"] },
-      "ink-soft": { "role": "neutral", "displayName": "Ink, Soft", "canonical": "#4e6152", "tonalRamp": ["#141b16", "#243024", "#3a4a39", "#4e6152", "#6d8069", "#93a48f", "#c1cebe", "#e6ebe4"] },
-      "ink-faint": { "role": "neutral", "displayName": "Ink, Faint", "canonical": "#7c8f80", "tonalRamp": ["#20261f", "#38423a", "#586558", "#7c8f80", "#9caea0", "#bfcdba", "#dde5da", "#f2f5f0"] }
+      "pen-sys": { "role": "primary", "displayName": "SYS Ink", "canonical": "#16233a", "tonalRamp": ["#0a1220", "#111c30", "#16233a", "#233350", "#39496b", "#5c6c8a", "#8b97ad", "#c4cbd8"], "dark": { "canonical": "#8fb3e0", "note": "Lightened steel-blue, not the light value reused; computes 8.53:1 against dark stock." } },
+      "pen-mic": { "role": "primary", "displayName": "MIC Ink", "canonical": "#b4231d", "tonalRamp": ["#3a0b09", "#5c120f", "#7f1915", "#a11f1a", "#b4231d", "#cc4e48", "#e08d88", "#f3cfcd"], "dark": { "canonical": "#e2665c", "note": "Lightened coral, not the light value reused; computes 5.53:1 against dark stock." } },
+      "stock": { "role": "neutral", "displayName": "Chart Stock", "canonical": "#e9f0ea", "tonalRamp": ["#1c221d", "#33402f", "#556653", "#7c8f80", "#a9baa5", "#cddccb", "#e9f0ea", "#f7faf6"], "dark": { "canonical": "#10150f" } },
+      "stock-raised": { "role": "neutral", "displayName": "Stock, Raised", "canonical": "#f4f8f4", "dark": { "canonical": "#1a231b" } },
+      "stock-edge": { "role": "neutral", "displayName": "Stock, Edge", "canonical": "#dde6de", "dark": { "canonical": "#1c261d" } },
+      "gutter": { "role": "neutral", "displayName": "Gutter", "canonical": "#e3ebe4", "dark": { "canonical": "#161d16" } },
+      "grid-major": { "role": "neutral", "displayName": "Grid, Major", "canonical": "#cbb4ac", "tonalRamp": ["#2e2320", "#4c3934", "#6f544d", "#95746a", "#b6928a", "#cbb4ac", "#e0d0ca", "#f2e8e4"], "dark": { "canonical": "#8a6b5e" } },
+      "grid-minor": { "role": "neutral", "displayName": "Grid, Minor", "canonical": "rgb(203 180 172 / 0.35)", "tonalRamp": ["grid-major at 0.35 alpha; not an independent ramp by construction"], "dark": { "canonical": "rgb(138 107 94 / 0.35)", "note": "dark grid-major at 0.35 alpha, same construction as light." } },
+      "panel": { "role": "neutral", "displayName": "Panel", "canonical": "#d5ddd4", "tonalRamp": ["#191d19", "#2e352d", "#4d574b", "#727d6f", "#9ba69a", "#c1c9c0", "#d5ddd4", "#eef2ed"], "dark": { "canonical": "#0a0d0a", "note": "Panel-recedes-darker-than-stock relationship carried to the opposite lightness extreme, not inverted." } },
+      "panel-edge": { "role": "neutral", "displayName": "Panel, Edge", "canonical": "#bcc7bb", "dark": { "canonical": "#232b23" } },
+      "panel-deep": { "role": "neutral", "displayName": "Panel, Deep", "canonical": "#c6cfc5", "dark": { "canonical": "#060706" } },
+      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "#17231b", "tonalRamp": ["#0c110d", "#17231b", "#243527", "#3a5039", "#576f52", "#7d947a", "#adbdab", "#dbe4da"], "dark": { "canonical": "#e6ede6", "note": "Stays tinted from the stock's green hue, not neutral gray, in both themes." } },
+      "ink-soft": { "role": "neutral", "displayName": "Ink, Soft", "canonical": "#4e6152", "tonalRamp": ["#141b16", "#243024", "#3a4a39", "#4e6152", "#6d8069", "#93a48f", "#c1cebe", "#e6ebe4"], "dark": { "canonical": "#a9bcae" } },
+      "ink-faint": { "role": "neutral", "displayName": "Ink, Faint", "canonical": "#7c8f80", "tonalRamp": ["#20261f", "#38423a", "#586558", "#7c8f80", "#9caea0", "#bfcdba", "#dde5da", "#f2f5f0"], "dark": { "canonical": "#4a5a4d" } },
+      "selection-bg": { "role": "neutral", "displayName": "Selection", "canonical": "#cfe0d2", "dark": { "canonical": "#2d3d30", "note": "A midtone the light --ink reads against, since both pen inks are light in dark mode." } },
+      "trace-hit-bg": { "role": "neutral", "displayName": "Trace Hit", "canonical": "#f2e08c", "dark": { "canonical": "#caa23e" } },
+      "trace-hit-ink": { "role": "neutral", "displayName": "Trace Hit Ink", "canonical": null, "dark": { "canonical": "#201804", "note": "Deliberately undefined in light mode (falls through to currentColor, the speaking pen's own color). Defined only in dark mode because both pen inks are lightened there and neither reads against a highlight bright enough to show on near-black." } }
     },
     "typographyMeta": {
       "body": { "displayName": "Body/Trace", "purpose": "Transcript line text, colored per source pen." },
@@ -24,6 +32,9 @@
       { "name": "record-lift-hover", "value": "0 8px 18px -8px var(--shadow)", "purpose": "Primary record button on hover." },
       { "name": "note-lift", "value": "0 10px 24px -12px var(--shadow)", "purpose": "Toast notes." }
     ],
+    "shadowMeta": {
+      "--shadow": { "light": "rgba(23, 35, 27, 0.22)", "dark": "rgba(0, 0, 0, 0.55)", "note": "Dark mode switches shadow color family (ink-tinted -> plain black at higher opacity), not just lightness, since an ink-tinted shadow disappears against an already-dark stock." }
+    },
     "motion": [
       { "name": "mark-lands", "value": "260ms cubic-bezier(0.16, 1, 0.3, 1), opacity 0->1 + translateX(-6px)->none", "purpose": "New transcript line arriving on the chart; the system's one authored line-arrival motion." },
       { "name": "note-in", "value": "200ms cubic-bezier(0.16, 1, 0.3, 1), opacity 0->1 + translateX(10px)->none", "purpose": "Toast note entrance." }
@@ -31,7 +42,14 @@
     "breakpoints": [
       { "name": "narrow", "value": "52rem" },
       { "name": "short", "value": "34rem (max-height)" }
-    ]
+    ],
+    "themeModes": {
+      "states": ["system", "light", "dark"],
+      "default": "system",
+      "mechanism": "System follows prefers-color-scheme; an explicit data-theme=\"dark\"|\"light\" attribute overrides it in both directions and wins over the OS setting.",
+      "composition": "Dark composed independently per token (contrast-checked against the dark stock), not derived from light by mechanical inversion.",
+      "knownLimitation": "Native window-chrome (title bar) theming is best-effort on Linux/GTK: GTK's set_theme is a global hint the desktop environment's own system-wide setting overrides. Confirmed via pixel comparison to have no visible effect on GNOME. Platform constraint, not a design-system rule."
+    }
   },
   "components": [
     {
@@ -101,17 +119,20 @@
   ],
   "narrative": {
     "northStar": "The Chart Recorder",
-    "overview": "Transcriber reads as an instrument, not an app: a paper chart mounted on a physical body, two ink pens marking a calibrated time axis, a gridded roll advancing underneath. The window is minimized during the meeting it records -- nobody watches text arrive line by line -- so the entire visual system is built for the moment after: glancing back at a chart and reading what happened, including the silences, at their true scale. This replaced an earlier verbatim-transcript direction (courtroom-stenographer paper, a single stamp-red accent) that spent its hero moment on a screen no one is looking at during capture. The chart-recorder world keeps the instinct toward a calm, non-chat metaphor but relocates the drama: two pens (SYS and MIC), each with its own ink color, draw directly onto ruled stock, and a pen-lift state exists specifically so a stalled engine is never visually indistinguishable from a quiet room -- a real bug class the old chat-log metaphor could not represent. The ruling lives in the time gutter, not across the reading column, so the chart's calibration is always visible without ever competing with the transcript text for the same pixels -- a rule this build states directly in its own CSS.",
+    "overview": "Transcriber reads as an instrument, not an app: a paper chart mounted on a physical body, two ink pens marking a calibrated time axis, a gridded roll advancing underneath. The window is minimized during the meeting it records -- nobody watches text arrive line by line -- so the entire visual system is built for the moment after: glancing back at a chart and reading what happened, including the silences, at their true scale. This replaced an earlier verbatim-transcript direction (courtroom-stenographer paper, a single stamp-red accent) that spent its hero moment on a screen no one is looking at during capture. The chart-recorder world keeps the instinct toward a calm, non-chat metaphor but relocates the drama: two pens (SYS and MIC), each with its own ink color, draw directly onto ruled stock, and a pen-lift state exists specifically so a stalled engine is never visually indistinguishable from a quiet room -- a real bug class the old chat-log metaphor could not represent. The ruling lives in the time gutter, not across the reading column, so the chart's calibration is always visible without ever competing with the transcript text for the same pixels -- a rule this build states directly in its own CSS. The instrument now also has a lights-off mode: the same chart under a dark stock, reached via a System/Light/Dark toggle, composed as its own instrument reading rather than produced by inverting the light one.",
     "keyCharacteristics": [
       "Two pen inks, not one accent: navy SYS and red MIC, distinguished by hue because they are simultaneous, independent traces on one axis, not competing meanings.",
       "Silence is legible, not hidden: chart speed rescales the time axis continuously so a session's true rhythm (dense stretches, six-minute silences) survives being glanced at.",
       "The instrument's own state (pen up / pen down / pen lifted mid-run) is drawn as a visibly distinct pen position and color, never a text badge layered on top.",
       "Grid confined to the gutter: the ruled scale never crosses into the reading column.",
-      "No waveform, no chat bubbles: the transcribed text itself is the trace."
+      "No waveform, no chat bubbles: the transcribed text itself is the trace.",
+      "The instrument reads the same in the dark: a composed dark stock, not a filter over the light one."
     ],
     "rules": [
       { "name": "The Gutter-Only Grid Rule", "body": "The ruled scale lives exclusively in the time gutter. A grid printed across the reading column is true to physical chart paper but hostile to the moment this app exists for -- reading the transcript afterward -- so the calibration and the prose never share pixels.", "section": "colors" },
       { "name": "The Two-Pen Rule", "body": "SYS and MIC each own one ink color, used consistently for their swatch, trace text, and pen mark. No third pen color is introduced for any other state; the pen-lift fault state reuses MIC's red rather than adding a color, because a lifted pen is drawn as a state of the mechanism, not a new signal.", "section": "colors" },
+      { "name": "The Composed, Not Inverted Rule", "body": "Dark mode is a second, independently composed reading of the instrument, not the light tokens run through an inverter. Each color earns its dark value on its own terms (steps in the panel/stock lightness relationship stay proportionate but pen inks are re-picked for contrast, ink hierarchy stays hue-tinted, shadows change color family entirely) rather than by a mechanical formula applied once.", "section": "colors" },
+      { "name": "The Highlight Needs Its Own Ink Rule", "body": "The search-hit highlight's text color (--trace-hit-ink) is left undefined in light mode on purpose, falling through to currentColor so the highlight simply shows through whichever pen is speaking. Dark mode defines it explicitly (#201804), because both pen inks are lightened for the dark stock and neither reads against a highlight bright enough to show up on near-black. A highlight token that works in one theme is not assumed to work in the other without checking.", "section": "colors" },
       { "name": "The No Display Face Rule", "body": "Nothing on this screen is large, bold display type. The wordmark is small and quiet; the trace text is the only content ever meant to hold attention.", "section": "typography" },
       { "name": "The Diffuse-Only Rule", "body": "Every authored shadow is soft-blurred with a real offset; a hard zero-blur shadow never appears here -- it belongs to a different, neobrutalist world.", "section": "elevation" }
     ],
@@ -119,13 +140,16 @@
       "Do keep the two pen inks (pen-sys navy, pen-mic red) exclusive to their own source -- trace text, swatches, and marks always match their pen.",
       "Do confine ruled grid lines to the time gutter; never print a grid across the text-reading column.",
       "Do represent instrument state (idle / listening / advancing / pen-lift) as a change to the pen mark itself (color + position), never as a text badge stacked on top of unchanged chrome.",
-      "Do use the diffuse ambient shadow family for anything that needs to read as lifted off the instrument; never a hard offset shadow."
+      "Do use the diffuse ambient shadow family for anything that needs to read as lifted off the instrument; never a hard offset shadow.",
+      "Do compose each theme's tokens on their own terms (contrast, hue relationship, shadow color family) rather than deriving dark from light by a formula; verify a new dark token against the dark stock, not against the light token it replaces."
     ],
     "donts": [
       "Don't add a third accent color; every new state maps onto SYS, MIC, or a neutral ink step.",
       "Don't reintroduce a chat-log or chat-bubble treatment for speaker turns -- the direction explicitly refuses that pattern.",
       "Don't bundle or fetch a display/condensed webfont for labels; the system-sans + uppercase + tracking treatment is the resolved substitute, not a placeholder.",
-      "Don't drive any meter or pen position from audio amplitude -- the event contract carries no audio levels; pen motion is chunk-arrival cadence only, and a true level meter is a named future backend cost, not something to fake visually."
+      "Don't drive any meter or pen position from audio amplitude -- the event contract carries no audio levels; pen motion is chunk-arrival cadence only, and a true level meter is a named future backend cost, not something to fake visually.",
+      "Don't assume a light-mode color value is safe to reuse verbatim in dark mode, or vice versa; both pen inks specifically need different values per theme to keep clearing the contrast floor as trace text."
     ]
   }
 }
+</content>

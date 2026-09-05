@@ -36,10 +36,117 @@
   --mono: ui-monospace, "Cascadia Code", "SF Mono", "Segoe UI Mono", Consolas, monospace;
   --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 
+  /* Browser/interaction surfaces that sit outside the ink hierarchy --
+     tokenized so dark mode can redefine them (see the dark blocks below);
+     --trace-hit-ink is deliberately absent here, so the base rule's
+     `var(--trace-hit-ink, currentColor)` falls through to the pen's own
+     color, matching today's light-mode behavior exactly. */
+  --selection-bg: #cfe0d2;
+  --trace-hit-bg: #f2e08c;
+
   /* Chart speed: px per second of elapsed time. Set by main.js. */
   --chart-scale: 6;
   --row-min: 1.5rem;
 
+  color-scheme: light;
+}
+
+/* Dark theme -- composed independently for a dark surface (impeccable
+   colorize.md: "light and dark themes are each composed, not mechanically
+   inverted"), not the light tokens run through an inverter.
+
+   - Stock/panel keep light mode's relationship (panel recedes darker than
+     the chart stock it frames), just at the opposite end of the lightness
+     scale -- confirmed against light mode's own elevation-step contrast
+     (~1.1-1.2:1, decorative, no text sits on the seam) so dark mode isn't
+     held to a different subtlety standard than light already sets.
+   - Both pen inks are lightened from their light-mode family (steel-blue
+     SYS, coral MIC) rather than reused as-is: the light theme's near-black
+     navy and moderate red are text colors on a *light* stock, and would
+     fail contrast as transcript text on a dark one. Computed: SYS 8.53:1,
+     MIC 5.53:1 against --stock below, both clearing the craft floor's
+     4.5:1 body-text minimum, while staying recognizably navy-family and
+     red-family rather than drifting into an unrelated hue.
+   - Ink hierarchy stays tinted from the stock's green hue, never neutral
+     gray, per the craft floor's own rule -- same as light mode.
+   - --shadow shifts to plain black at higher opacity: light mode's green-
+     tinted ambient shadow reads on a light stock but would be invisible
+     against an already-dark one.
+
+   Duplicated (not referenced) in the unguarded [data-theme="dark"] block
+   below, since plain CSS custom properties have no way to share a value
+   set across two rulesets without a preprocessor -- keep both in sync by
+   hand if these values ever change. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --stock: #10150f;
+    --stock-edge: #1c261d;
+    --stock-raised: #1a231b;
+    --grid-major: #8a6b5e;
+    --grid-minor: rgb(138 107 94 / 0.35);
+    --gutter: #161d16;
+
+    --pen-sys: #8fb3e0;
+    --pen-mic: #e2665c;
+
+    --ink: #e6ede6;
+    --ink-soft: #a9bcae;
+    --ink-faint: #4a5a4d;
+
+    --panel: #0a0d0a;
+    --panel-edge: #232b23;
+    --panel-deep: #060706;
+
+    --shadow: rgba(0, 0, 0, 0.55);
+    --focus: #8fb3e0;
+
+    /* Both pen inks are light in dark mode, so a highlight bright enough to
+       read against the near-black stock (7.7:1) needs its own forced-dark
+       text color instead of the pen's color showing through -- mirrors, at
+       the opposite lightness end, why light mode's dark pen text already
+       happened to read fine on a pale highlight. Selection just needs a
+       midtone the light --ink reads against. */
+    --selection-bg: #2d3d30;
+    --trace-hit-bg: #caa23e;
+    --trace-hit-ink: #201804;
+
+    color-scheme: dark;
+  }
+}
+
+/* Explicit override wins over the OS setting in both directions: this
+   block matches the media-guarded one above so choosing "Dark" renders
+   dark even when the OS is set to light. */
+:root[data-theme="dark"] {
+  --stock: #10150f;
+  --stock-edge: #1c261d;
+  --stock-raised: #1a231b;
+  --grid-major: #8a6b5e;
+  --grid-minor: rgb(138 107 94 / 0.35);
+  --gutter: #161d16;
+
+  --pen-sys: #8fb3e0;
+  --pen-mic: #e2665c;
+
+  --ink: #e6ede6;
+  --ink-soft: #a9bcae;
+  --ink-faint: #4a5a4d;
+
+  --panel: #0a0d0a;
+  --panel-edge: #232b23;
+  --panel-deep: #060706;
+
+  --shadow: rgba(0, 0, 0, 0.55);
+  --focus: #8fb3e0;
+
+  --selection-bg: #2d3d30;
+  --trace-hit-bg: #caa23e;
+  --trace-hit-ink: #201804;
+
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
   color-scheme: light;
 }
 
@@ -78,7 +185,7 @@ body {
 
 /* Browser surfaces themed from the palette rather than left at defaults */
 ::selection {
-  background: #cfe0d2;
+  background: var(--selection-bg);
   color: var(--ink);
 }
 
@@ -780,8 +887,13 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .trace-hit .trace-text {
-  background: #f2e08c;
-  box-shadow: 0 0 0 2px #f2e08c;
+  background: var(--trace-hit-bg);
+  box-shadow: 0 0 0 2px var(--trace-hit-bg);
+  /* Undefined in light mode -- falls through to currentColor (the pen's own
+     color), unchanged from before. Dark mode defines it, since neither pen
+     color reads on a highlight bright enough to show against a near-black
+     stock. */
+  color: var(--trace-hit-ink, currentColor);
 }
 
 /* ---- Notes -------------------------------------------------------------- */

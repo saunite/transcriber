@@ -3,6 +3,20 @@
   <head>
     <meta charset="utf-8" />
     <title>Transcriber</title>
+    <script>
+      // Runs before the stylesheet is applied, so an explicit theme choice
+      // renders correctly on first paint instead of flashing light-then-dark.
+      // "system" needs no attribute here -- the CSS media query alone
+      // already renders correctly on first paint with no JS at all.
+      (function () {
+        try {
+          var pref = localStorage.getItem("transcriber-theme");
+          if (pref === "light" || pref === "dark") {
+            document.documentElement.dataset.theme = pref;
+          }
+        } catch (e) {}
+      })();
+    </script>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
@@ -166,6 +180,15 @@
           <span class="rail-label">Find in chart</span>
           <input id="chart-search" type="search" placeholder="search text" spellcheck="false" />
           <span id="search-count" class="rail-readout mono" hidden></span>
+        </label>
+
+        <label class="rail-field">
+          <span class="rail-label">Theme</span>
+          <select id="theme-select">
+            <option value="system" selected>System</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
         </label>
       </aside>
 

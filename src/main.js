@@ -6,6 +6,7 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 const { open: openFileDialog, save: saveFileDialog } = window.__TAURI__.dialog;
+const { getCurrentWindow } = window.__TAURI__.window;
 
 const els = {
   noteRoot: document.getElementById("note-root"),
@@ -48,12 +49,72 @@ const els = {
   searchCount: document.getElementById("search-count"),
   penSys: document.querySelector(".pen-sys"),
   penMic: document.querySelector(".pen-mic"),
+  themeSelect: document.getElementById("theme-select"),
 };
 
 // The GUI always passes --chunk-duration 10, so "output is overdue" is a
 // known constant here rather than a new backend signal.
 const CHUNK_SECONDS = 10;
 const STALL_MS = CHUNK_SECONDS * 2 * 1000;
+
+// ---- Theme ------------------------------------------------------------
+
+const THEME_KEY = "transcriber-theme";
+const osDarkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+
+function getStoredThemePreference() {
+  try {
+    const stored = localStorage.getItem(THEME_KEY);
+    return stored === "light" || stored === "dark" ? stored : "system";
+  } catch (e) {
+    return "system";
+  }
+}
+
+// Syncs the native window chrome (title bar) to the resolved theme. Passing
+// null tells Tauri "follow the OS" for the chrome directly -- whether that
+// stays live on its own or needs re-asserting isn't documented either way,
+// so the matchMedia listener below re-calls this on every OS change while
+// preference is "system" as a harmless, idempotent safety net.
+function syncWindowChrome(preference) {
+  getCurrentWindow()
+    .setTheme(preference === "system" ? null : preference)
+    .catch((e) => console.error("setTheme failed:", e));
+}
+
+// Applying the preference to the DOM only ever needs a `data-theme`
+// attribute for an explicit choice -- "system" removes it entirely and the
+// CSS media query alone renders correctly, including on first paint before
+// this script ever runs (see index.html's inline head script).
+function applyThemePreference(preference) {
+  if (preference === "system") {
+    delete document.documentElement.dataset.theme;
+  } else {
+    document.documentElement.dataset.theme = preference;
+  }
+  syncWindowChrome(preference);
+}
+
+function setThemePreference(preference) {
+  try {
+    localStorage.setItem(THEME_KEY, preference);
+  } catch (e) {}
+  applyThemePreference(preference);
+}
+
+function initTheme() {
+  const preference = getStoredThemePreference();
+  els.themeSelect.value = preference;
+  applyThemePreference(preference);
+
+  els.themeSelect.addEventListener("change", () => {
+    setThemePreference(els.themeSelect.value);
+  });
+
+  osDarkQuery.addEventListener("change", () => {
+    if (getStoredThemePreference() === "system") syncWindowChrome("system");
+  });
+}
 
 // ---- Notes (error/status) -------------------------------------------------
 
@@ -728,6 +789,7 @@ listen("file-transcription-complete", (event) => {
   showNote(event.payload ? "Transcript saved." : "File transcription failed — see the engine log for details.");
 });
 
+initTheme();
 setupDropZone();
 applyPlatformGate();
 populateMicDevices();
