@@ -252,3 +252,14 @@ The system SHALL request the resolved theme (whether system-followed or explicit
 #### Scenario: Best-effort request on Linux/GTK
 - **WHEN** the resolved theme changes on a Linux desktop environment
 - **THEN** the system still issues the platform's theme-request call (GTK's global "prefer dark theme" hint, the only mechanism `tao`/Tauri expose on Linux), but the window chrome's actual appearance follows the desktop environment's own system-wide theme setting rather than this app's request, and this is not treated as a defect
+
+### Requirement: Language selection is a constrained dropdown
+The system SHALL let the user choose the transcription language from a dropdown populated with every language the bundled model supports, defaulting to "Auto-detect," rather than free-text entry. Selecting "Auto-detect" SHALL behave identically to leaving the language unset (no `--language` flag passed), and selecting a specific language SHALL pass its code exactly as faster-whisper expects.
+
+#### Scenario: Default is Auto-detect
+- **WHEN** a user opens the app without changing the language field
+- **THEN** the field reads "Auto-detect" and no `--language` flag is passed to the sidecar for a live session or file transcription
+
+#### Scenario: User selects a specific language
+- **WHEN** a user picks a specific language from the dropdown before starting a live session or transcribing a file
+- **THEN** the sidecar is invoked with `--language <code>` for that language

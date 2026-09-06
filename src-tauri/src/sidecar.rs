@@ -138,6 +138,41 @@ mod tests {
             .expect("--audio-device should be present when overridden");
         assert_eq!(args[idx + 1], "7");
     }
+
+    #[test]
+    fn omits_language_when_auto_detect() {
+        let args = build_live_session_args(
+            "base".to_string(),
+            "/model/dir".to_string(),
+            None,
+            false,
+            None,
+            None,
+            None,
+        );
+        assert!(
+            !args.contains(&"--language".to_string()),
+            "auto-detect (empty selection) must omit --language entirely: {args:?}"
+        );
+    }
+
+    #[test]
+    fn passes_language_when_selected() {
+        let args = build_live_session_args(
+            "base".to_string(),
+            "/model/dir".to_string(),
+            Some("en".to_string()),
+            false,
+            None,
+            None,
+            None,
+        );
+        let idx = args
+            .iter()
+            .position(|a| a == "--language")
+            .expect("--language should be present when a language is selected");
+        assert_eq!(args[idx + 1], "en");
+    }
 }
 
 pub struct SidecarManager {

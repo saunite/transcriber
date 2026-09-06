@@ -2,6 +2,7 @@
 name = "transcriber-gui"
 version = "0.1.0"
 edition = "2021"
+license = "GPL-2.0-or-later"
 
 # UNVERIFIED: written without a working Rust/Cargo toolchain on this machine
 # (blocked by machine-level execution policy, not admin rights -- see
