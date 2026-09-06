@@ -3,14 +3,14 @@ REM Teams Meeting Transcription Launcher
 REM This script sets up the environment and starts live transcription with dual-capture
 REM (system audio + microphone) for complete Teams meeting coverage
 REM
-REM Usage: start_teams_transcription.bat [name-prefix] [transcriber flags...]
+REM Usage: win-start-transcription.bat [name-prefix] [transcriber flags...]
 REM   name-prefix:  prefix for the output filename (default: meeting)
 REM   Timestamps default to wall-clock time (--actual-time is always passed).
 REM   flags:        passed through to transcriber.py, e.g.
 REM                   --silence-timeout 0      never auto-stop on silence
 REM                   --save-audio             also save sys/mic WAV files
 REM                   --language en            force a language
-REM   Example: start_teams_transcription.bat sprint-review --silence-timeout 0
+REM   Example: win-start-transcription.bat sprint-review --silence-timeout 0
 setlocal
 
 set NAME_PREFIX=meeting

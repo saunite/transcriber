@@ -8,15 +8,15 @@ Capture live system audio (and optionally microphone audio) for real-time transc
 ## Requirements
 
 ### Requirement: Capture live system audio
-The system SHALL capture system audio output in real time from a loopback source (Stereo Mix / Wave Out / loopback on Windows, PulseAudio/PipeWire monitor on Linux) and deliver audio chunks to a callback for processing.
+The system SHALL capture system audio output in real time from a loopback source (Stereo Mix / Wave Out / loopback on Windows, the real PulseAudio/PipeWire monitor source on Linux) and deliver audio chunks to a callback for processing.
 
 #### Scenario: Auto-detect loopback device
 - **WHEN** a user starts live capture without specifying a device index
-- **THEN** the system auto-detects a loopback device by scanning available devices for loopback/monitor sources
+- **THEN** on Windows, the system auto-detects a loopback device by scanning available devices for loopback/monitor-named devices; on Linux, the system queries `pactl` for the real monitor source of the default (or specified) sink and captures it via a native `parec` subprocess, not through generic `sounddevice`/PortAudio device enumeration
 
 #### Scenario: No loopback device found
-- **WHEN** no loopback device can be auto-detected
-- **THEN** the system lists available devices, prints setup instructions, and raises an error
+- **WHEN** no loopback device can be auto-detected (on Linux: `pactl` is unavailable, or no monitor source exists)
+- **THEN** the system lists available devices or sources, prints setup instructions, and raises an error
 
 #### Scenario: Capture stops on user interrupt
 - **WHEN** the user presses Ctrl+C during live capture

@@ -556,16 +556,32 @@ def _merge_sys_mic_wav(sys_path: str, mic_path: str, out_path: str) -> None:
 
 
 def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
-    """Simple live transcription for non-WASAPI mode."""
+    """Simple live transcription for non-WASAPI/non-Core-Audio-tap mode (the
+    Linux default). Dual-source (system audio + mic) is split into its own
+    function since it needs the WASAPI-style queue/worker-thread structure;
+    this single-source path is left completely unchanged
+    (openspec/changes/add-linux-dual-source-live-capture)."""
+    if args.include_mic:
+        return _transcribe_live_linux_dual(engine, args)
+
     import numpy as np
     import sounddevice as sd
 
     # Get device info to use its native sample rate
     device_id = args.audio_device if args.audio_device >= 0 else None
+    # sounddevice/PortAudio's ALSA-only device list can't see the real
+    # PipeWire/PulseAudio monitor source (openspec/changes/fix-linux-loopback-detection)
+    # -- auto-detect (no explicit --audio-device) on Linux goes through the
+    # real pactl/parec monitor instead. An explicit device index keeps
+    # today's sounddevice behavior unchanged.
+    use_linux_loopback = platform.system() == "Linux" and device_id is None
+    loopback_name = None
     if device_id is not None:
         device_info = sd.query_devices(device_id)
         native_rate = int(device_info['default_samplerate'])
         print(f"Using device native sample rate: {native_rate} Hz")
+    elif use_linux_loopback:
+        native_rate = 16000  # parec resamples server-side; nothing to do here
     else:
         native_rate = 48000
 
@@ -574,7 +590,20 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
         _print_header(args.model, args.language, args.chunk_duration)
 
     # Initialize audio capture with native sample rate
-    capture = AudioCapture(sample_rate=native_rate, channels=1)
+    if use_linux_loopback:
+        from linux_loopback_capture import LinuxLoopbackCapture
+        capture = LinuxLoopbackCapture()
+        device_info = capture.get_default_loopback_device()
+        if not device_info:
+            print("\n⚠️  Warning: Could not auto-detect loopback device.")
+            print("Please specify a device manually or set up audio loopback:")
+            print("  - Use PulseAudio/PipeWire monitor source")
+            print("  - Run: pactl list sources | grep -i monitor")
+            return 1
+        loopback_name = device_info['name']
+        print(f"Using loopback device: {loopback_name}")
+    else:
+        capture = AudioCapture(sample_rate=native_rate, channels=1)
 
     # Storage
     all_segments = []
@@ -658,10 +687,10 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
     
     try:
         # Start capturing
-        capture.capture_stream(
-            callback=audio_callback,
-            device=args.audio_device
-        )
+        if use_linux_loopback:
+            capture.capture_stream(callback=audio_callback, device_index=loopback_name, verbose=args.verbose)
+        else:
+            capture.capture_stream(callback=audio_callback, device=args.audio_device)
     except KeyboardInterrupt:
         print("\n\n⏹️  Stopping transcription...")
     finally:
@@ -673,6 +702,322 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
     # Print summary
     if args.verbose:
         _print_summary(all_segments, args, output_path=args.output, audio_save_path=audio_save_path)
+    _print_compact_stop(all_segments, args.output)
+
+    return 0
+
+
+def _transcribe_live_linux_dual(engine: TranscriptionEngine, args) -> int:
+    """Linux dual-source live transcription: system audio (auto-detected
+    PulseAudio/PipeWire monitor) + microphone, tagged [SYS]/[MIC].
+
+    Structurally mirrors transcribe_live_wasapi's queue/worker-thread split
+    (sounddevice callbacks run on PortAudio's own thread and must never
+    block on transcription), but both sides are plain sd.InputStream --
+    Linux needs no platform-specific loopback API the way Windows/WASAPI
+    does (openspec/changes/add-linux-dual-source-live-capture).
+    """
+    import numpy as np
+    from scipy import signal
+    import sounddevice as sd
+    import queue
+    import threading
+    import wave
+
+    if args.verbose:
+        _print_header(args.model, args.language, args.chunk_duration, "System audio + microphone (Linux)")
+
+    # Resolve system-audio (loopback/monitor) device. sounddevice/PortAudio
+    # can't see the real PipeWire/PulseAudio monitor source
+    # (openspec/changes/fix-linux-loopback-detection) -- auto-detect on
+    # Linux goes through pactl/parec instead. An explicit device index (or
+    # a non-Linux platform reaching this function) keeps the old
+    # sounddevice-based path, including its manual resample step, unchanged.
+    device_id = args.audio_device if args.audio_device >= 0 else None
+    use_linux_loopback = platform.system() == "Linux" and device_id is None
+    linux_capture = None
+    sys_device = None
+
+    if use_linux_loopback:
+        from linux_loopback_capture import LinuxLoopbackCapture
+        linux_capture = LinuxLoopbackCapture()
+        device_info = linux_capture.get_default_loopback_device()
+        if not device_info:
+            print("\n⚠️  Warning: Could not auto-detect loopback device.")
+            print("Please specify a device manually or set up audio loopback:")
+            print("  - Use PulseAudio/PipeWire monitor source")
+            print("  - Run: pactl list sources | grep -i monitor")
+            return 1
+        sys_name = device_info['name']
+        native_rate = 16000  # parec resamples server-side; nothing to do here
+        if args.verbose:
+            print(f"Auto-detected loopback: {sys_name}\n")
+    else:
+        audio_capture = AudioCapture()
+        if device_id is not None:
+            sys_device = device_id
+        else:
+            sys_device = audio_capture.get_loopback_device()
+            if sys_device is None:
+                print("\n⚠️  Warning: Could not auto-detect loopback device.")
+                print("Available devices:")
+                audio_capture.list_devices()
+                print("\nPlease specify a device manually or set up audio loopback:")
+                print("  - Use PulseAudio/PipeWire monitor source")
+                print("  - Run: pactl list sources | grep -i monitor")
+                return 1
+            if args.verbose:
+                print(f"Auto-detected loopback: {sd.query_devices(sys_device)['name']}\n")
+
+        sys_info = sd.query_devices(sys_device)
+        native_rate = int(sys_info['default_samplerate'])
+        sys_name = sys_info['name']
+
+    # Get microphone device (identical to transcribe_live_wasapi)
+    if args.mic_device >= 0:
+        mic_device = args.mic_device
+    else:
+        try:
+            mic_info = sd.query_devices(kind='input')
+            mic_device = mic_info['index'] if isinstance(mic_info, dict) else None
+            if args.verbose:
+                print(f"Auto-detected microphone: {mic_info['name']}\n")
+        except Exception:
+            print("⚠️  Could not auto-detect microphone")
+            return 1
+
+    try:
+        mic_info = sd.query_devices(mic_device)
+        max_input_channels = mic_info.get('max_input_channels', 0)
+        if max_input_channels == 0:
+            print(f"❌ Error: Device {mic_device} is not an input device (0 input channels)")
+            print(f"   Device name: {mic_info['name']}")
+            print("\nUse --list-devices to find your microphone device number")
+            return 1
+        mic_channels = min(max_input_channels, 2)
+        mic_name = mic_info['name']
+        if args.verbose:
+            print(f"Microphone capture enabled (device {mic_device})")
+            print(f"   Device: {mic_name}")
+            print(f"   Channels: {mic_channels}\n")
+    except Exception as e:
+        print(f"❌ Error querying microphone device {mic_device}: {e}")
+        return 1
+
+    # Compact default status: identity, model/language/mode/device summary,
+    # and a listening confirmation (openspec/changes/compact-live-cli-output).
+    print(f"Transcriber → {args.output}" if args.output else "Transcriber (not saving a transcript file)")
+    mode_summary = f"System audio ({sys_name}) + mic ({mic_name})"
+    print(f"{args.model} model ({engine.device}/{engine.compute_type}), {args.language or 'auto-detect'} language, {mode_summary}")
+    listen_line = "Listening... (Ctrl+C to stop"
+    if args.silence_timeout > 0:
+        listen_line += f", auto-stop after {args.silence_timeout/60:.1f}m silence"
+    print(listen_line + ")")
+
+    # Storage
+    all_segments = []
+    last_speech_time = time.time()
+    silence_timeout_enabled = args.silence_timeout > 0
+
+    overlap_duration = 1.0
+    target_rate = 16000
+    chunk_duration_samples = int(target_rate * args.chunk_duration)
+    mic_chunk_samples = int(target_rate * 5.0)
+    overlap_samples = int(target_rate * overlap_duration)
+
+    sys_audio_queue = queue.Queue()
+    mic_audio_queue = queue.Queue()
+    stop_event = threading.Event()
+    write_lock = threading.Lock()
+
+    output_file = None
+    if args.output:
+        output_file = open(args.output, 'w', encoding='utf-8')
+        output_file.write(f"# Live Transcription (System Audio + Microphone)\n")
+        output_file.write(f"# Model: {args.model}\n")
+        output_file.write(f"# Language: {args.language or 'auto-detect'}\n\n")
+        output_file.flush()
+
+    sys_wav_file = None
+    mic_wav_file = None
+    sys_audio_save_path = None
+    mic_audio_save_path = None
+    if args.save_audio:
+        base_stem = Path(args.output).stem if args.output else f"live_audio_{time.strftime('%Y%m%d_%H%M%S')}"
+        base_dir = Path(args.output).parent if args.output else Path.cwd()
+        sys_audio_save_path = str(base_dir / f"{base_stem}_sys.wav")
+        sys_wav_file = wave.open(sys_audio_save_path, 'wb')
+        sys_wav_file.setnchannels(1)
+        sys_wav_file.setsampwidth(2)  # int16
+        sys_wav_file.setframerate(target_rate)
+        print(f"💾 Recording system audio to: {sys_audio_save_path}")
+        mic_audio_save_path = str(base_dir / f"{base_stem}_mic.wav")
+        mic_wav_file = wave.open(mic_audio_save_path, 'wb')
+        mic_wav_file.setnchannels(1)
+        mic_wav_file.setsampwidth(2)  # int16
+        mic_wav_file.setframerate(target_rate)
+        print(f"💾 Recording microphone to: {mic_audio_save_path}")
+
+    # Capture callbacks only enqueue raw audio -- never resample or
+    # transcribe here, since they run on PortAudio's own thread and must
+    # return immediately or the stream overflows. (Non-Linux-loopback path only.)
+    def sys_callback_raw(indata, frames, time_info, status):
+        if status and "overflow" not in str(status).lower():
+            print(f"Audio callback status: {status}", file=sys.stderr)
+        sys_audio = indata[:, 0] if len(indata.shape) > 1 else indata
+        sys_audio_queue.put(sys_audio.flatten().copy())
+
+    def sys_callback_native(audio_chunk):
+        """LinuxLoopbackCapture's callback: runs synchronously on its own
+        main-thread drain loop (not PortAudio's thread), already at
+        target_rate (parec resampled server-side) -- no transform needed."""
+        if silence_timeout_enabled and (time.time() - last_speech_time) > args.silence_timeout:
+            print(f"\nAuto-stop: {args.silence_timeout/60:.1f} minutes of silence detected")
+            raise KeyboardInterrupt("Silence timeout")
+        if sys_wav_file:
+            int16_data = (audio_chunk * 32767.0).clip(-32768, 32767).astype(np.int16)
+            sys_wav_file.writeframes(int16_data.tobytes())
+        sys_audio_queue.put(audio_chunk)
+
+    def mic_callback(indata, frames, time_info, status):
+        if status and "overflow" not in str(status).lower():
+            print(f"Mic status: {status}")
+        mic_audio = indata[:, 0] if len(indata.shape) > 1 else indata
+        chunk = mic_audio.flatten().copy()
+        if mic_wav_file:
+            int16_data = (chunk * 32767.0).clip(-32768, 32767).astype(np.int16)
+            mic_wav_file.writeframes(int16_data.tobytes())
+        mic_audio_queue.put(chunk)
+
+    def _emit(line):
+        """Print and write a transcription line (thread-safe)."""
+        print(line)
+        if output_file:
+            with write_lock:
+                output_file.write(line + "\n")
+                output_file.flush()
+
+    def _drain_and_transcribe(q, buffer, threshold, tag, gate, transform=None):
+        """Dedicated thread: drains an audio queue and runs inference."""
+        nonlocal last_speech_time
+        time_offset = 0.0
+
+        while not stop_event.is_set() or not q.empty():
+            while not q.empty():
+                item = q.get_nowait()
+                if transform:
+                    item = transform(item)
+                buffer.append(item)
+
+            total = sum(len(c) for c in buffer)
+            if total >= threshold:
+                data = np.concatenate(buffer)
+                if len(data) > overlap_samples:
+                    buffer[:] = [data[-overlap_samples:]]
+                else:
+                    buffer.clear()
+                if not gate or np.max(np.abs(data)) > 0.01:
+                    try:
+                        results, spoke, time_offset = _process_audio_chunk(
+                            engine, data, time_offset,
+                            language=args.language, sample_rate=target_rate
+                        )
+                        if spoke:
+                            last_speech_time = time.time()
+                        for ts, seg in results:
+                            stamp = _wall_clock_stamp() if args.actual_time else ts
+                            _emit(f"{stamp} [{tag}] {seg['text']}")
+                            all_segments.append(seg)
+                    except Exception as e:
+                        print(f"  ❌ Error transcribing {tag.lower()} audio: {e}")
+            else:
+                time.sleep(0.05)
+
+    def transform_sys(raw):
+        """Non-Linux-loopback path only: resample the sounddevice-reported
+        native rate -> 16kHz away from the capture callback, persist 16kHz
+        WAV. Some capture backends (the ALSA "pipewire" plugin device, in
+        particular) deliver irregular block sizes, including occasional
+        few-frame slivers that resample down to zero output samples --
+        drop those rather than let scipy.signal.resample divide by zero."""
+        if native_rate != target_rate:
+            out_len = int(len(raw) * target_rate / native_rate)
+            if out_len < 1:
+                return np.empty(0, dtype=raw.dtype)
+            raw = signal.resample(raw, out_len)
+        if sys_wav_file and len(raw):
+            int16_data = (raw * 32767.0).clip(-32768, 32767).astype(np.int16)
+            sys_wav_file.writeframes(int16_data.tobytes())
+        return raw
+
+    # Start dedicated worker threads (sys and mic run in parallel, never
+    # blocking each other). The Linux-loopback path's sys callback already
+    # resamples (via parec) and writes the WAV itself, so it needs no transform.
+    sys_thread = threading.Thread(
+        target=_drain_and_transcribe,
+        args=(sys_audio_queue, [], chunk_duration_samples, "SYS", False, None if use_linux_loopback else transform_sys),
+        daemon=True
+    )
+    sys_thread.start()
+    mic_thread = threading.Thread(
+        target=_drain_and_transcribe,
+        args=(mic_audio_queue, [], mic_chunk_samples, "MIC", True),
+        daemon=True
+    )
+    mic_thread.start()
+
+    try:
+        if use_linux_loopback:
+            # LinuxLoopbackCapture.capture_stream is the blocking call here
+            # (mirrors transcribe_live_wasapi's structure) -- start the mic
+            # stream first so both sides run concurrently while it blocks.
+            mic_stream = sd.InputStream(device=mic_device, channels=mic_channels, samplerate=target_rate, blocksize=1024, callback=mic_callback)
+            mic_stream.start()
+            try:
+                linux_capture.capture_stream(callback=sys_callback_native, device_index=sys_name, verbose=args.verbose)
+            finally:
+                mic_stream.stop()
+                mic_stream.close()
+        else:
+            with sd.InputStream(device=sys_device, channels=1, samplerate=native_rate, blocksize=1024, callback=sys_callback_raw), \
+                 sd.InputStream(device=mic_device, channels=mic_channels, samplerate=target_rate, blocksize=1024, callback=mic_callback):
+                while True:
+                    if silence_timeout_enabled and (time.time() - last_speech_time) > args.silence_timeout:
+                        print(f"\nAuto-stop: {args.silence_timeout/60:.1f} minutes of silence detected")
+                        break
+                    time.sleep(0.1)
+    except KeyboardInterrupt:
+        print("\n\nStopping transcription...")
+    finally:
+        # linux_capture.capture_stream() already cleans up its own
+        # subprocess in its own finally block.
+        stop_event.set()
+        sys_thread.join(timeout=60)
+        mic_thread.join(timeout=60)
+        if output_file:
+            output_file.close()
+        if sys_wav_file:
+            sys_wav_file.close()
+        if mic_wav_file:
+            mic_wav_file.close()
+
+    # Merge sys + mic WAV into a stereo file
+    merged_audio_save_path = None
+    if sys_audio_save_path and mic_audio_save_path:
+        base_stem = Path(sys_audio_save_path).stem.replace('_sys', '')
+        base_dir = Path(sys_audio_save_path).parent
+        merged_audio_save_path = str(base_dir / f"{base_stem}_merged.wav")
+        print("\nMerging system and microphone audio...")
+        try:
+            _merge_sys_mic_wav(sys_audio_save_path, mic_audio_save_path, merged_audio_save_path)
+            print(f"✓ Merged audio saved to: {merged_audio_save_path}")
+        except Exception as e:
+            print(f"⚠️  Could not merge audio files: {e}")
+            merged_audio_save_path = None
+
+    # Print summary
+    if args.verbose:
+        _print_summary(all_segments, args, output_path=args.output, sys_audio_save_path=sys_audio_save_path, mic_audio_save_path=mic_audio_save_path, merged_audio_save_path=merged_audio_save_path)
     _print_compact_stop(all_segments, args.output)
 
     return 0

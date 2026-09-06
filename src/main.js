@@ -436,7 +436,7 @@ function syncMicPen() {
 
 els.includeMicCheckbox.addEventListener("change", syncMicPen);
 
-// Mirrors start_teams_transcription.bat's meeting_<timestamp>.txt naming --
+// Mirrors win-start-transcription.bat's meeting_<timestamp>.txt naming --
 // a bare filename (no directory) so the sidecar saves it next to wherever
 // it's running from, same as the .bat's relative "%output_file%".
 function timestampSuffix() {

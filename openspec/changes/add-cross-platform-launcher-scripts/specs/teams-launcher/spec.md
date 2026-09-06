@@ -14,7 +14,7 @@ Each platform's launcher script (`win-start-transcription.bat` on Windows, `linu
 ## ADDED Requirements
 
 ### Requirement: An equivalent launcher exists on every supported platform
-The system SHALL provide a platform-appropriate Teams-meeting launcher script for each of Windows, Linux, and macOS, sharing the same name-prefix-plus-pass-through-flags argument convention and producing a timestamped default output filename.
+The system SHALL provide a platform-appropriate Teams-meeting launcher script for each of Windows, Linux, and macOS, sharing the same name-prefix-plus-pass-through-flags argument convention, producing a timestamped default output filename, and capturing both system audio and microphone (`--include-mic`) on all three platforms.
 
 #### Scenario: Windows launcher uses WASAPI dual-capture
 - **WHEN** a user runs `win-start-transcription.bat`
@@ -24,9 +24,6 @@ The system SHALL provide a platform-appropriate Teams-meeting launcher script fo
 - **WHEN** a user runs `mac-start-transcription.sh`
 - **THEN** it launches `transcriber.py` with `--coreaudio-tap --include-mic`, capturing both system audio and microphone
 
-### Requirement: Linux launcher discloses its system-audio-only scope
-`linux-start-transcription.sh` SHALL capture system audio only, without passing `--include-mic`, and SHALL state this limitation in its own output — rather than silently omitting the microphone while otherwise appearing equivalent to the Windows and macOS launchers.
-
-#### Scenario: Launch on Linux
+#### Scenario: Linux launcher uses the default dual-source capture path
 - **WHEN** a user runs `linux-start-transcription.sh`
-- **THEN** the launched `transcriber.py` command does not include `--include-mic`, and the script's own output states that only system audio is captured
+- **THEN** it launches `transcriber.py` with `--include-mic` (no `--wasapi`/`--coreaudio-tap`, since Linux's dual-source auto-detection is the default `--live` path), capturing both the real system-audio monitor and the microphone

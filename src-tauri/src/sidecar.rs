@@ -317,7 +317,7 @@ fn build_live_session_args(
         model,
         "--model-path".to_string(),
         model_dir,
-        // Mirrors start_teams_transcription.bat's default invocation:
+        // Mirrors win-start-transcription.bat's default invocation:
         // --chunk-duration 10 --actual-time. Not user-configurable (the
         // .bat doesn't expose them either) -- output_path and audio_device
         // below are the pieces of that invocation this UI does let the

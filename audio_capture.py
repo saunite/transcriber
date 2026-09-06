@@ -183,10 +183,10 @@ def setup_loopback_instructions():
         
     elif system == "Linux":
         print("Linux - PulseAudio/PipeWire Monitor:")
-        print("1. List monitor sources:")
+        print("1. Requires pactl/parec on PATH (pulseaudio-utils, or PipeWire's own pipewire-pulse package -- installed by default on most desktop distributions)")
+        print("2. List monitor sources:")
         print("   pactl list sources | grep -i monitor")
-        print("\n2. Find your monitor device name")
-        print("\n3. The transcriber will auto-detect monitor devices")
+        print("\n3. The transcriber auto-detects and captures the real monitor source automatically")
         
     else:
         print(f"Platform {system} - Please refer to system documentation")

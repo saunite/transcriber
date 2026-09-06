@@ -149,17 +149,17 @@ python transcriber.py --file meeting.mp4 --language en --model medium
 
 ### Real-time Audio Capture
 
-**Quick Start for Teams Meetings (Windows with Bluetooth headset):**
+**Quick Start for Teams Meetings:**
 
-Double-click `start_teams_transcription.bat` to automatically start transcription with both system audio and microphone capture. The transcript will be saved with a timestamp (e.g., `meeting_20251110_143052.txt`).
+Each platform has a launcher that automatically starts dual-capture transcription (system audio + microphone): `win-start-transcription.bat` (Windows), `linux-start-transcription.sh` (Linux), `mac-start-transcription.sh` (macOS). Double-click (Windows) or run it (Linux/macOS) to start. The transcript will be saved with a timestamp (e.g., `meeting_20251110_143052.txt`).
 
-The launcher passes extra arguments through to `transcriber.py`, so you can run it with a filename prefix and/or flags. Timestamps default to wall-clock time (`--actual-time` is always passed):
+The launcher passes extra arguments through to `transcriber.py`, so you can run it with a filename prefix and/or flags. Timestamps default to wall-clock time (`--actual-time` is always passed). Windows example (Linux/macOS work the same way, just run the `.sh` script instead):
 
 ```bat
-start_teams_transcription.bat                  REM default: meeting_TIMESTAMP.txt
-start_teams_transcription.bat sprint-review    REM filename prefix
-start_teams_transcription.bat --silence-timeout 0
-start_teams_transcription.bat --save-audio
+win-start-transcription.bat                  REM default: meeting_TIMESTAMP.txt
+win-start-transcription.bat sprint-review    REM filename prefix
+win-start-transcription.bat --silence-timeout 0
+win-start-transcription.bat --save-audio
 ```
 
 **Manual Command:**
@@ -208,12 +208,22 @@ merge_and_transcribe.bat mic.wav sys.wav transcript.txt
 
 REM Windows: Teams meeting (WASAPI loopback + mic), with optional prefix/flags
 REM Timestamps default to wall-clock time (--actual-time is always passed)
-start_teams_transcription.bat [name-prefix] [transcriber flags...]
+win-start-transcription.bat [name-prefix] [transcriber flags...]
 REM Example:
-start_teams_transcription.bat sprint-review --silence-timeout 0
+win-start-transcription.bat sprint-review --silence-timeout 0
 ```
 
-On Linux, use `start_transcription.sh` for live capture (see [Linux](#linux) under "Setup for Real-time Audio Capture").
+```bash
+# Linux: Teams meeting (system audio + mic dual-capture), with optional prefix/flags
+./linux-start-transcription.sh [name-prefix] [transcriber flags...]
+# Example:
+./linux-start-transcription.sh sprint-review --silence-timeout 0
+
+# macOS: Teams meeting (Core Audio Tap dual-capture), with optional prefix/flags
+./mac-start-transcription.sh [name-prefix] [transcriber flags...]
+```
+
+On Linux, use `linux_start_transcription.sh` (underscore-named) for simple system-audio-only live capture with manual device selection (see [Linux](#linux) under "Setup for Real-time Audio Capture") — a different, general-purpose script from the Teams-meeting-specific `linux-start-transcription.sh` (hyphen-named) above.
 
 ### Advanced Options
 
@@ -269,7 +279,7 @@ The transcriber includes WASAPI loopback support which works with Bluetooth head
 # Use WASAPI mode with microphone
 python transcriber.py --live --wasapi --include-mic --mic-device 3
 
-# Or just double-click start_teams_transcription.bat
+# Or just double-click win-start-transcription.bat
 ```
 
 **For Traditional Sound Cards (Stereo Mix):**
@@ -288,19 +298,19 @@ You may need to enable "Stereo Mix":
 
 ### Linux
 
-Uses PulseAudio/PipeWire monitor. Identify your audio monitor device:
+Uses PulseAudio/PipeWire monitor, auto-detected via `pactl`/`parec` (part of `pulseaudio-utils`, or PipeWire's own `pipewire-pulse` package — installed by default on most desktop Linux distributions). Identify your audio monitor device:
 ```bash
 pactl list sources | grep -i monitor
 ```
 
-The transcriber will auto-detect monitor devices automatically. You can also start live transcription with the bundled launcher:
+The transcriber auto-detects and captures the real monitor source automatically — no manual device selection needed. You can also start live transcription with the bundled launcher:
 
 ```bash
 # Auto-detect the monitor device (default)
-./start_transcription.sh
+./linux_start_transcription.sh
 
 # Use a specific PipeWire/PulseAudio monitor device index
-./start_transcription.sh 2
+./linux_start_transcription.sh 2
 ```
 
 The script writes output to `transcription_<timestamp>.txt`, auto-stops after 10 minutes of silence (use `--silence-timeout 0` for continuous recording, or pass additional `transcriber.py` flags through as arguments).
@@ -358,7 +368,7 @@ This software uses faster-whisper (MIT License), compatible with GPLv2.
 
 ### "No loopback device found"
 - **Windows**: Enable Stereo Mix or install VB-Cable
-- **Linux**: Ensure PulseAudio/PipeWire is running
+- **Linux**: Ensure PulseAudio/PipeWire is running, and `pactl`/`parec` are installed (`pulseaudio-utils`, or PipeWire's own `pipewire-pulse` package)
 - **macOS**: Use `--coreaudio-tap` (macOS 14.4+), or install BlackHole/Loopback and select it with `--audio-device`
 - Use `--list-devices` to see available devices
 - Use `--setup-help` for detailed setup instructions
