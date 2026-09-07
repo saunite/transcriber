@@ -7,8 +7,12 @@
 ## 2. File-mode output
 
 - [x] 2.1 `transcriber.py`'s auto-derived output name (the `else` branch when `args.output` is unset) now includes a `%Y%m%d_%H%M%S` timestamp
-- [ ] 2.2 Transcribe the same input file twice via the GUI's drop zone — confirm two distinct output files exist in the working directory and neither is truncated
-- [ ] 2.3 Confirm an explicit `--output` path (CLI usage, not currently exercised by the GUI) still writes to exactly that path, unstamped
+- [x] 2.2 Transcribe the same input file twice via the GUI's drop zone — confirm two distinct output files exist in the working directory and neither is truncated
+
+  **Verified via the exact code path the GUI drop zone triggers, not the GUI itself** — no desktop-automation tool available in this environment to drive an actual drag-and-drop. Confirmed in `src-tauri/src/sidecar.rs`'s `start_file_transcription` that the GUI never passes `--output` (matches design.md's stated assumption), so it always takes `transcriber.py`'s auto-stamped `else` branch. Ran `transcriber.py --file test_tone.wav --model tiny` (no `--output`, same args the GUI sends) twice in a row: produced `test_tone_transcript_20260907_122526.txt` and `test_tone_transcript_20260907_122529.txt` — two distinct, non-empty-write-target files, first untouched by the second run.
+- [x] 2.3 Confirm an explicit `--output` path (CLI usage, not currently exercised by the GUI) still writes to exactly that path, unstamped
+
+  Verified: `transcriber.py --file test_tone.wav --output my_exact_name.txt --model tiny` wrote to `my_exact_name.txt` exactly, no timestamp appended.
 
 ## 3. Spec
 

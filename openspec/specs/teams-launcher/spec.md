@@ -31,3 +31,14 @@ The system SHALL provide a platform-appropriate Teams-meeting launcher script fo
 #### Scenario: Linux launcher uses the default dual-source capture path
 - **WHEN** a user runs `linux-start-transcription.sh`
 - **THEN** it launches `transcriber.py` with `--include-mic` (no `--wasapi`/`--coreaudio-tap`, since Linux's dual-source auto-detection is the default `--live` path), capturing both the real system-audio monitor and the microphone
+
+### Requirement: Launcher prints the literal command instead of a banner
+`win-start-transcription.bat` SHALL NOT print its own descriptive banner (title, source legend, output-filename notice). Instead, it SHALL print the exact `transcriber.py` command line it is about to execute, built and executed from the same value so the printed line cannot drift from the actual invocation.
+
+#### Scenario: Launch prints the real command
+- **WHEN** a user runs `win-start-transcription.bat sprint-review --silence-timeout 0`
+- **THEN** the script prints the literal `python transcriber.py ...` invocation, including the resolved output filename and all passed-through flags, before running that exact command
+
+#### Scenario: No separate banner text
+- **WHEN** a user runs the launcher with any arguments
+- **THEN** no title banner, source legend, or separately-worded output-filename notice is printed by the launcher itself
