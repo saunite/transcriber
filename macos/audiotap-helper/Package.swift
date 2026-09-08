@@ -6,7 +6,7 @@ import PackageDescription
 // (openspec/changes/add-macos-capture/tasks.md 4.3).
 let package = Package(
     name: "audiotap-helper",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS("14.4")],
     targets: [
         .target(name: "AudioTapCore"),
         .executableTarget(

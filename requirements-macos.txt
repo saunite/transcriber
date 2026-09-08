@@ -1,0 +1,10 @@
+# Audio transcription with faster-whisper
+faster-whisper>=1.0.0
+
+# Audio processing and capture
+sounddevice>=0.4.6
+numpy>=1.24.0
+scipy>=1.10.0
+
+# CLI utilities
+tqdm>=4.65.0

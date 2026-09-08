@@ -317,15 +317,13 @@ The script writes output to `transcription_<timestamp>.txt`, auto-stops after 10
 
 ### macOS
 
-**Native Capture (Recommended - Core Audio Process Tap, macOS 14.4+):**
-
-No additional setup required — grant the audio-capture permission when macOS prompts on first use.
+**Native Capture (Core Audio Process Tap, macOS 14.4+):**
 
 ```bash
 python transcriber.py --live --coreaudio-tap --include-mic --mic-device 3
 ```
 
-> **Status:** this capture path was built and documented without access to macOS hardware to verify against. If it doesn't behave as documented, please file an issue — the fallback below is a reliable alternative in the meantime.
+> **Known limitation, confirmed on real hardware:** macOS only shows the audio-capture permission prompt to an app launched as a proper `.app` bundle (e.g. the packaged desktop app) — plain `python transcriber.py` run from a terminal will not be prompted and will not receive audio, even if the terminal app itself has been granted access in System Settings > Privacy & Security > System Audio Recording Only. It fails clearly (a `NoAudioDataError` after a few seconds) rather than hanging silently, but the fallback below is the reliable option for bare CLI usage.
 
 **Fallback (older macOS, or if native capture doesn't work): Virtual Audio Driver**
 

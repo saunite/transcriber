@@ -10,11 +10,11 @@ interleaved float32 PCM frames from its stdout -- mirroring how
 WASAPICapture reads on a background thread so a blocked read never stalls
 shutdown.
 
-UNVERIFIED AGAINST REAL HARDWARE as of writing (authored without access to
-macOS 14.4+ to build/run the helper against). See
-openspec/changes/add-macos-capture/design.md for the assumptions this
-makes and openspec/changes/add-macos-capture/tasks.md section 5 for the
-hardware-dependent verification still outstanding.
+Native helper builds and runs on real macOS 14.4+ hardware, confirmed
+against the actual header format this module parses (see
+openspec/changes/add-macos-capture/tasks.md section 5). Not yet verified
+against real captured audio content or a permission-denied path -- both
+need non-virtualized hardware (tasks.md 5.3-5.6).
 """
 import os
 import platform
@@ -22,11 +22,13 @@ import queue
 import struct
 import subprocess
 import threading
+import time
 from typing import Callable, Optional
 
 import numpy as np
 
 _MIN_MACOS_VERSION = (14, 4)
+_FIRST_CHUNK_TIMEOUT_SECONDS = 5
 
 # Wire format written once by the native helper before any PCM data:
 # sample_rate (uint32 LE), channels (uint16 LE), reserved (uint16 LE).
@@ -47,6 +49,22 @@ class UnsupportedMacOSVersionError(RuntimeError):
 
 class AudioCapturePermissionError(RuntimeError):
     """Raised when the OS denies the audio-capture permission the tap needs."""
+
+
+class NoAudioDataError(AudioCapturePermissionError):
+    """Raised when the tap creates and starts with no error, but delivers zero
+    PCM frames within a reasonable window.
+
+    Confirmed on real hardware: an unauthorized-but-not-yet-denied Process Tap
+    does not fail at creation or at AudioDeviceStart -- every call reports
+    success, and the IOProc callback simply never fires. macOS only shows the
+    one-time authorization prompt for this to a process launched via
+    LaunchServices as a proper .app bundle; a bare CLI binary invoked via
+    subprocess.Popen (as this module does) never gets prompted at all, no
+    matter what a Terminal-level Privacy & Security toggle shows. This is a
+    real, silent hang otherwise -- see openspec/changes/add-macos-capture/
+    design.md and tasks.md section 5 for how this was diagnosed.
+    """
 
 
 class MacOSCaptureError(RuntimeError):
@@ -177,6 +195,8 @@ class MacOSCapture:
         reader_thread = threading.Thread(target=_read_loop, daemon=True)
         reader_thread.start()
 
+        first_chunk_deadline = time.monotonic() + _FIRST_CHUNK_TIMEOUT_SECONDS
+        received_first_chunk = False
         try:
             if verbose:
                 print(f"🎙️  Capturing audio ({self.sample_rate} Hz, {self.channels} ch)... Press Ctrl+C to stop\n")
@@ -184,7 +204,17 @@ class MacOSCapture:
                 try:
                     chunk = audio_queue.get(timeout=0.1)
                 except queue.Empty:
+                    if not received_first_chunk and time.monotonic() > first_chunk_deadline:
+                        raise NoAudioDataError(
+                            "No audio data received from the system-audio tap after "
+                            f"{_FIRST_CHUNK_TIMEOUT_SECONDS}s. The tap likely isn't authorized: "
+                            "macOS only shows the one-time permission prompt for this to an app "
+                            "launched as a proper .app bundle, not a bare command-line process -- "
+                            "check System Settings > Privacy & Security > System Audio Recording "
+                            "Only, and note this capture mode may only work once packaged as an app."
+                        )
                     continue
+                received_first_chunk = True
                 callback(chunk)
         except KeyboardInterrupt:
             if verbose:

@@ -3,13 +3,12 @@
 // macos_capture.py; writes a small self-describing header, then raw
 // interleaved Float32LE PCM frames, to stdout until stdin is closed.
 //
-// UNVERIFIED DRAFT: written without access to macOS/Xcode to build or run
-// against (see openspec/changes/add-macos-capture/design.md, "Open
-// Questions" and "Risks"). The Core Audio Process Tap + aggregate-device
-// + IOProc shape below matches Apple's documented pattern for this API as
-// of authoring, but exact symbol availability, error codes, and the
-// delivered stream format need confirmation on real hardware before this
-// is trusted (see tasks.md section 5).
+// Builds and runs on real macOS 14.4+ hardware (see tasks.md section 5):
+// creates the tap, wraps it in a private aggregate device, and streams a
+// correctly-formatted header (confirmed 48kHz/stereo/float32) with no
+// errors. Not yet verified against actual non-silent audio content or a
+// permission-denied path — both need non-virtualized hardware (see
+// tasks.md 5.3-5.6 for what's still outstanding and why).
 //
 // The pure header-construction logic lives in AudioTapCore (see
 // ../AudioTapCore/PCMHeader.swift) so it's covered by `swift test` in CI
@@ -36,7 +35,7 @@ private func fail(_ code: HelperExitCode, _ message: String) -> Never {
 
 private func checkStatus(_ status: OSStatus, _ context: String) {
     guard status != noErr else { return }
-    if status == kAudioHardwareNotAuthorizedError || status == kAudioHardwareIllegalOperationError {
+    if status == kAudioHardwareIllegalOperationError {
         fail(
             .permissionDenied,
             "Audio capture permission was not granted for \(context). Grant it in "
@@ -147,7 +146,16 @@ signal(SIGINT) { _ in
     exit(0)
 }
 
-// Block until stdin hits EOF.
-while FileHandle.standardInput.availableData.count > 0 {}
-teardown()
-exit(0)
+// Watch for stdin EOF on a background thread so the main thread is free to
+// run its run loop below -- several system frameworks (this tap's own async
+// authorization check very plausibly among them) deliver completion
+// callbacks via the main run loop/dispatch queue, and never fire at all if
+// nothing ever pumps it (a bare top-level Swift executable doesn't start
+// one automatically, unlike an app with a UIKit/AppKit lifecycle).
+DispatchQueue.global(qos: .utility).async {
+    while FileHandle.standardInput.availableData.count > 0 {}
+    teardown()
+    exit(0)
+}
+
+CFRunLoopRun()

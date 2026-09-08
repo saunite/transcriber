@@ -80,3 +80,9 @@ src-tauri/target/
 
 # Staged sidecar binary (copied from dist/ into Tauri's externalBin location)
 src-tauri/binaries/
+
+# SwiftPM build output and the compiled macOS audio-tap helper. Both are
+# produced by macos/audiotap-helper/build.sh on a Mac; .build/ alone is ~121MB
+# of module caches and debug symbols.
+macos/audiotap-helper/.build/
+macos/audiotap-helper/audiotap-helper
