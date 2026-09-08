@@ -20,22 +20,48 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 ## Third-Party Components
 
-This software uses the following open-source components:
+The distributed artifacts (the Windows zip, the Linux AppImage, the macOS app)
+bundle third-party components as compiled binaries and data files. Users do not
+install them separately.
 
-### faster-whisper
-- License: MIT License
-- Copyright: SYSTRAN
-- Repository: https://github.com/SYSTRAN/faster-whisper
-- Used for: Audio transcription engine
+**The full component list, with licenses and copyright notices, is in
+`THIRD-PARTY-LICENSES.txt`.** Corresponding source for the copyleft components,
+with exact versions and download locations, is in `SOURCE-PROVENANCE.txt`. Both
+files ship inside every artifact.
 
-The MIT License is compatible with GPLv2.
+### Effective license of the distributed binary: GPL-3.0
 
-### Other Dependencies
-All Python dependencies (numpy, sounddevice, etc.) use licenses compatible
-with GPLv2. See requirements.txt for the full list.
+The source code in this repository is GPL-2.0-or-later, as stated above. The
+distributed binary bundles components under stricter terms:
+
+- **x264** and **x265** are GPL-2.0-or-later only, and their compiled libraries
+  ship inside the sidecar executable.
+- The bundled **FFmpeg** was built with `--enable-version3` (verified by reading
+  the configure string out of the shipped `avutil` binary), which brings in GMP
+  and opencore-amr under version-3 terms.
+
+Combining those with GPL-2.0-**or-later** source is permitted — the "or later"
+clause allows the combined work to be conveyed under GPLv3 — but the resulting
+binary cannot be offered under GPLv2-only terms.
+
+- Source in this repository: **GPL-2.0-or-later**
+- Distributed binary artifacts: **GPL-3.0-or-later**
 
 ### FFmpeg
-- License: LGPL v2.1+ or GPL v2+ (depending on configuration)
+
+FFmpeg's libraries (`libavcodec`, `libavformat`, `libavutil`, `libswresample`
+and others) are **bundled inside this software** by way of the PyAV Python
+package, which ships them pre-compiled. No external ffmpeg program is used,
+required, or installed by this project — decoding happens in-process.
+
+Because those binaries are distributed here rather than obtained by the user,
+this project carries the corresponding-source obligation for them. See
+`SOURCE-PROVENANCE.txt`.
+
 - Website: https://ffmpeg.org
-- Used for: Audio extraction from video files
-- Note: FFmpeg must be installed separately on the system
+
+### Whisper model weights
+
+The bundled speech recognition model is OpenAI's Whisper `base` model, MIT
+licensed, redistributed in CTranslate2 format via `Systran/faster-whisper-base`.
+Its notice ships in the model directory inside the artifact.

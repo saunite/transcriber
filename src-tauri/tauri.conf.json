@@ -32,7 +32,10 @@
       "binaries/transcriber-sidecar"
     ],
     "resources": [
-      "resources/model/**/*"
+      "resources/model/**/*",
+      "../LICENSE",
+      "../THIRD-PARTY-LICENSES.txt",
+      "../SOURCE-PROVENANCE.txt"
     ]
   }
 }

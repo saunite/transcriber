@@ -35,6 +35,21 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent
 
+# Licence notices must reach whoever receives the artifact, not just whoever
+# clones the repo -- the artifacts bundle GPL binaries (FFmpeg/x264/x265 via
+# PyAV), and that obligation attaches to what is distributed. The AppImage is
+# a sealed single file, so its copies ride along as Tauri bundle resources
+# (tauri.conf.json) instead of being placed here.
+NOTICE_FILES = ("LICENSE", "THIRD-PARTY-LICENSES.txt", "SOURCE-PROVENANCE.txt")
+
+
+def _copy_notices(dest_dir: Path) -> None:
+    for name in NOTICE_FILES:
+        src = REPO_ROOT / name
+        if not src.exists():
+            raise SystemExit(f"Missing {name} at {REPO_ROOT} -- it must ship inside the artifact.")
+        shutil.copy2(src, dest_dir / name)
+
 
 def _cargo_target_dir() -> Path | None:
     # Ask cargo itself where it writes (openspec/changes/02-add-wsl-linux-build)
@@ -102,6 +117,8 @@ def build_windows(target: str | None) -> Path:
     out_model_dir = out_dir / "resources" / "model"
     shutil.copytree(model_dir, out_model_dir)
 
+    _copy_notices(out_dir)
+
     zip_path = out_dir.with_suffix(".zip")
     _zip_dir(out_dir, zip_path)
     return zip_path
@@ -127,6 +144,9 @@ def build_macos(target: str | None) -> Path:
     if not matches:
         raise SystemExit(f"No .app found in {app_dir} -- run 'cargo tauri build' first.")
     app_path = matches[0]
+
+    # Inside the bundle, so the notices survive the user moving the .app around.
+    _copy_notices(app_path / "Contents" / "Resources")
 
     out_dir = REPO_ROOT / "dist" / "portable"
     out_dir.mkdir(parents=True, exist_ok=True)

@@ -1,0 +1,158 @@
+================================================================================
+CORRESPONDING SOURCE FOR BUNDLED GPL COMPONENTS
+================================================================================
+
+This file exists to satisfy the source-availability obligation of the GPL for
+third-party components distributed in binary form inside this project's
+artifacts (GPLv3 section 6(d)).  It records exactly which upstream versions
+those binaries were built from and where their source is published.
+
+Last verified: 2026-09-08
+
+
+--------------------------------------------------------------------------------
+1. HOW THESE BINARIES GOT HERE
+--------------------------------------------------------------------------------
+
+This project does NOT compile FFmpeg or any codec library.  It installs the
+PyAV Python package, whose binary wheels ship pre-compiled FFmpeg libraries
+built by the PyAV maintainers.  Those libraries are then copied into the
+frozen sidecar executable by PyInstaller.
+
+    PyAV wheel                av == 16.0.1
+      pins ->                 PyAV-Org/pyav-ffmpeg release tag "8.0-2"
+        (per PyAV scripts/ffmpeg-8.0.json:
+         https://github.com/PyAV-Org/pyav-ffmpeg/releases/download/8.0-2/ffmpeg-{platform}.tar.gz)
+      which builds ->         the upstream sources listed in section 3
+
+Build recipe for the binaries actually shipped (this is the "scripts used to
+control compilation" for the bundled libraries):
+
+    https://github.com/PyAV-Org/pyav-ffmpeg/tree/8.0-2
+    https://raw.githubusercontent.com/PyAV-Org/pyav-ffmpeg/8.0-2/scripts/build-ffmpeg.py
+
+
+--------------------------------------------------------------------------------
+2. WHAT IS ACTUALLY SHIPPED
+--------------------------------------------------------------------------------
+
+Library versions as reported by the shipped binary itself (av.library_versions):
+
+    libavcodec      62.11.100
+    libavdevice     62.1.100
+    libavfilter     11.4.100
+    libavformat     62.3.100
+    libavutil       60.8.100
+    libswresample   6.1.100
+    libswscale      9.1.100
+
+    -> FFmpeg 8.0.x
+
+FFmpeg configure string, read verbatim out of the shipped avutil binary:
+
+    --disable-static --enable-shared --libdir=/c/cibw/vendor/lib
+    --prefix=/c/cibw/vendor --disable-programs --disable-doc --disable-libxml2
+    --disable-lzma --disable-libtheora --disable-libfreetype
+    --disable-libfontconfig --disable-libbluray --disable-libopenjpeg
+    --enable-mediafoundation --enable-version3 --enable-gmp --disable-alsa
+    --disable-gnutls --enable-libaom --enable-libdav1d --enable-libmp3lame
+    --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopus
+    --enable-libspeex --enable-libsvtav1 --enable-libtwolame --enable-libvorbis
+    --enable-libvpx --enable-libwebp --enable-libopenh264 --disable-libxcb
+    --enable-zlib --enable-libx264 --enable-libx265 --enable-nvenc
+    --enable-nvdec
+    --disable-encoder='avui,dca,mlp,opus,s302m,sonic,sonic_ls,truehd,vorbis'
+    --disable-decoder=sonic --disable-libjack --disable-indev=jack
+
+NOTE ON AN INCONSISTENCY: the literal flag "--enable-gpl" does not appear in
+that string, yet "--enable-libx264" and "--enable-libx265" do -- a combination
+FFmpeg's own configure normally rejects.  The cause could not be determined
+from the shipped binary.  It does not change this project's obligations: x264
+and x265 are GPL-2.0-or-later projects in their own right, and their compiled
+libraries are distributed here, so GPL terms apply to them regardless of how
+FFmpeg itself was configured.
+
+
+--------------------------------------------------------------------------------
+3. CORRESPONDING SOURCE, PER COMPONENT
+--------------------------------------------------------------------------------
+
+Versions and URLs below are taken verbatim from the pyav-ffmpeg build recipe at
+tag 8.0-2 (see section 1).
+
+COPYLEFT COMPONENTS (the ones this obligation is really about)
+
+  FFmpeg 8.0                            LGPL-2.1-or-later core; this build is
+                                        copyleft-encumbered via the GPL codecs
+                                        below and --enable-version3
+    https://ffmpeg.org/releases/ffmpeg-8.0.tar.xz
+
+  x264 (commit 32c3b801191522961102d4bea292cdb61068d0dd)   GPL-2.0-or-later
+    https://code.videolan.org/videolan/x264/-/archive/32c3b801191522961102d4bea292cdb61068d0dd/x264-32c3b801191522961102d4bea292cdb61068d0dd.tar.bz2
+
+  x265 4.1                                                 GPL-2.0-or-later
+    https://bitbucket.org/multicoreware/x265_git/downloads/x265_4.1.tar.gz
+    !! HOSTING RISK: this is the one upstream URL most likely to disappear.
+       x265's Bitbucket hosting has been disrupted before (Bitbucket dropped
+       Mercurial support in 2020).  If this link stops resolving, this project
+       remains obligated to make the source available -- update this file or
+       rehost the archive.  Re-check at every release.
+
+  GMP 6.3.0                             LGPL-3.0-or-later OR GPL-2.0-or-later
+    https://ftp.gnu.org/gnu/gmp/gmp-6.3.0.tar.xz
+
+  LAME 3.100                                               LGPL-2.0-or-later
+    http://deb.debian.org/debian/pool/main/l/lame/lame_3.100.orig.tar.gz
+
+  TwoLAME 0.4.0                                            LGPL-2.1-or-later
+    http://deb.debian.org/debian/pool/main/t/twolame/twolame_0.4.0.orig.tar.gz
+
+  GNU libiconv                                             LGPL-2.1-or-later
+    https://ftp.gnu.org/pub/gnu/libiconv/
+
+  GCC runtime (libgcc, libstdc++)       GPL-3.0-or-later WITH GCC Runtime
+                                        Library Exception
+    https://gcc.gnu.org/
+
+PERMISSIVELY LICENSED COMPONENTS (listed for completeness; no source obligation)
+
+  opencore-amr 0.1.5      Apache-2.0
+    http://deb.debian.org/debian/pool/main/o/opencore-amr/opencore-amr_0.1.5.orig.tar.gz
+  Opus 1.5.2              BSD-3-Clause
+    https://github.com/xiph/opus/releases/download/v1.5.2/opus-1.5.2.tar.gz
+  Speex 1.2.1             BSD-3-Clause
+    http://downloads.xiph.org/releases/speex/speex-1.2.1.tar.gz
+  libvorbis 1.3.7         BSD-3-Clause
+    https://ftp.osuosl.org/pub/xiph/releases/vorbis/libvorbis-1.3.7.tar.xz
+  libogg 1.3.5            BSD-3-Clause
+    http://downloads.xiph.org/releases/ogg/libogg-1.3.5.tar.gz
+  libvpx 1.15.1           BSD-3-Clause
+    https://github.com/webmproject/libvpx/archive/v1.15.1.tar.gz
+  libaom 3.11.0           BSD-2-Clause + Alliance for Open Media Patent License
+    https://storage.googleapis.com/aom-releases/libaom-3.11.0.tar.gz
+  dav1d 1.5.1             BSD-2-Clause
+    https://code.videolan.org/videolan/dav1d/-/archive/1.5.1/dav1d-1.5.1.tar.bz2
+  SVT-AV1 3.1.0           BSD-3-Clause + Alliance for Open Media Patent License
+    https://gitlab.com/AOMediaCodec/SVT-AV1/-/archive/v3.1.0/SVT-AV1-v3.1.0.tar.bz2
+  libwebp 1.5.0           BSD-3-Clause
+    https://github.com/webmproject/libwebp/archive/refs/tags/v1.5.0.tar.gz
+  OpenH264 2.6.0          BSD-2-Clause
+    https://github.com/cisco/openh264/archive/refs/tags/v2.6.0.tar.gz
+  zlib                    zlib License
+    https://zlib.net/
+
+
+--------------------------------------------------------------------------------
+4. MAINTENANCE
+--------------------------------------------------------------------------------
+
+This file is part of how this project stays compliant, not a one-time note.
+
+  * It ships inside every distributed artifact, next to THIRD-PARTY-LICENSES.txt.
+  * Every URL above must be confirmed to resolve before publishing a release.
+  * If a URL stops resolving while the artifact is still offered, the directions
+    must be corrected or the source rehosted -- the obligation does not transfer
+    to the upstream host.
+  * If the pinned PyAV version changes, EVERYTHING above must be re-derived:
+    read the new PyAV scripts/ffmpeg-*.json to find the new pyav-ffmpeg tag,
+    then that tag's build recipe for the new component versions.

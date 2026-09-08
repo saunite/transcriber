@@ -114,6 +114,13 @@ The bundled artifact ships the `base` Whisper model (~145MB) for a fully offline
 
 The GUI sidecar always passes an explicit `--model-path` pointing at its bundled model directory (resolved relative to the running app, so it works the same whether run from the extracted Windows folder, the AppImage, or the `.app`), instead of relying on faster-whisper's network/cache-based model lookup. The CLI gained the same `--model-path <dir>` flag for anyone running from a bundled build directly.
 
+#### Before publishing a release
+
+The artifacts bundle GPL-licensed libraries (FFmpeg, x264, x265, via PyAV), so publishing one carries a source-availability obligation. `build_portable.py` already copies `LICENSE`, `THIRD-PARTY-LICENSES.txt`, and `SOURCE-PROVENANCE.txt` into the artifact, but two things still need a human:
+
+1. **Re-check that every source URL in `SOURCE-PROVENANCE.txt` still resolves.** Those links *are* the compliance mechanism (GPLv3 §6(d)) — a dead link is an unmet obligation, and the responsibility stays with this project even though the source is hosted upstream. The x265 archive on Bitbucket is the one most likely to disappear; if it does, correct the link or rehost the archive.
+2. **If the pinned PyAV version changed since the last release**, re-derive everything in `SOURCE-PROVENANCE.txt`: read the new PyAV `scripts/ffmpeg-*.json` for its `pyav-ffmpeg` tag, then that tag's build recipe for the new component versions.
+
 ## Requirements
 
 ### System Dependencies
@@ -353,9 +360,18 @@ Install a virtual loopback driver and select it as the input device:
 
 ## License
 
-GPLv2
+- **Source in this repository:** GPL-2.0-or-later
+- **Distributed binary artifacts:** GPL-3.0-or-later
 
-This software uses faster-whisper (MIT License), compatible with GPLv2.
+The binaries bundle FFmpeg (via PyAV) built with GPL codecs — x264 and x265 —
+and `--enable-version3` components, which are stricter than the source license.
+The "or later" clause covers the combination, but a released artifact cannot be
+offered under GPLv2-only terms.
+
+`LICENSE` has the full text and the reasoning. `THIRD-PARTY-LICENSES.txt` lists
+every bundled component with its license and copyright, and
+`SOURCE-PROVENANCE.txt` records exact versions and where to obtain corresponding
+source. All three ship inside every artifact.
 
 ## Troubleshooting
 

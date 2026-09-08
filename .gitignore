@@ -39,6 +39,23 @@ extracted_audio_*.wav
 *.vtt
 *.txt
 
+# ...but some .txt files are project files, not transcripts, and must be tracked.
+# The dependency manifests only survive today because they were committed before
+# the *.txt rule existed (gitignore does not apply to already-tracked files) --
+# a new one would silently fail to commit. Listed by exact name on purpose: a
+# glob like requirements*.txt would also un-ignore a real transcript, since the
+# launchers accept a name prefix (`win-start-transcription.bat requirements-review`
+# produces requirements-review_<timestamp>.txt). Add a line when adding a manifest.
+!requirements.txt
+!requirements-linux.txt
+!requirements-macos.txt
+
+# The licence notices ship inside every artifact to satisfy the bundled
+# components' licence terms, and build_portable.py refuses to assemble an
+# artifact without them.
+!THIRD-PARTY-LICENSES.txt
+!SOURCE-PROVENANCE.txt
+
 # Model cache (Whisper models are downloaded to cache)
 .cache/
 models/
@@ -50,8 +67,13 @@ models/
 /build/
 /dist/
 
-# Staged installer resources (model, ffmpeg) -- resolved relative to src-tauri/
-src-tauri/resources/
+# Staged installer resources (the ~145MB model) -- resolved relative to src-tauri/.
+# The model's own licence notice is the one thing here that must be tracked, so
+# this excludes the contents rather than the directory: git cannot re-include a
+# file whose parent directory is itself excluded.
+src-tauri/resources/**
+!src-tauri/resources/model/
+!src-tauri/resources/model/LICENSE.txt
 
 # Tauri/Rust build output
 src-tauri/target/
