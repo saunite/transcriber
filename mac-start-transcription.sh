@@ -10,7 +10,6 @@
 #   Timestamps default to wall-clock time (--actual-time is always passed).
 #   flags:        passed through to transcriber.py, e.g.
 #                   --silence-timeout 0      never auto-stop on silence
-#                   --save-audio             also save sys/mic WAV files
 #                   --language en            force a language
 #   Example: ./mac-start-transcription.sh sprint-review --silence-timeout 0
 #

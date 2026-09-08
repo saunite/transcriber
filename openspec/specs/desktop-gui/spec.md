@@ -77,11 +77,15 @@ The system SHALL accept a dropped (or browsed) video/audio file and transcribe i
 - **THEN** the system shows an error without attempting to spawn the sidecar
 
 ### Requirement: Fully offline first run
-The installed application SHALL be able to complete a live capture or file transcription with no network access, using the model and ffmpeg binary bundled in the installer.
+The application SHALL be able to complete a live capture or file transcription with no network access, using the model bundled with the application, and SHALL require no separately installed media tool for either flow.
 
 #### Scenario: Offline transcription immediately after install
 - **WHEN** a user installs the application on a machine with no network access and starts a transcription
-- **THEN** the transcription completes successfully using the bundled model and bundled ffmpeg, with no download attempted
+- **THEN** the transcription completes successfully using the bundled model, with no download attempted
+
+#### Scenario: Dropped video file on a machine without ffmpeg
+- **WHEN** a user drops a video file onto the application on a machine with no ffmpeg installed
+- **THEN** the file is transcribed normally, using the sidecar's bundled decoder rather than an external process
 
 ### Requirement: Graceful macOS degradation pending live capture support
 On macOS, the system SHALL run the GUI shell and support file transcription, but SHALL disable live-capture controls with an explanatory message rather than presenting a non-functional live-capture UI.

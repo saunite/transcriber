@@ -43,9 +43,21 @@
 
   Could not complete a full functional run of the frozen binary: it crashes on startup (`flexiblas Failed to load the BLAS fallback library. Abort!`) regardless of ffmpeg/PATH — reproduced identically with the full, unmodified environment, so this is unrelated to this change. Root cause: this dev machine's system Python/numpy is Fedora's RPM build, linked against `flexiblas` (a runtime BLAS-backend switcher that `dlopen`s its backend via `/etc/flexiblasrc` at runtime, not via a normal link-time dependency PyInstaller's analysis follows) — the same *class* of bug as the VAD-asset issue, but in numpy/scipy's BLAS backend, not PyAV, and pre-existing/unrelated to ffmpeg removal. Standard PyPI numpy wheels (what CI runners typically install, vs. this machine's distro package) statically bundle OpenBLAS and don't use flexiblas, so this likely won't reproduce on the actual Windows/Linux CI build — but that's an assumption, not something verified here. **Flagging as a real gap for whoever runs the actual CI freeze**: worth a fast first check there before assuming this change is fully proven on a frozen binary.
 
-- [ ] 3.4 Run a live SYS+MIC session with audio saving enabled and confirm `<base>_merged.wav` is produced, is stereo, and plays back with system audio on one channel and mic on the other
+- [x] 3.4 Run a live SYS+MIC session with audio saving enabled and confirm `<base>_merged.wav` is produced, is stereo, and plays back with system audio on one channel and mic on the other
 
-  **Not done — needs Windows or macOS hardware.** `transcribe_live_wasapi` (the merge call site this task exercises) is platform-gated to Windows (`--wasapi`) and `transcribe_live_coreaudio_tap` to macOS (`--coreaudio-tap`) — see `_validate_live_capture_platform`. This session's environment is Linux. `test_wav_merge.py` (2.3) verifies `_merge_sys_mic_wav` itself bit-exactly against synthetic WAVs (channel assignment, truncation, format), which is everything about the merge that's testable without that hardware; this task is the remaining live, real-microphone confirmation.
+  **Closed — won't do. The feature this task verifies is being removed entirely** by `remove-audio-saving`; see that change. Superseding it rather than completing it, following the same convention this change's task 4.3 used for `add-tauri-gui` task 2.6.
+
+  It was attempted first, on real Windows hardware, and the run is what motivated the removal. Recording the findings here so they survive the archive:
+
+  1. **The saved system-audio WAV silently drops whatever transcription can't keep up with.** A 71.2s WASAPI + mic session on the **`tiny`** model produced a 41.1s `_sys.wav` — **42% of the system audio was never written**. Cause is structural, not tuning: `_mic.wav` is written directly from the real-time `mic_callback` (a true wall-clock recording), while `_sys.wav` is written from `transform_sys`, called on the transcription worker thread behind blocking inference. Anything the worker never drains is never written, and a larger model makes it strictly worse. `test_wav_merge.py` (2.3) cannot catch this — it feeds `_merge_sys_mic_wav` two synthetic files that are correct by construction.
+
+  2. **The merge is correctly aligned, just truncated.** `_drain_and_transcribe` drains FIFO and writes in order, so `_sys.wav` is always a *prefix* of the session, never time-offset. `_merge_sys_mic_wav`'s "align index 0, truncate to shorter" is therefore sound — it would simply have discarded the 30s of mic audio past the sys stream's end, including a whole speech segment.
+
+  3. **`_merged.wav` was never produced — cause never confirmed.** Both mono WAVs closed cleanly (frame counts match file sizes byte-exactly), but the unconditional `print("\nMerging system and microphone audio...")` immediately after never appeared. The suspicion was that execution dies in `capture.cleanup()` → PyAudio's `p.terminate()`, which sits between the WAV closes and the merge — a known hang/fault mode for WASAPI loopback streams.
+
+  **Later evidence did not support that**, and is recorded here so this note is not read as a confirmed defect: `remove-audio-saving` task 3.2 ran the same WASAPI + mic path on current source and it shut down cleanly on Ctrl+C, printing its stop summary — which is only reached after `capture.cleanup()` returns. The original run used a binary three commits stale, and the merge code has since been deleted, so the symptom cannot be reproduced either way. Unexplained, not confirmed; no follow-up change was opened.
+
+  (The binary used was 3 commits stale, but that does not explain finding 3: the merge block and its unconditional print both predate that build, at `826a0ea`.)
 
 ## 4. Documentation and follow-through
 

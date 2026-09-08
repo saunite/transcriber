@@ -159,7 +159,6 @@ The launcher passes extra arguments through to `transcriber.py`, so you can run 
 win-start-transcription.bat                  REM default: meeting_TIMESTAMP.txt
 win-start-transcription.bat sprint-review    REM filename prefix
 win-start-transcription.bat --silence-timeout 0
-win-start-transcription.bat --save-audio
 ```
 
 **Manual Command:**
@@ -193,18 +192,13 @@ Look for your Bluetooth headset in the input devices list and note the device nu
 
 ### Launchers
 
-The repo includes ready-made launchers that set up the environment (venv + ffmpeg PATH) and invoke the transcriber:
+The repo includes ready-made launchers that set up the environment (venv) and invoke the transcriber:
 
 ```bat
 REM Windows: transcribe a single file
 transcribe_file.bat <input_file> <output_file> [txt|srt|vtt]
 REM Example:
 transcribe_file.bat "meeting.mp4" "transcript.srt" srt
-
-REM Windows: merge pre-recorded mic + system WAVs into one transcript
-merge_and_transcribe.bat <mic_file.wav> <sys_file.wav> [output_file] [txt|srt|vtt]
-REM Example:
-merge_and_transcribe.bat mic.wav sys.wav transcript.txt
 
 REM Windows: Teams meeting (WASAPI loopback + mic), with optional prefix/flags
 REM Timestamps default to wall-clock time (--actual-time is always passed)
@@ -259,7 +253,6 @@ python transcriber.py --live --wasapi --include-mic --mic-device 5
 - `--format <type>` - Output format: txt, srt, vtt (default: txt)
 - `--no-timestamps` - Exclude timestamps from text output
 - `--actual-time` - Use wall-clock timestamps (local time) instead of relative offsets
-- `--save-audio` - Save captured audio to WAV files alongside the transcript (live mode only). In WASAPI mode with `--include-mic`, this writes `<base>_sys.wav`, `<base>_mic.wav`, and a merged stereo `<base>_merged.wav`
 - `--chunk-duration <seconds>` - Duration of audio chunks for streaming (default: 30)
 - `--silence-timeout <seconds>` - Auto-stop after N seconds of silence (default: 600 = 10 min, 0 = never)
 - `--audio-device <id>` - Audio device index for live capture (-1 = auto-detect)

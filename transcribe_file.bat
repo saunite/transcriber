@@ -33,7 +33,6 @@ set FORMAT=txt
 if not "%~3"=="" set FORMAT=%~3
 
 REM Set up environment variables
-set PATH=%PATH%;C:\Users\e-AndreSaunite\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.0-full_build\bin
 set PYTHONHTTPSVERIFY=0
 
 echo ============================================================

@@ -85,7 +85,7 @@ The system SHALL handle Ctrl+C by stopping capture, finalizing the transcript, c
 
 #### Scenario: User interrupts live capture
 - **WHEN** the user presses Ctrl+C during live capture
-- **THEN** the system stops capture and worker threads, closes output and WAV files, releases audio devices, and saves any transcript produced
+- **THEN** the system stops capture and worker threads, closes the output file, releases audio devices, and saves any transcript produced
 
 #### Scenario: User interrupts file transcription
 - **WHEN** the user presses Ctrl+C during file transcription

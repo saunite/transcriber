@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-09-02
+# audio-extraction loses all three of its requirements here: PyAV decodes the
+# user's original file directly, so there is no extraction step, no ffmpeg
+# pre-flight, and no temp file. Media decoding now lives in `transcription`.
+retire_capabilities: true

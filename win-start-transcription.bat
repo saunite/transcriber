@@ -8,7 +8,6 @@ REM   name-prefix:  prefix for the output filename (default: meeting)
 REM   Timestamps default to wall-clock time (--actual-time is always passed).
 REM   flags:        passed through to transcriber.py, e.g.
 REM                   --silence-timeout 0      never auto-stop on silence
-REM                   --save-audio             also save sys/mic WAV files
 REM                   --language en            force a language
 REM   Example: win-start-transcription.bat sprint-review --silence-timeout 0
 setlocal
@@ -30,7 +29,6 @@ REM Activate virtual environment
 call .venv\Scripts\activate.bat
 
 REM Set up environment variables
-set PATH=%PATH%;C:\Users\e-AndreSaunite\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.0-full_build\bin
 set PYTHONHTTPSVERIFY=0
 set HF_HUB_DISABLE_SYMLINKS_WARNING=1
 set PYTHONIOENCODING=utf-8
