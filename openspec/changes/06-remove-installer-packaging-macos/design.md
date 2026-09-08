@@ -17,7 +17,7 @@ See proposal.md - Why, and `openspec/changes/remove-installer-packaging/design.m
 
 ## Open Questions
 
-- [Once CI's `macos-latest` job is gone (`04`), what replaces it as a macOS build path — a personally-owned Mac, a paid macOS CI runner, or something else?] This doesn't change this change's specs, approach, or task breakdown — it only determines when tasks in section 2 below become unblocked — so it's left open rather than resolved now.
+- ~~[Once CI's `macos-latest` job is gone (`04`), what replaces it as a macOS build path?]~~ **Resolved: a developer-owned Mac, building locally.** `Transcriber.app` was built end to end this way with no CI involvement; the exact toolchain and step order is recorded in tasks.md 3.1. Caveat worth carrying forward: Command Line Tools alone cannot produce a universal (arm64+x86_64) binary — that needs full Xcode.app — so this path yields a single-architecture app matching whichever Mac builds it.
 
 ## Risks / Trade-offs
 
