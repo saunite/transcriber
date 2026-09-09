@@ -173,6 +173,47 @@ mod tests {
             .expect("--language should be present when a language is selected");
         assert_eq!(args[idx + 1], "en");
     }
+
+    // The frontend re-stamps the output path on every start
+    // (`withFreshTimestamp()` in src/main.js) so a second session can never
+    // truncate the first one's transcript. That only holds if this layer
+    // forwards the stamped path verbatim -- any normalising or re-deriving
+    // here would collapse two distinct sessions back onto one file.
+    #[test]
+    fn forwards_stamped_output_path_verbatim() {
+        let stamped = "transcript_20260909_143012.txt";
+        let args = build_live_session_args(
+            "base".to_string(),
+            "/model/dir".to_string(),
+            None,
+            false,
+            None,
+            Some(stamped.to_string()),
+            None,
+        );
+        let idx = args
+            .iter()
+            .position(|a| a == "--output")
+            .expect("--output should be present when the frontend supplies a path");
+        assert_eq!(args[idx + 1], stamped);
+    }
+
+    #[test]
+    fn omits_output_when_empty_rather_than_passing_a_blank_path() {
+        let args = build_live_session_args(
+            "base".to_string(),
+            "/model/dir".to_string(),
+            None,
+            false,
+            None,
+            Some(String::new()),
+            None,
+        );
+        assert!(
+            !args.contains(&"--output".to_string()),
+            "an empty field must fall through to the engine's own default, not pass --output \"\": {args:?}"
+        );
+    }
 }
 
 pub struct SidecarManager {

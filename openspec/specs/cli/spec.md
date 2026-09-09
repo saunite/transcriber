@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Provide a command-line interface for the transcriber: selecting input sources, help/setup utilities, WASAPI live capture mode, and graceful interruption handling.
+Provide a command-line interface for the transcriber: selecting input sources, help/setup utilities, WASAPI and macOS native tap live capture modes, and graceful interruption handling.
 
 ## Requirements
 
@@ -20,6 +20,17 @@ The system SHALL require exactly one input source: `--file` for file transcripti
 #### Scenario: Live input
 - **WHEN** a user passes `--live`
 - **THEN** the system captures and transcribes audio in real time
+
+### Requirement: File transcription's auto-derived output filename includes a timestamp
+When transcribing a file without an explicit `--output` path, the system SHALL derive the output filename from the input file's name and include a timestamp, so transcribing the same input file more than once never overwrites an earlier run's transcript. An explicit `--output` path SHALL be used exactly as given, with no timestamp added.
+
+#### Scenario: Same file transcribed twice without --output
+- **WHEN** a user transcribes the same input file twice without specifying `--output`
+- **THEN** each run writes to a distinct, timestamped output filename, and neither run's transcript is overwritten by the other
+
+#### Scenario: Explicit --output is honored exactly
+- **WHEN** a user supplies an explicit `--output` path
+- **THEN** the system writes to that exact path, unchanged and unstamped
 
 ### Requirement: Provide help and setup utilities
 The system SHALL provide `--list-devices` to enumerate audio devices and `--setup-help` to print audio loopback setup instructions, each exiting after printing.
@@ -53,6 +64,17 @@ The system SHALL route live capture through WASAPI loopback on Windows when `--w
 #### Scenario: WASAPI without microphone
 - **WHEN** a user runs `--live --wasapi` without `--include-mic`
 - **THEN** the system captures only system audio via WASAPI loopback
+
+### Requirement: Select macOS native loopback capture mode
+The system SHALL provide `--coreaudio-tap` to select native macOS system-audio loopback capture, analogous to `--wasapi` on Windows, and SHALL reject platform-mismatched flags with a clear error instead of attempting to run.
+
+#### Scenario: macOS native tap selected
+- **WHEN** a user runs `--live --coreaudio-tap` on macOS
+- **THEN** the system captures system audio via the native Core Audio Process Tap
+
+#### Scenario: Wrong-platform flag usage
+- **WHEN** a user runs `--coreaudio-tap` on Windows or Linux, or `--wasapi` on macOS
+- **THEN** the system prints a clear error naming the correct flag for the current platform and exits without attempting capture
 
 ### Requirement: Select Linux dual-source live capture mode
 The system SHALL route live capture through the auto-detected monitor/loopback source with optional concurrent microphone capture via `--include-mic` and `--mic-device` when neither `--wasapi` nor `--coreaudio-tap` is set (the Linux default live-capture path).

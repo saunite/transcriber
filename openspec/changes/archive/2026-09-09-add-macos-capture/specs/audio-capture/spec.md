@@ -12,8 +12,12 @@ The system SHALL support native system-audio loopback capture on macOS 14.4+ via
 - **THEN** the system fails fast with a message explaining the version requirement and pointing to the virtual-driver fallback, without attempting to spawn the native helper
 
 #### Scenario: Audio capture permission not granted
-- **WHEN** the native helper attempts to create a process tap without the required privacy permission granted
-- **THEN** the system reports that audio capture permission must be granted in System Settings and does not silently fail or hang
+- **WHEN** the native helper creates a process tap without the required privacy permission granted, which Core Audio reports as success at every call while never delivering audio frames
+- **THEN** the system detects that no audio arrived within a few seconds of the stream starting and reports that audio capture permission must be granted in System Settings, rather than hanging indefinitely with no output
+
+#### Scenario: Native tap capture attempted outside a packaged application bundle
+- **WHEN** native tap capture is attempted from a bare command-line process rather than from a launched `.app` bundle
+- **THEN** macOS never presents the authorization prompt and no audio frames arrive, and the system surfaces the same no-audio permission error rather than hanging — native tap capture requires the packaged application
 
 #### Scenario: Tap creation fails for another reason
 - **WHEN** the native helper's tap-creation call fails for a reason other than OS version or permission
