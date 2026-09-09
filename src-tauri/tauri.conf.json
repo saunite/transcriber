@@ -31,11 +31,11 @@
     "externalBin": [
       "binaries/transcriber-sidecar"
     ],
-    "resources": [
-      "resources/model/**/*",
-      "../LICENSE",
-      "../THIRD-PARTY-LICENSES.txt",
-      "../SOURCE-PROVENANCE.txt"
-    ]
+    "resources": {
+      "resources/model": "resources/model",
+      "../LICENSE": "LICENSE",
+      "../THIRD-PARTY-LICENSES.txt": "THIRD-PARTY-LICENSES.txt",
+      "../SOURCE-PROVENANCE.txt": "SOURCE-PROVENANCE.txt"
+    }
   }
 }

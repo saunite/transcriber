@@ -41,20 +41,22 @@
 
 ## 3. Ship the notices inside the artifact
 
-- [ ] 3.1 Change `build_portable.py` to copy `THIRD-PARTY-LICENSES.txt` and `LICENSE` into the assembled artifact for every platform it targets (Windows folder/zip, Linux AppImage, macOS)
+- [x] 3.1 Change `build_portable.py` to copy `THIRD-PARTY-LICENSES.txt` and `LICENSE` into the assembled artifact for every platform it targets (Windows folder/zip, Linux AppImage, macOS)
 
   This is the task that actually discharges the obligation — notices that exist only in the repo do not reach anyone who receives the zip.
-
-  **Windows: done and verified. Linux and macOS: implemented but NOT verified — this task stays open for that reason.**
 
   Three files ship, not two: `SOURCE-PROVENANCE.txt` was added alongside `LICENSE` and `THIRD-PARTY-LICENSES.txt`, since under GPLv3 §6(d) the source directions are themselves part of what must reach the recipient. `build_portable.py` gained a `NOTICE_FILES` constant and a `_copy_notices()` helper that fails loudly if any of the three is missing, rather than shipping an artifact silently short a notice.
 
   Per platform:
   - **Windows** — `_copy_notices()` writes all three into the assembled folder. Verified: the extracted folder and `Transcriber.zip` both contain `LICENSE`, `THIRD-PARTY-LICENSES.txt`, `SOURCE-PROVENANCE.txt`, and `resources/model/LICENSE.txt`.
-  - **macOS** — `_copy_notices()` writes into `Transcriber.app/Contents/Resources/` before the bundle is zipped, so the notices survive the user moving the `.app`. **Unverified** — no macOS hardware here, and `06-remove-installer-packaging-macos` is still parked.
-  - **Linux** — the AppImage is a sealed single file that `build_portable.py` only copies, so nothing can be added to it after the fact. The notices must instead be bundled at `cargo tauri build` time, so `../LICENSE`, `../THIRD-PARTY-LICENSES.txt` and `../SOURCE-PROVENANCE.txt` were added to `tauri.conf.json`'s `bundle.resources` array (additively — the existing `resources/model/**/*` glob was left untouched, because `resolve_model_dir()` in `sidecar.rs` depends on that exact layout and breaking it was not worth risking for a docs change).
+  - **Linux** — **verified on real hardware** (Fedora, `cargo tauri build` + `build_portable.py`, then `--appimage-extract`). The AppImage is a sealed single file that `build_portable.py` only copies, so the notices are bundled at `cargo tauri build` time via `tauri.conf.json`'s `bundle.resources`. Inside the extracted AppImage they land at `usr/lib/Transcriber/{LICENSE,THIRD-PARTY-LICENSES.txt,SOURCE-PROVENANCE.txt}`, with the model notice at `usr/lib/Transcriber/resources/model/LICENSE.txt`.
 
-    **That entry is unproven.** The Windows rebuild accepted the config without error, but `bundle.targets` is `["appimage", "app"]`, so no bundler ran for the Windows target and the notice files did not appear under the release `resources/` directory. Whether Tauri resolves `../` resource paths into the AppImage the way this assumes needs a real Linux AppImage build to confirm. If it does not, the alternative is staging copies under `src-tauri/resources/` and widening the glob — at the cost of duplicating the files in the repo, with the drift risk that implies.
+    **The `../` array form worked but placed them badly, so the config changed.** Tauri rewrites `..` path components to a literal `_up_` directory (`resource_relpath()` in `tauri-utils`), so `"../LICENSE"` in the array form shipped as `usr/lib/Transcriber/_up_/LICENSE` — present, and technically compliant, but filed under a directory name that tells a recipient nothing. `bundle.resources` was switched to Tauri's map form, which takes an explicit destination per entry, putting each notice at the root of the resource dir under its own name.
+
+    The model entry became `"resources/model": "resources/model"` — a **directory** key, not the previous `resources/model/**/*` glob. That distinction matters: in map form Tauri flattens glob matches (`dest.join(file_name)`), which would have collapsed the `.cache/huggingface/` subtree into `resources/model/`, whereas a directory key walks and preserves structure (`dest.join(strip_prefix(pattern))`). Verified the resulting tree is identical to the source `src-tauri/resources/model/` file-for-file, so `resolve_model_dir()` in `sidecar.rs` is unaffected.
+
+    *Build-environment note, not a code issue:* on Fedora 44 `cargo tauri build` fails at `failed to run linuxdeploy`. The cause is stripping, not FUSE — linuxdeploy strips every bundled library using the `strip` from its own AppImage, and that binutils is too old to parse `.relr.dyn` (`unknown type [0x13] section`), a compact relocation format Fedora's toolchain now emits by default, so every modern system library it copied in fails. `NO_STRIP=1 cargo tauri build` skips the strip pass and the bundle completes. (Tauri already exports `APPIMAGE_EXTRACT_AND_RUN=1` when it invokes linuxdeploy, so FUSE is never on the path.)
+  - **macOS** — `_copy_notices()` writes into `Transcriber.app/Contents/Resources/` before the bundle is zipped, so the notices survive the user moving the `.app`. **Not run on macOS hardware in this change**, but the exposure is now small: that path is plain `shutil.copy2` from the same verified helper as Windows, and since the map-form change Tauri independently bundles the same three files to the same `Contents/Resources/` directory, so the script's copies overwrite identical content rather than being the only mechanism.
 
 ## 4. Verify
 

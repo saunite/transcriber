@@ -66,10 +66,10 @@ mkdir -p src-tauri/binaries
 cp dist/linux/transcriber-sidecar src-tauri/binaries/transcriber-sidecar-x86_64-unknown-linux-gnu
 ```
 
-Then the rest of the Linux build:
+Then the rest of the Linux build. `NO_STRIP=1` is not optional on current distros: linuxdeploy strips every library it bundles using the `strip` from its own AppImage, and that binutils cannot parse `.relr.dyn` (`unknown type [0x13] section`), a compact relocation format Fedora and other modern toolchains emit by default — so every system library it copied in fails to strip and the bundle aborts with `failed to run linuxdeploy`. Skipping the strip pass costs a slightly larger AppImage and nothing else:
 
 ```bash
-cargo tauri build            # from src-tauri/
+NO_STRIP=1 cargo tauri build   # from src-tauri/
 python fetch_sidecar_resources.py   # stage the model, if not already staged
 python build_portable.py
 # Linux artifact: dist/portable/*.AppImage
