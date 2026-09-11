@@ -20,4 +20,6 @@
 
 ## 4. README
 
-- [ ] 4.1 Add the centered header image (design.md Decision 4) and a short "Updating the icon" note under "Building it yourself", with the export command and the `cargo tauri icon` plus cleanup step. Verify that the image path resolves (`test -f resources/transcriber-icon-1024.png`), and that it renders at the top of the README on GitHub after the next push.
+- [x] 4.1 Add the centered header image (design.md Decision 4) and a short "Updating the icon" note under "Building it yourself", with the export command and the `cargo tauri icon` plus cleanup step. Verify that the image path resolves (`test -f resources/transcriber-icon-1024.png`), and that it renders at the top of the README on GitHub after the next push.
+
+  **Verified 2026-09-11 after pushing `dev` (`94e0404`):** `raw.githubusercontent.com/saunite/transcriber/dev/resources/transcriber-icon-1024.png` returns HTTP 200, a 1024x1024 PNG with 1,096 colours (the real icon, not the blank first export). The README's first line on `dev` is the centered header `<img>` that uses it, and the relative path resolves on GitHub.
