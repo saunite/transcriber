@@ -105,6 +105,24 @@ mod tests {
     }
 
     #[test]
+    fn passes_only_this_platforms_capture_flag() {
+        // --wasapi on Linux made the sidecar refuse to start
+        // (openspec/changes/fix-gui-file-queue-and-linux-live).
+        let args = build_live_session_args(
+            "base".to_string(),
+            "/model/dir".to_string(),
+            None,
+            false,
+            None,
+            None,
+            None,
+        );
+        assert_eq!(args[0], "--live");
+        assert_eq!(args.contains(&"--wasapi".to_string()), cfg!(windows), "{args:?}");
+        assert_eq!(args.contains(&"--coreaudio-tap".to_string()), cfg!(target_os = "macos"), "{args:?}");
+    }
+
+    #[test]
     fn omits_audio_device_when_unset() {
         let args = build_live_session_args(
             "base".to_string(),
@@ -337,11 +355,11 @@ fn spawn_sidecar_events(
 /// flag-assembly logic -- what's always-on, what's conditional, what's
 /// omitted by default -- is directly testable.
 ///
-/// ponytail: hardcodes --wasapi (Windows). --coreaudio-tap (macOS) and
-/// Linux's flag-less simple mode need the same branch here once the
-/// platform-gate (tasks.md 5.8) is lifted for a given OS -- this command
-/// isn't reachable from the UI on macOS yet (see main.rs get_platform /
-/// src/main.js), so it's scoped to Windows for now.
+/// The capture flag follows the OS this binary was built for -- the GUI only
+/// ever runs there (openspec/changes/fix-gui-file-queue-and-linux-live):
+/// WASAPI loopback on Windows, the Core Audio tap on macOS (unreachable while
+/// the macOS live-capture gate in src/main.js is on), and none on Linux, whose
+/// default --live path already captures system audio + microphone.
 fn build_live_session_args(
     model: String,
     model_dir: String,
@@ -351,9 +369,13 @@ fn build_live_session_args(
     output_path: Option<String>,
     audio_device: Option<i32>,
 ) -> Vec<String> {
-    let mut args = vec![
-        "--live".to_string(),
-        "--wasapi".to_string(),
+    let mut args = vec!["--live".to_string()];
+    if cfg!(windows) {
+        args.push("--wasapi".to_string());
+    } else if cfg!(target_os = "macos") {
+        args.push("--coreaudio-tap".to_string());
+    }
+    args.extend([
         "--model".to_string(),
         model,
         "--model-path".to_string(),
@@ -366,7 +388,7 @@ fn build_live_session_args(
         "--chunk-duration".to_string(),
         "10".to_string(),
         "--actual-time".to_string(),
-    ];
+    ]);
     if let Some(lang) = language {
         args.push("--language".to_string());
         args.push(lang);
@@ -433,6 +455,8 @@ pub async fn start_live_session(
 }
 
 #[tauri::command]
+// `app` is only needed by the Windows taskkill branch below.
+#[cfg_attr(not(windows), allow(unused_variables))]
 pub async fn stop_live_session(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     let mut sidecar = state.sidecar.lock().unwrap();
     sidecar.session_active = false;
@@ -492,6 +516,14 @@ pub async fn start_file_transcription(
     model: String,
     language: Option<String>,
 ) -> Result<(), String> {
+    // The engine writes its auto-named <stem>_transcript_<stamp>.<format>
+    // into its working directory, so running it from the recording's folder
+    // saves the transcript next to the recording instead of wherever the app
+    // was launched from (openspec/changes/fix-gui-transcript-location).
+    let work_dir = std::path::Path::new(&file_path)
+        .parent()
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .map(|dir| dir.to_path_buf());
     let mut args = vec![
         "--file".to_string(), file_path,
         "--format".to_string(), format,
@@ -503,11 +535,14 @@ pub async fn start_file_transcription(
         args.push("--language".to_string());
         args.push(lang);
     }
-    let sidecar_command = app
+    let mut sidecar_command = app
         .shell()
         .sidecar(SIDECAR_NAME)
         .map_err(|e| e.to_string())?
         .args(args);
+    if let Some(dir) = work_dir {
+        sidecar_command = sidecar_command.current_dir(dir);
+    }
     let (rx, _child) = sidecar_command.spawn().map_err(|e| e.to_string())?;
     // Not tracked in SidecarManager / not eligible for crash-detection --
     // file transcription is a one-shot run, not a long-lived session.

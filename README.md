@@ -1,3 +1,5 @@
+<p align="center"><img src="resources/transcriber-icon-1024.png" width="96" alt="Transcriber icon"></p>
+
 # Audio Transcriber
 
 A cross-platform CLI tool for transcribing audio from video files and live audio streams using faster-whisper, with **real-time streaming** support.
@@ -29,9 +31,9 @@ The packages are install-tested on current Debian, Ubuntu LTS, Fedora, openSUSE 
 
 | File | What it is |
 |---|---|
-| `Transcriber_<version>_amd64.AppImage` | Portable GUI. Run `chmod +x` on it, then run it. AppImages need FUSE (`libfuse2`); without it, run it with `--appimage-extract-and-run`. |
-| `Transcriber_<version>_amd64.deb` | Debian/Ubuntu package: `sudo apt install ./Transcriber_<version>_amd64.deb`. Remove with `sudo apt remove transcriber`. |
-| `Transcriber-<version>-1.x86_64.rpm` | Fedora: `sudo dnf install ./Transcriber-<version>-1.x86_64.rpm`. openSUSE: `sudo zypper install --allow-unsigned-rpm ./Transcriber-<version>-1.x86_64.rpm`. Remove with `sudo dnf remove transcriber` or `sudo zypper remove transcriber`. |
+| `transcriber_<version>_amd64.AppImage` | Portable GUI. Run `chmod +x` on it, then run it. AppImages need FUSE (`libfuse2`); without it, run it with `--appimage-extract-and-run`. |
+| `transcriber_<version>_amd64.deb` | Debian/Ubuntu package: `sudo apt install ./transcriber_<version>_amd64.deb`. Remove with `sudo apt remove transcriber`. |
+| `transcriber-<version>-1.x86_64.rpm` | Fedora: `sudo dnf install ./transcriber-<version>-1.x86_64.rpm`. openSUSE: `sudo zypper install --allow-unsigned-rpm ./transcriber-<version>-1.x86_64.rpm`. Remove with `sudo dnf remove transcriber` or `sudo zypper remove transcriber`. |
 | `transcriber-cli_<version>_linux-x64.tar.gz` | CLI (see below). |
 
 The `.deb` and `.rpm` also put the command-line transcriber on your `PATH` as `transcriber-sidecar`. Run that way, it downloads models on first use instead of using the bundled one.
@@ -63,6 +65,20 @@ All development happens on Linux/WSL; the sections below cover the Windows and L
 ```bash
 cargo tauri build          # from src-tauri/
 python build_portable.py   # assembles the portable artifact for the current OS into dist/portable/
+```
+
+#### Updating the icon
+
+The master icon is `resources/transcriber-icon-1024.png`, exported from `resources/src/transcriber-icon-full-size.xcf`, and every app icon under `src-tauri/icons/` is generated from it. After editing the `.xcf`, regenerate both, then drop the Android, iOS and Windows Store outputs this app doesn't use:
+
+```bash
+# -compose over matters: the XCF reader leaves "Compose: None" on the image,
+# and without it -extent produces a blank light-blue square.
+magick resources/src/transcriber-icon-full-size.xcf -background none -flatten -trim +repage \
+  -compose over -gravity center -extent '%[fx:max(w,h)*1.24]x%[fx:max(w,h)*1.24]' \
+  -background 'rgb(186,244,255)' -flatten -resize 1024x1024 resources/transcriber-icon-1024.png
+cargo tauri icon resources/transcriber-icon-1024.png
+rm -rf src-tauri/icons/android src-tauri/icons/ios src-tauri/icons/Square*Logo.png src-tauri/icons/StoreLogo.png
 ```
 
 #### Linux build (WSL or native Linux)
@@ -238,6 +254,8 @@ python transcriber.py --live --chunk-duration 20
 python transcriber.py --live --coreaudio-tap --include-mic --mic-device 3
 ```
 
+Live capture saves the transcript as it goes, to `transcript_<timestamp>.txt` in the current directory; the first line it prints names the file. Pass `--output <path>` to choose the file, or `--no-output` to only print the transcript.
+
 **Understanding the Labels:**
 - `[SYS]` - System audio (other meeting participants, videos, etc.)
 - `[MIC]` - Your microphone (your voice)
@@ -307,7 +325,8 @@ python transcriber.py --live --wasapi --include-mic --mic-device 5
 - `--model <size>` - Model size: tiny, base, small, medium, large, turbo (default: base)
 - `--language <code>` - Language code (e.g., en, es, fr) - auto-detect if not specified
 - `--task <type>` - Task: transcribe or translate (default: transcribe)
-- `--output <path>` - Output file for transcript (default: auto-generated)
+- `--output <path>` - Output file for transcript (default: `<name>_transcript_<timestamp>.<format>` for `--file`, `transcript_<timestamp>.txt` for `--live`, both in the current directory)
+- `--no-output` - Live capture only: print the transcript without saving it to a file (cannot be combined with `--output`)
 - `--format <type>` - Output format: txt, srt, vtt (default: txt)
 - `--no-timestamps` - Exclude timestamps from text output
 - `--actual-time` - Use wall-clock timestamps (local time) instead of relative offsets

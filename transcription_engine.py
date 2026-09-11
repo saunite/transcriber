@@ -10,7 +10,16 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Tuple, List
 import numpy as np
+import threading
 from tqdm import tqdm
+
+# tqdm's default write lock is a multiprocessing RLock. Under Python 3.14's
+# forkserver default, creating it starts multiprocessing's resource tracker,
+# which in the frozen (PyInstaller onefile) sidecar is a re-launch of the
+# binary itself that races the parent's exit and prints a ModuleNotFoundError
+# traceback after every run (openspec/changes/fix-frozen-shutdown-traceback).
+# Progress bars here are single-process, so a thread lock is all tqdm needs.
+tqdm.set_lock(threading.RLock())
 
 from faster_whisper import WhisperModel
 
@@ -28,6 +37,13 @@ def _suppress_ssl_verification():
         yield
     finally:
         ssl._create_default_https_context = original_context
+
+
+class NoDecodableAudioError(ValueError):
+    """The input decoded to (effectively) no audio -- typically a non-media
+    file given a media extension, which FFmpeg's resyncing decoders turn into
+    a sliver of nothing instead of an error
+    (openspec/changes/fix-gui-file-queue-and-linux-live, design.md Decision 8)."""
 
 
 class TranscriptionEngine:
@@ -136,6 +152,10 @@ class TranscriptionEngine:
         segments = []
         print(f"\nDetected language: {info.language} (probability: {info.language_probability:.2f})")
         print(f"Duration: {info.duration:.2f} seconds\n")
+        # Before any output file is opened, so a failed run leaves nothing
+        # behind. No real recording is shorter than this; a silent one is.
+        if info.duration < 0.1:
+            raise NoDecodableAudioError(f"decoded {info.duration:.2f} s")
         
         if use_actual_time and base_time is None:
             base_time = datetime.now()

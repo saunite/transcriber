@@ -59,8 +59,14 @@ def main() -> int:
         "--workpath", f"build/{system}",
         "--specpath", f"build/{system}",
         "--add-data", f"{assets_dir}{sep}faster_whisper/assets",
-        "transcriber.py",
     ]
+    # The app icon on the frozen binary itself, so Explorer/Finder show it for
+    # the CLI's transcriber(.exe) (openspec/changes/add-app-icon). ELF
+    # binaries carry no icon, so Linux passes none.
+    icon = {"windows": "icon.ico", "darwin": "icon.icns"}.get(system)
+    if icon:
+        args += ["--icon", str(Path(__file__).resolve().parent / "src-tauri" / "icons" / icon)]
+    args.append("transcriber.py")
     return subprocess.call(args)
 
 

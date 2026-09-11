@@ -105,7 +105,7 @@
             <span class="rail-label">System audio device override</span>
             <input id="audio-device-input" type="number" min="0" step="1" placeholder="auto" />
             <span class="rail-hint">
-              Default: auto-detected WASAPI device (recommended). Overriding is not recommended
+              Default: auto-detected system-audio device (recommended). Overriding is not recommended
               unless the wrong device is being captured.
             </span>
           </label>
@@ -114,9 +114,17 @@
         <!-- FILE controls -->
         <section id="panel-file" class="rail-panel" hidden>
           <button id="drop-zone" class="drop-zone" type="button">
-            <span class="drop-zone-line">Drop a recording</span>
-            <span class="drop-zone-sub">or click to choose a file</span>
+            <span class="drop-zone-line">Drop recordings</span>
+            <span id="drop-zone-sub" class="drop-zone-sub">or click to choose files</span>
           </button>
+
+          <!-- Right under the drop zone, where the eye already is: the running
+               file and the queue (openspec/changes/fix-gui-file-queue-and-linux-live). -->
+          <div id="file-state" class="run-state" data-state="idle" hidden>
+            <span class="run-dot" aria-hidden="true"></span>
+            <span id="file-state-label" class="run-state-label">Transcribing</span>
+          </div>
+          <ol id="file-queue" class="file-queue" hidden></ol>
 
           <label class="rail-field">
             <span class="rail-label">Output format</span>
@@ -134,11 +142,6 @@
               <option value="translate">translate</option>
             </select>
           </label>
-
-          <div id="file-state" class="run-state" data-state="idle" hidden>
-            <span class="run-dot" aria-hidden="true"></span>
-            <span class="run-state-label">Transcribing</span>
-          </div>
         </section>
 
         <!-- Chart speed: the signature control, shared by both flows -->

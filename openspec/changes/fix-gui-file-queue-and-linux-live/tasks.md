@@ -1,0 +1,36 @@
+## 1. Live capture on Linux
+
+- [x] 1.1 In `build_live_session_args()` (`src-tauri/src/sidecar.rs`), add `--wasapi` only when `cfg!(windows)`, `--coreaudio-tap` only when `cfg!(target_os = "macos")`, and nothing on Linux; replace the `ponytail:` note (design.md Decision 4). Add a unit test asserting that the flag matches the compile target and that the other platforms' flags are absent. Verify with `cargo test` in `src-tauri/`: all tests pass on Linux, including the existing live-args tests.
+- [x] 1.2 Change the device-override hint in `src/index.html` from "auto-detected WASAPI device" to "auto-detected system-audio device" (design.md Decision 5). Verify that `grep -i wasapi src/index.html` returns nothing.
+- [x] 1.3 On the Fedora development machine, run the GUI from a local build with a freshly staged sidecar, start a live session with the microphone included, and play some audio. Verify that the session starts with no `--wasapi` error, and that both `[SYS]` and `[MIC]` lines appear.
+
+  **First attempt 2026-09-11 (user, `cargo tauri dev` on Fedora/KDE): the `--wasapi` error is gone,** and the engine starts in Linux dual-source mode. The session then died with `sounddevice.PortAudioError: Error opening InputStream: Invalid sample rate [PaErrorCode -9997]` on the mic stream. Cause: the GUI's microphone dropdown lists every input device and defaulted to the first, `[0] HDA Intel PCH: ALC257 Analog (hw:0,0)`, a raw ALSA device. `sd.check_input_settings` shows it accepts only 44100 and 48000, while the engine opens the mic at 16000. The CLI never hit this, because without `--mic-device` it auto-detects `[15] default`, which accepts 16000. Fixed by 1.4 and 1.5; this task stays open for the re-test.
+- [x] 1.4 Make "System default (recommended)" the microphone dropdown's first and default entry. Its value is empty and it sends no `micDevice`, so the engine auto-detects the way the CLI does (design.md Decision 6). Verify by starting a live session without touching the dropdown: the sidecar is spawned with `--include-mic` and no `--mic-device`, and the engine's status line names the default input device.
+- [x] 1.5 In `transcriber.py`'s Linux dual-source path, open the mic at 16 kHz when the device accepts it, and otherwise at the device's `default_samplerate`, resampling to 16 kHz on the mic's worker thread with the same resampler the system-audio path uses (design.md Decision 7). Verify on the Fedora machine: `.venv/bin/python transcriber.py --live --include-mic --mic-device 0` (the raw `hw:0,0` device) starts, and speaking produces `[MIC]` lines.
+- [x] 1.6 Silence the pre-existing `unused variable: app` warning in `stop_live_session` on non-Windows builds; `app` is used only by the Windows `taskkill` branch. Verify that `cargo check` in `src-tauri/` prints no warnings on Linux.
+
+## 2. File queue
+
+- [x] 2.1 In `src/main.js`, replace the single-file flow with the queue from design.md Decision 1: `enqueue(paths)`, `startNext()`, and a `file-transcription-complete` handler that marks the entry done or failed and advances. Remove the unused `fileBusy` flag. Verify by reading that exactly one `start_file_transcription` invoke can be outstanding: it's only called from `startNext()`, and only when no entry is `transcribing`.
+- [x] 2.2 Add the queue list and the "Transcribing <name> (n of m)" status to the File panel (`src/index.html`, CSS), reusing the existing `run-state` styling, plus the busy hint on the drop zone (design.md Decision 2). Verify in the running GUI that the list and status appear and update.
+- [x] 2.3 Make drops enqueue every path, and set the file dialog to `multiple: true` (design.md Decision 3). Verify in the running GUI that dropping three files at once queues all three.
+- [x] 2.4 End-to-end check in the running GUI on Fedora:
+  - Drop one file, then two more while it runs. They show as waiting and start one after another, never two at once (check the engine log: one "Loading base model" per file, in sequence).
+  - Drop an unsupported file mid-queue. It shows a note and doesn't join the queue.
+  - A file that fails (for example a renamed non-media file with a `.mp3` extension) is marked failed, and the next one still starts.
+
+  **User report 2026-09-11 (`cargo tauri dev`, Fedora/KDE): "File transcription worked fine, including the queue."** That proves 2.2: the queue list and status appear and update. Files dropped during a run were queued and processed. Still to confirm explicitly: several files dropped (or picked) at once (2.3), an unsupported file mid-queue, and a failing file (2.4).
+
+  **Second report 2026-09-11:** live capture works, and an unsupported extension is rejected correctly. **A failing file was wrong:** the `.rpm`, renamed to `.mp3`, showed "Transcript saved", was marked "done", and left an empty transcript. Reproduced from the CLI: a text file renamed to `.mp3` fails properly (`Could not decode … Invalid data`, exit 1), but binary input decodes to almost nothing instead of raising. `/usr/bin/ls` as `.mp3` gives `Duration: 0.02 seconds`, and the `.rpm` as `.mp3` gives `Duration: 0.00 seconds`. Both have 0 segments, exit 0, and write a 0-byte file. The GUI only mirrors the exit code, so the fix belongs in the engine (2.5).
+- [x] 2.5 In `transcriber.py`'s `transcribe_file`, treat a decoded duration under 0.1 s as "no decodable audio": print an error, exit 1, and leave no transcript file, including when `--output` was given and the engine had already created it (design.md Decision 8). Verify from the CLI:
+  - the text-as-`.mp3` file still exits 1 as before
+  - the binary-as-`.mp3` and `.rpm`-as-`.mp3` files now exit 1 with the new message and no output file
+  - a real 2-second silent WAV still exits 0 with an empty transcript
+
+  Then, in the GUI, the `.rpm`-as-`.mp3` file is marked failed with the failure note.
+
+  **CLI half verified 2026-09-11** (every case passed `--output`, the path that opens a file during transcription): text-as-`.mp3` exits 1 with the same `Could not decode … Invalid data` as before. Binary-as-`.mp3` (`No decodable audio in binary.mp3 (decoded 0.02 s)`) and `.rpm`-as-`.mp3` (`decoded 0.00 s`) now exit 1 with **no output file**. A real 2 s silent WAV still exits 0 and writes its (empty) transcript. The existing Python tests pass, and the re-frozen sidecar is staged for the GUI. The check is raised inside `TranscriptionEngine.transcribe_file` before the `--output` file is opened, so nothing ever needs deleting. **The GUI half (the file marked failed) is re-tested under 2.4.**
+
+  **Also from the user's second report:** 1.3 and 1.4 are verified. Live capture worked in the GUI with the microphone left on the new "System default" entry. 2.4's unsupported-extension check passed. Still open: 1.5's CLI run with `--mic-device 0`, dropping several files at once (2.3), and the failing file in the GUI after the 2.5 fix (2.4).
+
+  **Final user report 2026-09-11 ("All worked"):** the `.rpm`-as-`.mp3` file is now marked failed in the GUI (2.4, and 2.5's GUI half). Several files dropped at once all queued (2.3). `.venv/bin/python transcriber.py --live --include-mic --mic-device 0` on the raw `hw:0,0` microphone started and produced `[MIC]` lines alongside `[SYS]` (1.5), so opening at the device's own rate and resampling works.

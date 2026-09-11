@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import Optional
 import av.error
 from audio_capture import AudioCapture, setup_loopback_instructions
-from transcription_engine import TranscriptionEngine
+from transcription_engine import NoDecodableAudioError, TranscriptionEngine
 import time
 
 def _make_signal_handler(verbose: bool):
@@ -59,6 +59,16 @@ def _bundled_model_path(model: str) -> Optional[str]:
         return None
     model_dir = Path(sys.executable).parent / "model"
     return str(model_dir) if (model_dir / "model.bin").exists() else None
+
+
+def _live_output_path(args, now: datetime) -> Optional[str]:
+    """Where a live session saves its transcript: --output if given, nothing
+    with --no-output, otherwise a stamped transcript_<YYYYMMDD_HHMMSS>.txt in
+    the current directory -- the GUI's default naming, so a new session never
+    overwrites an old one (openspec/changes/add-live-default-output)."""
+    if args.output or args.no_output or not args.live:
+        return args.output
+    return f"transcript_{now:%Y%m%d_%H%M%S}.txt"
 
 
 def main():
@@ -139,7 +149,14 @@ Examples:
         '--output', '-o',
         type=str,
         default=None,
-        help='Output file path (default: transcript.txt in current directory)'
+        help='Output file path (default: file mode writes <name>_transcript_<timestamp>.<format>, '
+             'live capture writes transcript_<timestamp>.txt, both in the current directory)'
+    )
+
+    parser.add_argument(
+        '--no-output',
+        action='store_true',
+        help='Live capture only: print the transcript without saving it to a file'
     )
     
     parser.add_argument(
@@ -255,6 +272,9 @@ Examples:
     args = parser.parse_args()
     if not args.model_path:
         args.model_path = _bundled_model_path(args.model)
+    if args.output and args.no_output:
+        parser.error("--output and --no-output cannot be combined")
+    args.output = _live_output_path(args, datetime.now())
 
     # Handle utility options
     if args.list_devices:
@@ -359,6 +379,9 @@ def transcribe_file(engine: TranscriptionEngine, args) -> int:
         )
     except av.error.FFmpegError as e:
         print(f"❌ Could not decode {file_path.name}: unsupported or corrupt media ({e})")
+        return 1
+    except NoDecodableAudioError as e:
+        print(f"❌ No decodable audio in {file_path.name} ({e}) -- unsupported or corrupt media")
         return 1
 
     # Determine output path. Auto-derived names are stamped so transcribing
@@ -741,6 +764,14 @@ def _transcribe_live_linux_dual(engine: TranscriptionEngine, args) -> int:
             return 1
         mic_channels = min(max_input_channels, 2)
         mic_name = mic_info['name']
+        # A raw ALSA hw: device can refuse 16 kHz (openspec/changes/
+        # fix-gui-file-queue-and-linux-live): open it at its own rate and
+        # resample on the mic worker thread instead of failing the session.
+        try:
+            sd.check_input_settings(device=mic_device, channels=mic_channels, samplerate=16000)
+            mic_rate = 16000
+        except Exception:
+            mic_rate = int(mic_info['default_samplerate'])
         if args.verbose:
             print(f"Microphone capture enabled (device {mic_device})")
             print(f"   Device: {mic_name}")
@@ -852,32 +883,34 @@ def _transcribe_live_linux_dual(engine: TranscriptionEngine, args) -> int:
             else:
                 time.sleep(0.05)
 
-    def transform_sys(raw):
-        """Non-Linux-loopback path only: resample the sounddevice-reported
-        native rate -> 16kHz away from the capture callback. Some capture
-        backends (the ALSA "pipewire" plugin device, in
+    def _to_target_rate(rate):
+        """Resample a capture's `rate` -> 16kHz away from the capture
+        callback. Some capture backends (the ALSA "pipewire" plugin device, in
         particular) deliver irregular block sizes, including occasional
         few-frame slivers that resample down to zero output samples --
         drop those rather than let scipy.signal.resample divide by zero."""
-        if native_rate != target_rate:
-            out_len = int(len(raw) * target_rate / native_rate)
-            if out_len < 1:
-                return np.empty(0, dtype=raw.dtype)
-            raw = signal.resample(raw, out_len)
-        return raw
+        def transform(raw):
+            if rate != target_rate:
+                out_len = int(len(raw) * target_rate / rate)
+                if out_len < 1:
+                    return np.empty(0, dtype=raw.dtype)
+                raw = signal.resample(raw, out_len)
+            return raw
+        return transform
 
     # Start dedicated worker threads (sys and mic run in parallel, never
     # blocking each other). The Linux-loopback path's sys callback already
-    # resamples (via parec), so it needs no transform.
+    # resamples (via parec), so it needs no transform; the mic needs one only
+    # when it had to open at its own rate (see mic_rate above).
     sys_thread = threading.Thread(
         target=_drain_and_transcribe,
-        args=(sys_audio_queue, [], chunk_duration_samples, "SYS", False, None if use_linux_loopback else transform_sys),
+        args=(sys_audio_queue, [], chunk_duration_samples, "SYS", False, None if use_linux_loopback else _to_target_rate(native_rate)),
         daemon=True
     )
     sys_thread.start()
     mic_thread = threading.Thread(
         target=_drain_and_transcribe,
-        args=(mic_audio_queue, [], mic_chunk_samples, "MIC", True),
+        args=(mic_audio_queue, [], mic_chunk_samples, "MIC", True, None if mic_rate == target_rate else _to_target_rate(mic_rate)),
         daemon=True
     )
     mic_thread.start()
@@ -887,7 +920,7 @@ def _transcribe_live_linux_dual(engine: TranscriptionEngine, args) -> int:
             # LinuxLoopbackCapture.capture_stream is the blocking call here
             # (mirrors transcribe_live_wasapi's structure) -- start the mic
             # stream first so both sides run concurrently while it blocks.
-            mic_stream = sd.InputStream(device=mic_device, channels=mic_channels, samplerate=target_rate, blocksize=1024, callback=mic_callback)
+            mic_stream = sd.InputStream(device=mic_device, channels=mic_channels, samplerate=mic_rate, blocksize=1024, callback=mic_callback)
             mic_stream.start()
             try:
                 linux_capture.capture_stream(callback=sys_callback_native, device_index=sys_name, verbose=args.verbose)
@@ -896,7 +929,7 @@ def _transcribe_live_linux_dual(engine: TranscriptionEngine, args) -> int:
                 mic_stream.close()
         else:
             with sd.InputStream(device=sys_device, channels=1, samplerate=native_rate, blocksize=1024, callback=sys_callback_raw), \
-                 sd.InputStream(device=mic_device, channels=mic_channels, samplerate=target_rate, blocksize=1024, callback=mic_callback):
+                 sd.InputStream(device=mic_device, channels=mic_channels, samplerate=mic_rate, blocksize=1024, callback=mic_callback):
                 while True:
                     if silence_timeout_enabled and (time.time() - last_speech_time) > args.silence_timeout:
                         print(f"\nAuto-stop: {args.silence_timeout/60:.1f} minutes of silence detected")

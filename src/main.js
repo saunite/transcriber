@@ -7,6 +7,7 @@ const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 const { open: openFileDialog, save: saveFileDialog } = window.__TAURI__.dialog;
 const { getCurrentWindow } = window.__TAURI__.window;
+const { documentDir, homeDir, join, isAbsolute } = window.__TAURI__.path;
 
 const els = {
   noteRoot: document.getElementById("note-root"),
@@ -29,6 +30,9 @@ const els = {
   runElapsed: document.getElementById("run-elapsed"),
   runDetail: document.getElementById("run-detail"),
   fileState: document.getElementById("file-state"),
+  fileStateLabel: document.getElementById("file-state-label"),
+  fileQueue: document.getElementById("file-queue"),
+  dropZoneSub: document.getElementById("drop-zone-sub"),
   stopBtn: document.getElementById("stop-btn"),
   liveEmpty: document.getElementById("live-empty"),
   fileEmpty: document.getElementById("file-empty"),
@@ -436,16 +440,31 @@ function syncMicPen() {
 
 els.includeMicCheckbox.addEventListener("change", syncMicPen);
 
-// Mirrors win-start-transcription.bat's meeting_<timestamp>.txt naming --
-// a bare filename (no directory) so the sidecar saves it next to wherever
-// it's running from, same as the .bat's relative "%output_file%".
+// Local time, like the engine's own stamps -- toISOString() is UTC, so a
+// session at 15:43 local (UTC-6) was named ..._214334
+// (openspec/changes/fix-gui-transcript-location).
 function timestampSuffix() {
-  return new Date().toISOString().replace(/[-:]/g, "").replace("T", "_").slice(0, 15);
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 }
-function defaultOutputFilename() {
-  return `transcript_${timestampSuffix()}.txt`;
+
+// Live transcripts default to Documents (home if the system reports none),
+// shown as a full path so the user sees where a session will be saved --
+// a bare name used to land in whatever folder the app was launched from.
+async function liveTranscriptDir() {
+  try {
+    return await documentDir();
+  } catch {
+    return await homeDir();
+  }
 }
-els.outputPathInput.value = defaultOutputFilename();
+async function defaultOutputPath() {
+  return join(await liveTranscriptDir(), `transcript_${timestampSuffix()}.txt`);
+}
+defaultOutputPath().then((path) => {
+  if (!els.outputPathInput.value) els.outputPathInput.value = path;
+});
 
 // Re-stamped on every session start (not just page load), so recording
 // twice without touching the field -- or reusing a browsed path -- can
@@ -460,7 +479,7 @@ function withFreshTimestamp(pathStr) {
 
 els.outputBrowseBtn.addEventListener("click", async () => {
   const path = await saveFileDialog({
-    defaultPath: els.outputPathInput.value || defaultOutputFilename(),
+    defaultPath: els.outputPathInput.value || (await defaultOutputPath()),
     filters: [{ name: "Text", extensions: ["txt"] }],
   });
   if (typeof path === "string") els.outputPathInput.value = path;
@@ -514,6 +533,14 @@ async function populateMicDevices() {
   try {
     const devices = await invoke("list_devices");
     els.micDeviceSelect.innerHTML = "";
+    // First and default: let the engine auto-detect the system's default
+    // input, as the CLI does. Defaulting to the list's first entry picked a
+    // raw ALSA hw: device on Linux that refuses 16 kHz and crashed every
+    // session (openspec/changes/fix-gui-file-queue-and-linux-live).
+    const auto = document.createElement("option");
+    auto.value = "";
+    auto.textContent = "System default (recommended)";
+    els.micDeviceSelect.appendChild(auto);
     for (const device of devices.filter((d) => d.max_input_channels > 0)) {
       const opt = document.createElement("option");
       opt.value = device.index;
@@ -627,14 +654,19 @@ async function startLiveSession() {
   sessionStartedAt = Date.now();
   lastLineAt = Date.now();
   sawFirstLine = false;
-  const outputPath = withFreshTimestamp(els.outputPathInput.value.trim() || "transcript.txt");
+  // A bare name (no folder) is saved in the default folder too, not in the
+  // engine's working directory (openspec/changes/fix-gui-transcript-location).
+  let chosenPath = els.outputPathInput.value.trim() || "transcript.txt";
+  if (!(await isAbsolute(chosenPath))) chosenPath = await join(await liveTranscriptDir(), chosenPath);
+  const outputPath = withFreshTimestamp(chosenPath);
   els.outputPathInput.value = outputPath;
   try {
     await invoke("start_live_session", {
       model: els.modelSelect.value,
       language: els.languageSelect.value || null,
       includeMic: els.includeMicCheckbox.checked,
-      micDevice: els.includeMicCheckbox.checked ? Number(els.micDeviceSelect.value) : null,
+      // "" is "System default": send no device so the engine auto-detects.
+      micDevice: els.includeMicCheckbox.checked && els.micDeviceSelect.value !== "" ? Number(els.micDeviceSelect.value) : null,
       outputPath,
       audioDevice: els.audioDeviceInput.value.trim() !== "" ? Number(els.audioDeviceInput.value) : null,
     });
@@ -683,46 +715,102 @@ function hasSupportedExtension(filePath) {
   return !!ext && SUPPORTED_EXTENSIONS.has(ext);
 }
 
-let fileBusy = false;
+// One file at a time; files added meanwhile wait in a visible queue
+// (openspec/changes/fix-gui-file-queue-and-linux-live, design.md Decision 1).
+// Only startNextFile() invokes start_file_transcription, and only when no
+// entry is transcribing -- so at most one file sidecar ever runs.
+const fileQueue = []; // { path, name, state: "waiting" | "transcribing" | "done" | "failed" }
 
-function setFileBusy(busy) {
-  fileBusy = busy;
-  els.fileState.hidden = !busy;
-  els.fileState.dataset.state = busy ? "advancing" : "idle";
+const QUEUE_STATE_LABEL = {
+  waiting: "waiting",
+  transcribing: "transcribing…",
+  done: "done",
+  failed: "failed",
+};
+
+function renderFileQueue() {
+  const running = fileQueue.find((f) => f.state === "transcribing");
+  els.fileQueue.hidden = fileQueue.length === 0;
+  els.fileQueue.replaceChildren(
+    ...fileQueue.map((f) => {
+      const item = document.createElement("li");
+      item.className = "file-queue-item";
+      item.dataset.state = f.state;
+      item.title = f.path;
+      const name = document.createElement("span");
+      name.className = "file-queue-name";
+      name.textContent = f.name;
+      const status = document.createElement("span");
+      status.className = "file-queue-status";
+      status.textContent = QUEUE_STATE_LABEL[f.state];
+      item.append(name, status);
+      return item;
+    }),
+  );
+  els.fileState.hidden = !running;
+  els.fileState.dataset.state = running ? "advancing" : "idle";
+  if (running) {
+    const position = fileQueue.indexOf(running) + 1;
+    els.fileStateLabel.textContent = `Transcribing ${running.name} (${position} of ${fileQueue.length})`;
+  }
+  els.dropZoneSub.textContent = running ? "drop more to add them to the queue" : "or click to choose files";
 }
 
-async function transcribeFile(filePath) {
-  if (!hasSupportedExtension(filePath)) {
-    showNote(`Unsupported file type: ${filePath}`);
-    return;
+function enqueueFiles(paths) {
+  // A drop into an idle queue starts a fresh batch; finished rows are kept
+  // only while their batch still has work in flight.
+  if (!fileQueue.some((f) => f.state === "waiting" || f.state === "transcribing")) fileQueue.length = 0;
+  for (const path of paths) {
+    if (hasSupportedExtension(path)) {
+      fileQueue.push({ path, name: path.split(/[\\/]/).pop(), state: "waiting" });
+    } else {
+      showNote(`Unsupported file type: ${path}`);
+    }
   }
   selectTab("file");
-  clearTranscript(els.transcriptFile);
-  currentFlow = "file";
-  setFileBusy(true);
+  startNextFile();
+}
+
+async function startNextFile() {
+  const next = fileQueue.some((f) => f.state === "transcribing")
+    ? null
+    : fileQueue.find((f) => f.state === "waiting");
+  if (next) {
+    next.state = "transcribing";
+    clearTranscript(els.transcriptFile);
+    currentFlow = "file";
+  }
+  renderFileQueue();
+  if (!next) return;
   try {
     await invoke("start_file_transcription", {
-      filePath,
+      filePath: next.path,
       format: els.formatSelect.value,
       task: els.taskSelect.value,
       model: els.modelSelect.value,
       language: els.languageSelect.value || null,
     });
   } catch (err) {
-    showNote(`Could not transcribe file: ${err}`);
-    setFileBusy(false);
+    showNote(`Could not transcribe ${next.name}: ${err}`);
+    finishCurrentFile(false);
   }
 }
 
+function finishCurrentFile(ok) {
+  const running = fileQueue.find((f) => f.state === "transcribing");
+  if (running) running.state = ok ? "done" : "failed";
+  startNextFile();
+}
+
 els.dropZone.addEventListener("click", async () => {
-  const path = await openFileDialog({
-    multiple: false,
+  const picked = await openFileDialog({
+    multiple: true,
     filters: [
       { name: "Video", extensions: VIDEO_EXTENSIONS },
       { name: "Audio", extensions: AUDIO_EXTENSIONS },
     ],
   });
-  if (typeof path === "string") transcribeFile(path);
+  if (picked) enqueueFiles([].concat(picked));
 });
 
 function setupDropZone() {
@@ -732,7 +820,7 @@ function setupDropZone() {
   listen("tauri://drag-drop", (event) => {
     els.dropZone.classList.remove("drag-over");
     const paths = event.payload?.paths ?? [];
-    if (paths.length > 0) transcribeFile(paths[0]);
+    if (paths.length > 0) enqueueFiles(paths);
   });
   listen("tauri://drag-enter", () => {
     selectTab("file");
@@ -785,8 +873,13 @@ listen("sidecar-crashed", (event) => {
 });
 
 listen("file-transcription-complete", (event) => {
-  setFileBusy(false);
-  showNote(event.payload ? "Transcript saved." : "File transcription failed — see the engine log for details.");
+  const name = fileQueue.find((f) => f.state === "transcribing")?.name ?? "file";
+  showNote(
+    event.payload
+      ? `Transcript saved: ${name}`
+      : `Transcription failed: ${name} — see the engine log for details.`,
+  );
+  finishCurrentFile(Boolean(event.payload));
 });
 
 initTheme();

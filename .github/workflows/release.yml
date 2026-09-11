@@ -105,6 +105,9 @@ jobs:
           cp dist/portable/*.AppImage dist/portable/transcriber-cli_*.tar.gz \
              src-tauri/target/release/bundle/deb/*.deb \
              src-tauri/target/release/bundle/rpm/*.rpm out/
+          # Lowercase Linux download names; Tauri derives them from productName
+          # ("Transcriber"), while the package itself is already `transcriber`.
+          for f in out/Transcriber*; do mv "$f" "out/transcriber${f#out/Transcriber}"; done
           ls -la out
 
       # Only that the package manager resolves the dependencies and installs;

@@ -971,6 +971,49 @@ input[type="range"]::-moz-range-thumb {
   color: var(--ink-soft);
 }
 
+/* File queue: one row per dropped file, the running one emphasised
+   (openspec/changes/fix-gui-file-queue-and-linux-live). */
+.file-queue {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+}
+
+.file-queue-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: var(--ink-soft);
+}
+
+.file-queue-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-queue-status {
+  flex-shrink: 0;
+  font-size: 0.6875rem;
+}
+
+.file-queue-item[data-state="transcribing"] {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.file-queue-item[data-state="done"] .file-queue-status {
+  color: var(--ink-faint);
+}
+
+.file-queue-item[data-state="failed"] .file-queue-status {
+  color: var(--pen-mic);
+}
+
 /* ---- Engine log --------------------------------------------------------- */
 
 .debug-panel {
