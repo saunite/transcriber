@@ -25,7 +25,9 @@
 - [x] 2.3 (was 4.3) Start a live session and a file transcription and confirm no console window flashes when the sidecar spawns
 
   **Confirmed by the user on real hardware.** User started a live capture session and ran a file transcription (drag-and-drop) from the double-clicked instance and watched for a console flash when the sidecar process spawns for each: none appeared either time.
-- [ ] 2.4 (was 5.1) Extract the zip on a machine that has never had the app installed, run `transcriber-gui.exe`, confirm no admin prompt, no registry writes, and a working transcription
+- [x] 2.4 (was 5.1) Extract the zip on a machine that has never had the app installed, run `transcriber-gui.exe`, confirm no admin prompt, no registry writes, and a working transcription
+
+  **Superseded — moved to `02-add-release-pipeline-windows`** (planned; not yet created as of 2026-09-11). Once the release pipeline builds the Windows zip in CI (gnu target on a `windows-latest` runner), the WSL-built zip described below is no longer what users download, so a clean-machine test must run against the CI-built artifact instead. That change also needs the equivalent check for its per-user NSIS installer (install from a non-admin account, confirm no UAC prompt), so both clean-machine checks live there together. The registry-writes half is already covered by 2.5.
 
   **Not verified — needs a genuinely clean machine.** The development machine has now run the app repeatedly during 2.0-2.3 testing, so it no longer qualifies as "never had the app installed." (Correction to an earlier note here: it is not a VM — it is the physical Windows 11 Enterprise host, with development happening in WSL on top of it. There is no snapshot to roll back to.) The no-admin-prompt and working-transcription halves need a separate clean machine. The registry-writes half is effectively covered by 2.5's check (zero registry keys found across multiple runs), which is strong evidence the app never writes there regardless of prior run history.
 

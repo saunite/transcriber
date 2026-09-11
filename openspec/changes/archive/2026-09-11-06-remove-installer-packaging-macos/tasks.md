@@ -1,6 +1,10 @@
 ## 1. Mark source tasks as moved
 
-- [ ] 1.1 In `openspec/changes/remove-installer-packaging/tasks.md`, mark tasks 4.5, 5.3, and the macOS portion of 5.4 as `[x]` with a "Superseded — moved to `06-remove-installer-packaging-macos`" note, following the existing convention used at that file's task 6.4
+- [x] 1.1 In `openspec/changes/remove-installer-packaging/tasks.md`, mark tasks 4.5, 5.3, and the macOS portion of 5.4 as `[x]` with a "Superseded — moved to `06-remove-installer-packaging-macos`" note, following the existing convention used at that file's task 6.4
+
+  Already done — applied before `remove-installer-packaging` was archived (see `openspec/changes/archive/2026-09-03-remove-installer-packaging/tasks.md`, the notes on 4.5 and 5.3 and the macOS portion of 5.4). Verified 2026-09-11: the "Superseded — moved to `06-remove-installer-packaging-macos`" notes are present.
+
+  **Archived 2026-09-11.** The two gaps still open under 2.2 — file transcription through the GUI, and Gatekeeper behavior on a genuinely downloaded (quarantined) copy — carry forward to the planned `03-add-release-pipeline-macos`. There is no macOS hardware to test on, so they ship as an explicit "untested on macOS, testers welcome" README note instead of a verification task.
 
 ## 2. macOS verification (moved from `remove-installer-packaging`) — PARKED, blocked on hardware/CI
 

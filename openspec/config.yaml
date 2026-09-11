@@ -4,14 +4,34 @@ schema: spec-driven
 # This is shown to AI when creating artifacts.
 # Add your tech stack, conventions, style guides, domain knowledge, etc.
 context: |
-  Offline audio and video transcription tool built with Python.
-  Uses faster-whisper for transcription, sounddevice and pyaudiowpatch
-  (WASAPI loopback) for live audio capture, numpy/scipy for audio
-  processing, and ffmpeg for audio extraction.
-  Cross-platform: Windows and Linux.
-  Supports file transcription and real-time live streaming, saving to
-  txt/srt/vtt. Development is managed through the OpenSpec spec-driven
-  workflow; every change is tracked as a change proposal.
+  Offline audio and video transcription tool, open source, with two
+  front ends sharing one Python engine:
+  - CLI (transcriber.py): file transcription and real-time live capture,
+    saving to txt/srt/vtt.
+  - Desktop GUI: a Tauri v2 shell (Rust, src-tauri/; plain HTML/JS
+    frontend, src/) that spawns the CLI frozen with PyInstaller as a
+    "sidecar" binary, with the faster-whisper `base` model bundled for a
+    fully offline first run.
+  Engine: faster-whisper (CTranslate2) for transcription; audio and video
+  are decoded by PyAV, which is bundled with faster-whisper; there is NO
+  external ffmpeg dependency. numpy/scipy for audio processing.
+  Live capture per platform (system audio + microphone):
+  - Windows: pyaudiowpatch (WASAPI loopback) + sounddevice.
+  - Linux: PipeWire/PulseAudio monitor sources + sounddevice.
+  - macOS 14.4+: Core Audio Process Tap via a native Swift helper
+    (macos/audiotap-helper) + sounddevice. GUI live capture is still
+    disabled on macOS; the CLI supports it.
+  Platforms: Windows, Linux, macOS (macOS artifacts can't be verified on
+  hardware; no Mac is available). Per-platform dependencies live in
+  requirements.txt (Windows), requirements-linux.txt, and
+  requirements-macos.txt.
+  Builds: development happens on Linux/WSL. Windows cross-compiles with
+  the x86_64-pc-windows-gnu (mingw-w64) target; the sidecar freeze runs
+  natively per OS, because PyInstaller can't cross-compile.
+  build_portable.py assembles the distributable artifacts. The maintainer
+  prefers open-source tooling unless there is a real gap.
+  Development is managed through the OpenSpec spec-driven workflow;
+  every change is tracked as a change proposal.
 
 # Per-artifact rules (optional)
 # Add custom rules for specific artifacts.
