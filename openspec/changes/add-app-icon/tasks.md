@@ -8,7 +8,7 @@
 
 - [x] 2.1 Run `cargo tauri icon resources/transcriber-icon-1024.png` to replace `src-tauri/icons/`, then delete `android/`, `ios/`, `Square*Logo.png` and `StoreLogo.png` (design.md Decision 2). Verify that `file src-tauri/icons/*` lists exactly `32x32.png`, `64x64.png`, `128x128.png`, `128x128@2x.png` (256), `icon.png` (512), `icon.ico`, and `icon.icns`, and that `identify src-tauri/icons/icon.ico` reports 16 through 256 px.
 - [x] 2.2 Set `bundle.icon` in `src-tauri/tauri.conf.json` to design.md Decision 2's list. Verify with `cargo check` in `src-tauri/`, which runs Tauri's build script, validates every listed icon path, and embeds the icons.
-- [ ] 2.3 Linux end to end, with the next release tag run's packages:
+- [x] 2.3 Linux end to end, with the next release tag run's packages:
   - `rpm -qpl` on the `.rpm` lists `transcriber-gui.png` under the `hicolor` 32x32, 128x128, 256x256 and 512x512 directories.
   - On the Fedora/KDE machine, the installed app shows the icon in the application launcher, the window, and the taskbar.
 
@@ -23,3 +23,5 @@
 - [x] 4.1 Add the centered header image (design.md Decision 4) and a short "Updating the icon" note under "Building it yourself", with the export command and the `cargo tauri icon` plus cleanup step. Verify that the image path resolves (`test -f resources/transcriber-icon-1024.png`), and that it renders at the top of the README on GitHub after the next push.
 
   **Verified 2026-09-11 after pushing `dev` (`94e0404`):** `raw.githubusercontent.com/saunite/transcriber/dev/resources/transcriber-icon-1024.png` returns HTTP 200, a 1024x1024 PNG with 1,096 colours (the real icon, not the blank first export). The README's first line on `dev` is the centered header `<img>` that uses it, and the relative path resolves on GitHub.
+
+  **Verified 2026-09-11 with the CI-built `.rpm`** (run 34656473927, tag `v0.1.0` on `aed5e23`). Package side, checked directly: it installs `hicolor` icons at 32x32, 128x128, 256x256@2 and 512x512 (Tauri names the 2x folder `256x256@2`), and the packaged 512 px icon has 1,280 colours and the 32 px one 189 — the real mark, not the blank first export. Installed side, confirmed by the user: "All seems to be working and the icon is there." So the installed app does match its `.desktop` entry under Wayland, unlike a `cargo tauri dev` run.
