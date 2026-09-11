@@ -72,7 +72,9 @@ Then the rest of the Linux build. `NO_STRIP=1` is not optional on current distro
 NO_STRIP=1 cargo tauri build   # from src-tauri/
 python fetch_sidecar_resources.py   # stage the model, if not already staged
 python build_portable.py
-# Linux artifact: dist/portable/*.AppImage
+# Linux artifacts: dist/portable/*.AppImage (GUI)
+#                  dist/portable/transcriber-cli_<version>_linux-x64.tar.gz (CLI)
+# Add --bundles appimage,deb,rpm to the build above for the .deb/.rpm packages.
 ```
 
 #### Windows build (from WSL)
@@ -107,19 +109,35 @@ Then the rest of the Windows build, same as any other target:
 cargo tauri build --target x86_64-pc-windows-gnu   # from src-tauri/
 python fetch_sidecar_resources.py                  # stage the model, if not already staged
 python build_portable.py --target x86_64-pc-windows-gnu
-# Windows artifact: dist/portable/Transcriber.zip
+# Windows artifacts: dist/portable/Transcriber_<version>_windows-x64.zip (GUI)
+#                    dist/portable/transcriber-cli_<version>_windows-x64.zip (CLI)
 ```
 
 The bundled artifact ships the `base` Whisper model (~145MB) for a fully offline first run. No ffmpeg bundling is needed — the sidecar decodes audio and video via PyAV (bundled with faster-whisper), not an external ffmpeg binary; see `openspec/changes/drop-ffmpeg-dependency/`.
 
 The GUI sidecar always passes an explicit `--model-path` pointing at its bundled model directory (resolved relative to the running app, so it works the same whether run from the extracted Windows folder, the AppImage, or the `.app`), instead of relying on faster-whisper's network/cache-based model lookup. The CLI gained the same `--model-path <dir>` flag for anyone running from a bundled build directly.
 
-#### Before publishing a release
+#### Releasing
 
-The artifacts bundle GPL-licensed libraries (FFmpeg, x264, x265, via PyAV), so publishing one carries a source-availability obligation. `build_portable.py` already copies `LICENSE`, `THIRD-PARTY-LICENSES.txt`, and `SOURCE-PROVENANCE.txt` into the artifact, but two things still need a human:
+Releases are built by GitHub Actions (`.github/workflows/release.yml`) on fresh Linux, Windows, and macOS runners, not on a developer machine:
 
-1. **Re-check that every source URL in `SOURCE-PROVENANCE.txt` still resolves.** Those links *are* the compliance mechanism (GPLv3 §6(d)) — a dead link is an unmet obligation, and the responsibility stays with this project even though the source is hosted upstream. The x265 archive on Bitbucket is the one most likely to disappear; if it does, correct the link or rehost the archive.
-2. **If the pinned PyAV version changed since the last release**, re-derive everything in `SOURCE-PROVENANCE.txt`: read the new PyAV `scripts/ffmpeg-*.json` for its `pyav-ffmpeg` tag, then that tag's build recipe for the new component versions.
+1. Set `version` in both `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml` to the new value. Run `cargo update -p transcriber-gui` in `src-tauri/` so `Cargo.lock` follows, and commit all three files.
+2. Merge to `main`, then tag that commit and push the tag:
+
+   ```bash
+   git tag v0.2.0
+   git push origin v0.2.0
+   ```
+
+3. The workflow first checks that the tag matches both version fields and that every source link in `SOURCE-PROVENANCE.txt` still resolves. Then it builds every platform and uploads the results to a **draft** release. Nothing is public yet.
+4. Download and try at least one artifact from the draft, then click **Publish** on the release page. If something is wrong, delete it with `gh release delete v0.2.0 --cleanup-tag`, fix it, and tag again.
+
+To build everything without releasing, for example to check that a branch still builds on every platform, start the workflow from the Actions tab (**Run workflow**). The outputs are downloadable from that run. GitHub only shows the button once the workflow file is on the default branch.
+
+**Licensing: one step still needs a human.** The artifacts bundle GPL-licensed libraries (FFmpeg, x264, x265, via PyAV), so publishing one carries a source-availability obligation. `build_portable.py` and the Tauri bundle config copy `LICENSE`, `THIRD-PARTY-LICENSES.txt`, and `SOURCE-PROVENANCE.txt` into every artifact, and the workflow attaches `SOURCE-PROVENANCE.txt` to the release.
+
+- The links in that file *are* the compliance mechanism (GPLv3 §6(d)); a dead link is an unmet obligation. The workflow's link check fails the release when one stops resolving. The x265 archive on Bitbucket is the most likely to disappear; if the check flags it, correct the link or rehost the archive.
+- **If the pinned PyAV version changed since the last release**, re-derive everything in `SOURCE-PROVENANCE.txt` before tagging: read the new PyAV `scripts/ffmpeg-*.json` for its `pyav-ffmpeg` tag, then that tag's build recipe for the new component versions.
 
 ## Requirements
 

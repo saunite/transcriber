@@ -51,6 +51,16 @@ def _make_signal_handler(verbose: bool):
     return signal_handler
 
 
+def _bundled_model_path(model: str) -> Optional[str]:
+    """The model shipped next to the standalone (frozen) CLI in a release's
+    CLI archive, if this run can use it (openspec/changes/01-add-release-pipeline).
+    Only `base` is bundled; other sizes keep resolving by name."""
+    if model != "base" or not getattr(sys, "frozen", False):
+        return None
+    model_dir = Path(sys.executable).parent / "model"
+    return str(model_dir) if (model_dir / "model.bin").exists() else None
+
+
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -243,6 +253,8 @@ Examples:
     )
 
     args = parser.parse_args()
+    if not args.model_path:
+        args.model_path = _bundled_model_path(args.model)
 
     # Handle utility options
     if args.list_devices:

@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """
-Assemble the single no-install artifact for the current platform from the
-raw `cargo tauri build` output (openspec/changes/remove-installer-packaging).
-Replaces build_portable.ps1, which was Windows-only and so could not
-produce the Linux or macOS artifact.
+Assemble the no-install artifacts for one platform from the raw
+`cargo tauri build` output (openspec/changes/remove-installer-packaging),
+plus that platform's standalone CLI archive
+(openspec/changes/01-add-release-pipeline). Replaces build_portable.ps1,
+which was Windows-only and so could not produce the Linux or macOS
+artifact.
 
-Per-platform, per design.md Decision 3:
+GUI artifact, per platform (remove-installer-packaging design.md Decision 3):
   - Linux:   locate the AppImage from bundle/appimage/ -- no assembly needed.
   - macOS:   zip Transcriber.app from bundle/macos/ (uses `ditto` when
              available, to preserve resource forks/signing metadata).
@@ -15,10 +17,14 @@ Per-platform, per design.md Decision 3:
              layout resolve_model_dir() in sidecar.rs depends on -- then
              zip the folder.
 
+CLI archive, every platform: the frozen sidecar from dist/<system>/ renamed
+to `transcriber`, the bundled model in model/ (where the frozen CLI looks
+for it), the platform's launcher scripts, and the notice files. Zip on
+Windows, tar.gz elsewhere (tarfile keeps the executable bit).
+
 Pass --target when the build used `cargo tauri build --target <triple>`
-(explicit on all three CI legs, and on the local Windows cross-build) so
-the release dir is found at target/<triple>/release/ instead of
-target/release/.
+(explicit in CI, and on the local Windows cross-build) so the release dir
+is found at target/<triple>/release/ instead of target/release/.
 
 Usage: python build_portable.py [--target x86_64-pc-windows-gnu]
 """
@@ -30,10 +36,12 @@ import platform
 import shutil
 import subprocess
 import sys
+import tarfile
 import zipfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent
+MODEL_DIR = REPO_ROOT / "src-tauri" / "resources" / "model"
 
 # Licence notices must reach whoever receives the artifact, not just whoever
 # clones the repo -- the artifacts bundle GPL binaries (FFmpeg/x264/x265 via
@@ -42,6 +50,22 @@ REPO_ROOT = Path(__file__).resolve().parent
 # (tauri.conf.json) instead of being placed here.
 NOTICE_FILES = ("LICENSE", "THIRD-PARTY-LICENSES.txt", "SOURCE-PROVENANCE.txt")
 
+# ponytail: one architecture per OS, matching what the release pipeline builds
+# (macOS is arm64-only by decision). Add entries if another arch ever ships.
+PLATFORM_LABEL = {"windows": "windows-x64", "linux": "linux-x64", "darwin": "macos-arm64"}
+
+LAUNCHERS = {
+    "windows": ("win-start-transcription.bat", "transcribe_file.bat"),
+    "linux": ("linux-start-transcription.sh",),
+    "darwin": ("mac-start-transcription.sh",),
+}
+
+
+def _version() -> str:
+    # tauri.conf.json's version is what Tauri stamps into the installers, so
+    # every artifact name derives from the same value.
+    return json.loads((REPO_ROOT / "src-tauri" / "tauri.conf.json").read_text())["version"]
+
 
 def _copy_notices(dest_dir: Path) -> None:
     for name in NOTICE_FILES:
@@ -49,6 +73,14 @@ def _copy_notices(dest_dir: Path) -> None:
         if not src.exists():
             raise SystemExit(f"Missing {name} at {REPO_ROOT} -- it must ship inside the artifact.")
         shutil.copy2(src, dest_dir / name)
+
+
+def _copy_model(dest_dir: Path) -> None:
+    # The model's LICENSE.txt is tracked in git next to the weights and comes
+    # along; .cache/ is only huggingface download bookkeeping.
+    if not (MODEL_DIR / "model.bin").exists():
+        raise SystemExit(f"Missing model.bin under {MODEL_DIR} -- run fetch_sidecar_resources.py first.")
+    shutil.copytree(MODEL_DIR, dest_dir, ignore=shutil.ignore_patterns(".cache"))
 
 
 def _cargo_target_dir() -> Path | None:
@@ -85,6 +117,13 @@ def _zip_dir(src_dir: Path, zip_path: Path) -> None:
                 zf.write(path, arcname=path.relative_to(src_dir.parent))
 
 
+def _fresh_dir(path: Path) -> Path:
+    if path.exists():
+        shutil.rmtree(path)
+    path.mkdir(parents=True)
+    return path
+
+
 def build_windows(target: str | None) -> Path:
     release_dir = _release_dir(target)
     required = ["transcriber-gui.exe", "transcriber-sidecar.exe"]
@@ -99,27 +138,17 @@ def build_windows(target: str | None) -> Path:
     # Decision 2, point 2. Copy it when present, don't require it.
     optional = ["WebView2Loader.dll"]
 
-    model_dir = REPO_ROOT / "src-tauri" / "resources" / "model"
-    if not (model_dir / "model.bin").exists():
-        raise SystemExit(f"Missing model.bin under {model_dir} -- run fetch_sidecar_resources.py first.")
-
-    out_dir = REPO_ROOT / "dist" / "portable" / "Transcriber"
-    if out_dir.exists():
-        shutil.rmtree(out_dir)
-    out_dir.mkdir(parents=True)
-
+    out_dir = _fresh_dir(REPO_ROOT / "dist" / "portable" / "Transcriber")
     for name in required:
         shutil.copy2(release_dir / name, out_dir / name)
     for name in optional:
         if (release_dir / name).exists():
             shutil.copy2(release_dir / name, out_dir / name)
 
-    out_model_dir = out_dir / "resources" / "model"
-    shutil.copytree(model_dir, out_model_dir)
-
+    _copy_model(out_dir / "resources" / "model")
     _copy_notices(out_dir)
 
-    zip_path = out_dir.with_suffix(".zip")
+    zip_path = out_dir.parent / f"Transcriber_{_version()}_{PLATFORM_LABEL['windows']}.zip"
     _zip_dir(out_dir, zip_path)
     return zip_path
 
@@ -150,18 +179,48 @@ def build_macos(target: str | None) -> Path:
 
     out_dir = REPO_ROOT / "dist" / "portable"
     out_dir.mkdir(parents=True, exist_ok=True)
-    zip_path = out_dir / f"{app_path.stem}.zip"
+    zip_path = out_dir / f"{app_path.stem}_{_version()}_{PLATFORM_LABEL['darwin']}.zip"
     if zip_path.exists():
         zip_path.unlink()
 
     ditto = shutil.which("ditto")
     if ditto:
-        import subprocess
-
         subprocess.run([ditto, "-c", "-k", "--sequesterRsrc", str(app_path), str(zip_path)], check=True)
     else:
         _zip_dir(app_path, zip_path)
     return zip_path
+
+
+def build_cli(system: str) -> Path:
+    exe = ".exe" if system == "windows" else ""
+    sidecar = REPO_ROOT / "dist" / system / f"transcriber-sidecar{exe}"
+    if not sidecar.exists():
+        raise SystemExit(f"Missing {sidecar} -- run build_sidecar.py first.")
+
+    name = f"transcriber-cli_{_version()}_{PLATFORM_LABEL[system]}"
+    out_dir = _fresh_dir(REPO_ROOT / "dist" / "portable" / name)
+    shutil.copy2(sidecar, out_dir / f"transcriber{exe}")
+    _copy_model(out_dir / "model")
+    for launcher in LAUNCHERS[system]:
+        shutil.copy2(REPO_ROOT / launcher, out_dir / launcher)
+    _copy_notices(out_dir)
+
+    if system == "windows":
+        archive = out_dir.with_suffix(".zip")
+        _zip_dir(out_dir, archive)
+        return archive
+
+    # Don't trust the checkout's modes (a synced or Windows-side checkout can
+    # drop them): the binary and launchers must extract executable.
+    for path in [out_dir / "transcriber", *(out_dir / launcher for launcher in LAUNCHERS[system])]:
+        path.chmod(path.stat().st_mode | 0o111)
+    archive = out_dir.parent / f"{name}.tar.gz"
+    with tarfile.open(archive, "w:gz") as tf:
+        tf.add(out_dir, arcname=name)
+    return archive
+
+
+BUILDERS = {"windows": build_windows, "linux": build_linux, "darwin": build_macos}
 
 
 def main() -> int:
@@ -177,26 +236,14 @@ def main() -> int:
     # -- e.g. `--target x86_64-pc-windows-gnu` run under WSL's own (Linux-reporting)
     # Python must still take the Windows branch. platform.system() reflects the
     # running interpreter, not the target, so it's only a correct fallback when
-    # no --target was given (every existing caller already passes one explicitly).
+    # no --target was given.
     target = args.target or ""
-    if "windows" in target:
-        artifact = build_windows(args.target)
-    elif "linux" in target:
-        artifact = build_linux(args.target)
-    elif "darwin" in target:
-        artifact = build_macos(args.target)
-    else:
-        system = platform.system()
-        if system == "Windows":
-            artifact = build_windows(args.target)
-        elif system == "Linux":
-            artifact = build_linux(args.target)
-        elif system == "Darwin":
-            artifact = build_macos(args.target)
-        else:
-            raise SystemExit(f"Unsupported platform: {system}")
+    system = next((s for s in BUILDERS if s in target), None) or platform.system().lower()
+    if system not in BUILDERS:
+        raise SystemExit(f"Unsupported platform: {system}")
 
-    print(f"Portable artifact assembled at: {artifact}")
+    print(f"Portable artifact assembled at: {BUILDERS[system](args.target)}")
+    print(f"CLI archive assembled at: {build_cli(system)}")
     return 0
 
 

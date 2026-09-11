@@ -1,0 +1,141 @@
+# Release pipeline (openspec/changes/01-add-release-pipeline).
+#
+#   push tag vX.Y.Z  -> preflight (version + provenance checks, draft release)
+#                       -> platform legs build, smoke-test, package, upload to the draft
+#   workflow_dispatch -> same legs, no release; outputs are run artifacts
+#
+# The release stays a draft until a maintainer publishes it by hand.
+# ponytail: no Rust/pip/model caching -- releases are rare and a cold leg costs
+# minutes, not money. Add Swatinem/rust-cache + actions/cache if waiting hurts.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # Same minor as the `tauri` crate in src-tauri/Cargo.lock.
+  TAURI_CLI_VERSION: "2.11.4"
+  PYTHON_VERSION: "3.14"
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Tag matches app version
+        if: github.ref_type == 'tag'
+        run: |
+          want="${GITHUB_REF_NAME#v}"
+          conf=$(jq -r .version src-tauri/tauri.conf.json)
+          cargo=$(grep -m1 '^version' src-tauri/Cargo.toml | cut -d'"' -f2)
+          if [ "$want" != "$conf" ] || [ "$want" != "$cargo" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME (version $want) does not match tauri.conf.json ($conf) / Cargo.toml ($cargo)"
+            exit 1
+          fi
+
+      # Automates README "Releasing" licensing check: these links are the GPL
+      # source-availability mechanism, so a dead one blocks the release.
+      # Templated URLs ({platform}) are skipped; their tag-tree URL is checked.
+      - name: Source-provenance links resolve
+        run: |
+          fail=0
+          for url in $(grep -oE 'https?://[^ )>"]+' SOURCE-PROVENANCE.txt | grep -v '{' | sort -u); do
+            if ! curl -fsSL --retry 2 -r 0-0 -o /dev/null "$url"; then
+              echo "::error::Source location does not resolve: $url"
+              fail=1
+            fi
+          done
+          exit $fail
+
+      - name: Create draft release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "$GITHUB_REF_NAME" --generate-notes SOURCE-PROVENANCE.txt
+
+  linux:
+    needs: preflight
+    # glibc 2.35 baseline: covers Debian 12, openSUSE Leap 15.6+, current
+    # Fedora/Tumbleweed (design.md Decision 2).
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: System packages
+        # libportaudio2: PyInstaller's sounddevice hook bundles PortAudio only
+        # if it can find it at freeze time. libfuse2: runs linuxdeploy's AppImage.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libssl-dev \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf libportaudio2 libfuse2
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Freeze sidecar and stage resources
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -r requirements-linux.txt pyinstaller
+          .venv/bin/python build_sidecar.py
+          mkdir -p src-tauri/binaries
+          cp dist/linux/transcriber-sidecar src-tauri/binaries/transcriber-sidecar-x86_64-unknown-linux-gnu
+          .venv/bin/python fetch_sidecar_resources.py
+
+      - name: Smoke-test the frozen sidecar
+        run: bash .github/smoke-test.sh dist/linux/transcriber-sidecar
+
+      - name: Build GUI packages
+        working-directory: src-tauri
+        # NO_STRIP: linuxdeploy's bundled strip can't parse .relr.dyn sections
+        # (README Linux build notes); harmless where it isn't needed.
+        run: NO_STRIP=1 npx --yes "@tauri-apps/cli@${TAURI_CLI_VERSION}" build --bundles appimage,deb,rpm
+
+      - name: Assemble portable + CLI artifacts
+        run: |
+          .venv/bin/python build_portable.py
+          mkdir -p out
+          cp dist/portable/*.AppImage dist/portable/transcriber-cli_*.tar.gz \
+             src-tauri/target/release/bundle/deb/*.deb \
+             src-tauri/target/release/bundle/rpm/*.rpm out/
+          ls -la out
+
+      # Only that the package manager resolves the dependencies and installs;
+      # GUI launch is checked by hand (design.md Decision 8).
+      - name: Install checks on target distros
+        run: |
+          set -e
+          for img in debian:stable ubuntu:24.04; do
+            echo "::group::$img"
+            docker run --rm -v "$PWD/out:/p" -e DEBIAN_FRONTEND=noninteractive "$img" \
+              sh -c 'apt-get update -qq && apt-get install -y -qq /p/*.deb'
+            echo "::endgroup::"
+          done
+          echo "::group::fedora:latest"
+          docker run --rm -v "$PWD/out:/p" fedora:latest dnf install -y /p/*.rpm
+          echo "::endgroup::"
+          for img in opensuse/leap:latest opensuse/tumbleweed; do
+            echo "::group::$img"
+            docker run --rm -v "$PWD/out:/p" "$img" zypper --non-interactive install --allow-unsigned-rpm /p/*.rpm
+            echo "::endgroup::"
+          done
+
+      - name: Upload to draft release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" out/* --clobber
+
+      - name: Upload run artifacts
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: out/*
