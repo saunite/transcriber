@@ -466,7 +466,7 @@ defaultOutputPath().then((path) => {
   if (!els.outputPathInput.value) els.outputPathInput.value = path;
 });
 
-// Re-stamped on every session start (not just page load), so recording
+// Re-stamped on every session start (not just page load), so transcribing
 // twice without touching the field -- or reusing a browsed path -- can
 // never silently truncate the previous run's transcript. Strips a prior
 // auto-stamp first so repeated starts append one fresh stamp, not several.
@@ -570,11 +570,11 @@ let sessionRunning = false;
 // the metaphor. The chart world lives in the visual system, not in vocabulary
 // the user has to decode to press a button.
 const STATE_LABEL = {
-  idle: "Not recording",
+  idle: "Not transcribing",
   loaded: "Starting — waiting for the engine",
   listening: "Listening — no speech yet",
-  advancing: "Recording",
-  penlift: "Recording stalled — no output",
+  advancing: "Transcribing",
+  penlift: "Transcribing stalled — no output",
   stopping: "Stopping",
 };
 
@@ -639,7 +639,7 @@ function markLineArrived() {
   // A chunk arriving while a session is supposed to be running is proof it is
   // alive, and outranks a stale display state. Gated on sessionRunning so
   // that buffered lines arriving *after* a deliberate stop cannot resurrect
-  // the status to "Recording" -- the resync exists to correct display drift,
+  // the status to "Transcribing" -- the resync exists to correct display drift,
   // never to contradict the user's own stop.
   if (sessionRunning && liveState !== "advancing" && liveState !== "stopping") {
     if (sessionStartedAt === null) sessionStartedAt = Date.now();
@@ -671,7 +671,7 @@ async function startLiveSession() {
       audioDevice: els.audioDeviceInput.value.trim() !== "" ? Number(els.audioDeviceInput.value) : null,
     });
     sessionRunning = true;
-    appendLogMarker("recording started");
+    appendLogMarker("transcription started");
     setLiveState("loaded");
   } catch (err) {
     sessionRunning = false;

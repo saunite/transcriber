@@ -77,7 +77,7 @@ The system SHALL provide `--coreaudio-tap` to select native macOS system-audio l
 - **THEN** the system prints a clear error naming the correct flag for the current platform and exits without attempting capture
 
 ### Requirement: Select Linux dual-source live capture mode
-The system SHALL route live capture through the auto-detected monitor/loopback source with optional concurrent microphone capture via `--include-mic` and `--mic-device` when neither `--wasapi` nor `--coreaudio-tap` is set (the Linux default live-capture path).
+The system SHALL route live capture through the auto-detected monitor/loopback source with optional concurrent microphone capture via `--include-mic` and `--mic-device` when neither `--wasapi` nor `--coreaudio-tap` is set (the Linux default live-capture path). A microphone device that cannot open at the transcription sample rate (16 kHz) SHALL be opened at its own default sample rate and resampled to 16 kHz rather than failing the session.
 
 #### Scenario: Default live capture with microphone
 - **WHEN** a user runs `--live --include-mic --mic-device N` with no `--wasapi` or `--coreaudio-tap`
@@ -86,6 +86,10 @@ The system SHALL route live capture through the auto-detected monitor/loopback s
 #### Scenario: Default live capture without microphone
 - **WHEN** a user runs `--live` without `--include-mic`, `--wasapi`, or `--coreaudio-tap`
 - **THEN** the system captures only the monitor source, unchanged from today's behavior
+
+#### Scenario: Microphone that refuses 16 kHz
+- **WHEN** the selected or auto-detected microphone refuses to open at 16 kHz (for example a raw ALSA `hw:` device that only accepts 44.1 or 48 kHz)
+- **THEN** the system opens it at the device's default sample rate, resamples its audio to 16 kHz, and transcribes `[MIC]` segments as usual, instead of exiting with an "Invalid sample rate" error
 
 ### Requirement: Accept an explicit local model path
 The system SHALL provide `--model-path <dir>` to load the whisper model from a local directory directly, bypassing the network/cache-based model name lookup, for both file and live transcription modes.
@@ -127,3 +131,37 @@ During live capture, the system SHALL print a compact default output — one lin
 #### Scenario: File transcription is unaffected
 - **WHEN** a user runs `--file` with or without `--verbose`
 - **THEN** file-mode output is unchanged by this flag
+
+### Requirement: File transcription fails on input with no decodable audio
+File transcription SHALL fail when no audio can be decoded from the input file, meaning the decoder yields effectively zero duration (under 0.1 seconds), as happens with a non-media file given a media extension. On such input the system SHALL exit non-zero, report that the file has no decodable audio, and SHALL NOT leave a transcript file behind. Input that decodes to real audio with no speech in it is not a failure.
+
+#### Scenario: Non-media file with a media extension
+- **WHEN** a user transcribes a binary file renamed to `.mp3` and the decoder yields effectively zero duration
+- **THEN** the command exits non-zero with a message that the file has no decodable audio, and no transcript file is created
+
+#### Scenario: Silent recording
+- **WHEN** a user transcribes a real audio file several seconds long that contains no speech
+- **THEN** the command succeeds as before, exiting 0 with an empty transcript
+
+### Requirement: Live capture saves a transcript by default
+When `--live` is run without `--output`, the system SHALL save the transcript to a new file named `transcript_<YYYYMMDD_HHMMSS>.txt` in the current directory, stamped with the time the session starts, and SHALL name that file in its first output line. `--output <path>` SHALL save to the given path instead. `--no-output` SHALL print the transcript without saving it, and combining `--no-output` with `--output` SHALL be rejected with an error.
+
+#### Scenario: Bare live capture
+- **WHEN** a user runs `--live` with neither `--output` nor `--no-output`
+- **THEN** the transcript is written to `transcript_<YYYYMMDD_HHMMSS>.txt` in the current directory, and the first output line names that file
+
+#### Scenario: Explicit output path
+- **WHEN** a user runs `--live --output meeting.txt`
+- **THEN** the transcript is written to `meeting.txt`, as before
+
+#### Scenario: Print-only session
+- **WHEN** a user runs `--live --no-output`
+- **THEN** the transcript is printed only, no file is created, and the output states that no transcript file is being saved
+
+#### Scenario: Conflicting flags
+- **WHEN** a user runs `--live --output meeting.txt --no-output`
+- **THEN** the command exits with an error explaining that the two flags cannot be combined, before any capture starts
+
+#### Scenario: Consecutive sessions
+- **WHEN** a user runs two bare `--live` sessions one after another
+- **THEN** each session writes its own, differently stamped file, and neither overwrites the other

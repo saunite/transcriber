@@ -59,14 +59,18 @@ The system SHALL display live transcript lines as they are produced, tagged by s
 - **THEN** the system surfaces it in a debug/log view rather than discarding it or crashing the parser
 
 ### Requirement: Device selection UI
-The system SHALL let the user pick an audio input device from a list populated via the sidecar's machine-readable device listing, rather than requiring manual device index entry.
+The system SHALL let the user pick an audio input device from a list populated via the sidecar's machine-readable device listing, rather than requiring manual device index entry. The list's first entry, selected by default, SHALL be the system's default input device, which leaves the choice of device to the engine's auto-detection.
 
 #### Scenario: Populate device picker
 - **WHEN** the user opens device settings
 - **THEN** the system invokes the sidecar's JSON device listing and populates a selectable list of devices with human-readable names
 
+#### Scenario: Default microphone is the system default
+- **WHEN** a user starts a live session with the microphone included and without choosing a microphone device
+- **THEN** no device is passed to the sidecar, and the engine uses the system's default input device, exactly as the command line does without `--mic-device`
+
 ### Requirement: File transcription via drag-and-drop
-The system SHALL accept a dropped (or browsed) video/audio file and transcribe it using the sidecar, producing output in the user's selected format (txt/srt/vtt).
+The system SHALL accept dropped (or browsed) video/audio files and transcribe them using the sidecar, producing output in the user's selected format (txt/srt/vtt). Files SHALL be transcribed one at a time: files added while a transcription is running SHALL join a visible queue instead of starting concurrently, and the system SHALL show which file is being transcribed and the state of every queued file.
 
 #### Scenario: Drop a video file
 - **WHEN** a user drags a supported video file onto the app
@@ -74,7 +78,23 @@ The system SHALL accept a dropped (or browsed) video/audio file and transcribe i
 
 #### Scenario: Drop an unsupported file
 - **WHEN** a user drags a file with an unrecognized extension onto the app
-- **THEN** the system shows an error without attempting to spawn the sidecar
+- **THEN** the system shows an error without attempting to spawn the sidecar, and the file does not join the queue
+
+#### Scenario: Drop a file while another is transcribing
+- **WHEN** a user drops a supported file while a file transcription is running
+- **THEN** the file joins the queue as waiting, no second transcription starts, and it is transcribed after the files ahead of it finish
+
+#### Scenario: Add several files at once
+- **WHEN** a user drops several supported files at once, or selects several in the file dialog
+- **THEN** all of them join the queue in order and are transcribed one after another
+
+#### Scenario: Progress is visible
+- **WHEN** a file transcription is running
+- **THEN** the File panel names the file being transcribed, and every queued file shows whether it is waiting, transcribing, done, or failed
+
+#### Scenario: A queued file fails
+- **WHEN** a file's transcription fails
+- **THEN** that file is marked failed and the next waiting file starts
 
 ### Requirement: Fully offline first run
 The application SHALL be able to complete a live capture or file transcription with no network access, using the model bundled with the application, and SHALL require no separately installed media tool for either flow.
@@ -155,11 +175,11 @@ The application SHALL open its own window and nothing else when launched by a us
 - **THEN** console output remains available, so the release-build console suppression does not hinder development
 
 ### Requirement: Live session transcript is saved to a file
-The system SHALL save every live session's transcript to a file, defaulting to an auto-generated, timestamped filename when the user has not specified one, and SHALL let the user choose a different file location and name via a native save dialog before starting a session. The filename actually used SHALL be stamped with the current time at the moment each session starts — not fixed once when the app opens or once when a path is chosen — so starting another session without editing the output field never overwrites a previous session's transcript.
+The system SHALL save every live session's transcript to a file, defaulting to an auto-generated, timestamped file in the user's Documents folder (the home folder if the system reports no Documents folder) when the user has not specified one, and SHALL show the full path of that file in the output field. It SHALL let the user choose a different file location and name via a native save dialog before starting a session, and SHALL save a bare filename typed into the output field in the same default folder. The filename actually used SHALL be stamped with the current local time at the moment each session starts — not fixed once when the app opens or once when a path is chosen — so starting another session without editing the output field never overwrites a previous session's transcript.
 
 #### Scenario: Default output filename
 - **WHEN** a user starts a live session without changing the output file field
-- **THEN** the transcript is saved using an auto-generated timestamped filename, and the file exists after the session ends
+- **THEN** the transcript is saved in the Documents folder using an auto-generated timestamped filename, the output field shows that file's full path, and the file exists after the session ends
 
 #### Scenario: Starting a second session without editing the output field
 - **WHEN** a user stops a live session and starts a new one without editing the output file field
@@ -168,6 +188,14 @@ The system SHALL save every live session's transcript to a file, defaulting to a
 #### Scenario: User picks a custom output location
 - **WHEN** a user selects "Browse…" and chooses a file location and name before starting a live session
 - **THEN** the transcript is saved to that location, with the current timestamp stamped into the filename so reusing the same browsed location across two starts still doesn't collide
+
+#### Scenario: User types a bare filename
+- **WHEN** a user types a filename without a folder (for example `standup.txt`) into the output field and starts a session
+- **THEN** the transcript is saved in the Documents folder under that name, with the session's timestamp stamped in
+
+#### Scenario: Timestamp uses local time
+- **WHEN** a session starts at 15:43:34 local time
+- **THEN** the stamped filename contains `_154334`, whatever the system's UTC offset
 
 ### Requirement: Live capture defaults to dual-source (system + microphone) capture
 The system SHALL default a new live session to capturing both system audio and the microphone, with a 10-second transcription chunk duration and wall-clock timestamps, while still letting the user disable microphone capture before starting.
@@ -271,3 +299,21 @@ The system SHALL let the user choose the transcription language from a dropdown 
 #### Scenario: User selects a specific language
 - **WHEN** a user picks a specific language from the dropdown before starting a live session or transcribing a file
 - **THEN** the sidecar is invoked with `--language <code>` for that language
+
+### Requirement: Live session uses the running platform's capture mode
+The system SHALL start a live session with the capture mode of the platform it runs on: WASAPI loopback on Windows, the Core Audio process tap on macOS, and the default system-audio-plus-microphone capture on Linux. It SHALL NOT pass another platform's capture option to the sidecar.
+
+#### Scenario: Live session on Linux
+- **WHEN** a user on Linux starts a live session from the GUI
+- **THEN** the session starts capturing system audio (and the microphone, when included) and transcribes it, with no platform-mismatch error
+
+#### Scenario: Live session on Windows
+- **WHEN** a user on Windows starts a live session from the GUI
+- **THEN** the sidecar is started in WASAPI loopback mode, as before
+
+### Requirement: File transcripts are saved next to the recording
+The system SHALL save the transcript of a dropped or chosen file in the same folder as that file, named `<recording name>_transcript_<timestamp>.<format>`, independent of the folder the application was started from.
+
+#### Scenario: Transcribing a recording from another folder
+- **WHEN** a user transcribes `~/Downloads/talk.mp4` as txt
+- **THEN** the transcript is saved as `~/Downloads/talk_transcript_<timestamp>.txt`, and no transcript is written to the application's working directory

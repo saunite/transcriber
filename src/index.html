@@ -31,7 +31,7 @@
 
       <div class="titleblock-fields">
         <label class="tb-field tb-field-wide">
-          <span class="tb-label">Record to</span>
+          <span class="tb-label">Save to</span>
           <span class="tb-input-row">
             <input id="output-path-input" type="text" spellcheck="false" />
             <button id="output-browse-btn" class="btn-quiet" type="button">Browse…</button>
@@ -68,14 +68,14 @@
           <div class="transport">
             <button id="start-live-btn" class="btn-record" type="button">
               <span class="btn-record-pen" aria-hidden="true"></span>
-              <span>Start recording</span>
+              <span>Start transcribing</span>
             </button>
-            <button id="stop-btn" class="btn-quiet btn-stop" type="button" hidden>Stop recording</button>
+            <button id="stop-btn" class="btn-quiet btn-stop" type="button" hidden>Stop transcribing</button>
           </div>
 
           <div id="run-state" class="run-state" data-state="idle">
             <span class="run-dot" aria-hidden="true"></span>
-            <span id="run-state-label" class="run-state-label">Not recording</span>
+            <span id="run-state-label" class="run-state-label">Not transcribing</span>
             <span id="run-elapsed" class="run-elapsed mono" hidden>0:00</span>
           </div>
           <p id="run-detail" class="run-detail" hidden></p>
@@ -203,8 +203,8 @@
         <div id="chart-live" class="chart" data-scale-mode="reading">
           <ol id="transcript-live" class="roll"></ol>
           <p id="live-empty" class="chart-empty">
-            Nothing recorded yet.<br />
-            Press <strong>Start recording</strong> to capture this meeting.
+            Nothing transcribed yet.<br />
+            Press <strong>Start transcribing</strong> to capture this meeting.
           </p>
         </div>
 

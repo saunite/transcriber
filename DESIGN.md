@@ -130,7 +130,7 @@ A muted chart-stock green-white field with a warm-red printed grid, mounted in a
 
 ## Layout
 
-A two-region instrument under a title block. The title block (record-to path, model, language) spans the full width as one row. Below it, `.instrument` is a CSS grid: a fixed-width rail (`16.5rem`, narrowing to `13.5rem` under `52rem`) carrying transport, pen arming, chart speed, and filters, beside a flexible chart area that fills the remainder. A collapsible engine-log panel (`<details>`) sits full-width at the bottom, closed by default, capped at `40vh` (`30vh` under short windows).
+A two-region instrument under a title block. The title block (save-to path, model, language) spans the full width as one row. Below it, `.instrument` is a CSS grid: a fixed-width rail (`16.5rem`, narrowing to `13.5rem` under `52rem`) carrying transport, pen arming, chart speed, and filters, beside a flexible chart area that fills the remainder. A collapsible engine-log panel (`<details>`) sits full-width at the bottom, closed by default, capped at `40vh` (`30vh` under short windows).
 
 The chart itself is a scrolling roll (`<ol class="roll">`) with a fixed gutter width (`6.75rem`, `5.75rem` narrow) holding the time ruling; each transcript line's vertical position is set inline by `main.js` from elapsed time × chart scale, not by document flow order alone — literalizing the "advancing roll" metaphor. Minimum window is 640×480; the single breakpoint at `52rem` narrows the rail and gutter rather than reflowing the structure.
 
@@ -152,7 +152,7 @@ Small, near-uniform radii (1–3px) throughout, closer to a physical instrument'
 ## Components
 
 ### Buttons
-- **Primary (Start recording):** SYS-ink filled, stock-colored text, `3px` radius, `0.7rem 1rem` padding, lifts 1px on hover with a deepening shadow. Carries the drawn pen-nib icon. The only filled, high-contrast control per screen.
+- **Primary (Start transcribing):** SYS-ink filled, stock-colored text, `3px` radius, `0.7rem 1rem` padding, lifts 1px on hover with a deepening shadow. Carries the drawn pen-nib icon. The only filled, high-contrast control per screen.
 - **Quiet (Stop, Browse):** `stock-raised` background, `ink-soft` text, `1px` bordered, `2px` radius — the default secondary treatment; border and text darken to `ink` on hover.
 - **Mode tab:** unfilled, uppercase, tracked; the selected tab gets a `stock` background and an inset bottom border in `pen-sys` rather than a filled pill.
 
