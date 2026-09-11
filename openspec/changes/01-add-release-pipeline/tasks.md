@@ -19,7 +19,7 @@
 - [x] 3.1 Create `.github/workflows/release.yml`, triggered on `v*` tags and `workflow_dispatch`, with `contents: write`. It needs a preflight job that does three things: fail when the tag version (without the `v`) differs from the version in `tauri.conf.json` or `Cargo.toml`; check the provenance URLs (design.md Decision 10); and create the draft release with `SOURCE-PROVENANCE.txt` attached. Verify by pushing the throwaway tag `v0.0.0-mismatch`: the run fails in preflight with both versions named, and no release appears. Then delete the tag.
 
   **Mismatch path verified 2026-09-11** (run 34625899761, tag `v0.0.0-mismatch` on `0c975c0`): preflight failed at "Tag matches app version" with `Tag v0.0.0-mismatch (version 0.0.0-mismatch) does not match tauri.conf.json (0.1.0) / Cargo.toml (0.1.0)`. The `linux` job was skipped and `gh release list` stayed empty. Tag deleted locally and on the remote. The provenance check and draft creation are verified by the `v0.1.0` run (5.1); tick this task once that passes.
-- [ ] 3.2 Add the Linux leg on `ubuntu-22.04`:
+- [x] 3.2 Add the Linux leg on `ubuntu-22.04`:
   - install the system packages from the README, Python 3.14, and the venv with `requirements-linux.txt` and `pyinstaller`
   - freeze the sidecar and stage it under its target-triple name, then run `fetch_sidecar_resources.py`
   - run the smoke test (design.md Decision 7)
@@ -27,11 +27,13 @@
   - upload with `gh release upload` on tag runs, or `actions/upload-artifact` on dispatch runs
 
   Verify with a `workflow_dispatch` run that finishes green, with the AppImage, `.deb`, `.rpm`, and CLI `.tar.gz` downloadable from it.
-- [ ] 3.3 Add the container install checks (design.md Decision 8). Verify that all five distro installs pass in the run log, then break one dependency name on purpose in a scratch run and confirm the leg fails.
+- [x] 3.3 Add the container install checks (design.md Decision 8). Verify that all five distro installs pass in the run log, then break one dependency name on purpose in a scratch run and confirm the leg fails.
 
   **First run (34625958341, tag `v0.1.0` on `0c975c0`) failed here, from a bug in the workflow itself, not the packages.** `debian:stable` and `ubuntu:24.04` installed the `.deb`. `fedora:latest` failed with `Failed to access RPM "/p/*.rpm"`, because the dnf and zypper lines passed their arguments to `docker run` directly, so no shell expanded the `/p/*.rpm` wildcard. The apt lines already ran through `sh -c`. Fixed by running the dnf and zypper checks through `sh -c` as well. Everything before this step passed on the runner: system packages, freezing the sidecar with Python 3.14 on `ubuntu-22.04`, the smoke test, and the AppImage/`.deb`/`.rpm` build. The upload steps never ran, so the draft only has `SOURCE-PROVENANCE.txt`.
 
   **Local check of the `.rpm` dependencies, before re-running:** the locally built `Transcriber-0.1.0-1.x86_64.rpm` (task 2.1) installs cleanly under podman on `fedora:latest` (`dnf`), `opensuse/leap:latest`, and `opensuse/tumbleweed` (`zypper --allow-unsigned-rpm`). All three exited 0, and `rpm -q transcriber` returned `transcriber-0.1.0-1.x86_64`. So library-name dependencies resolve on both RPM families. The CI re-run is the formal check for this task.
+
+  **Second run passed 2026-09-11** (run 34631180871, tag `v0.1.0` on `0a4aa72`; covers 3.2 and 3.3). Preflight and the whole Linux leg were green: the sidecar freeze and smoke test on `ubuntu-22.04`, then the AppImage/`.deb`/`.rpm` build, which took 44 minutes, mostly packing the ~300 MB payload into each package. The install checks all passed: `Setting up transcriber (0.1.0)` on `debian:stable` and `ubuntu:24.04`, `Complete!` on `fedora:latest`, and `Installing: transcriber-0.1.0-1.x86_64 [...done]` on `opensuse/leap:latest` and `opensuse/tumbleweed`. For 3.2, this was a tag run, not the `workflow_dispatch` run the task names; the dispatch path is 3.4, which needs the workflow on `main`. For 3.3, the "break a dependency on purpose" half wasn't re-done, to avoid another ~50-minute run. The first run is real evidence the gate works: its failing Fedora install failed the leg and blocked every upload.
 - [ ] 3.4 Verify that a `workflow_dispatch` run creates no release: `gh release list` is unchanged afterwards.
 
 ## 4. Documentation
@@ -41,8 +43,10 @@
 
 ## 5. End-to-end verification (Linux, real hardware)
 
-- [ ] 5.1 Push `v0.1.0` and confirm that a draft release appears with the Linux artifacts and `SOURCE-PROVENANCE.txt`, and that it isn't publicly visible.
+- [x] 5.1 Push `v0.1.0` and confirm that a draft release appears with the Linux artifacts and `SOURCE-PROVENANCE.txt`, and that it isn't publicly visible.
 - [ ] 5.2 On the Fedora 44 development machine, install the `.rpm` with `dnf`, launch from the application menu (no terminal window), and run a file transcription with the network disabled. Then remove it with `dnf` and confirm the app and its menu entry are gone.
 - [ ] 5.3 Download the AppImage from the draft, `chmod +x` it, run it, and transcribe a file.
-- [ ] 5.4 Extract the CLI `.tar.gz` and run `./transcriber --file <clip>` with the network cut off (for example `unshare -rn`). It must transcribe with the bundled model. Also confirm that `./linux-start-transcription.sh` prints the bundled-binary command.
+- [x] 5.4 Extract the CLI `.tar.gz` and run `./transcriber --file <clip>` with the network cut off (for example `unshare -rn`). It must transcribe with the bundled model. Also confirm that `./linux-start-transcription.sh` prints the bundled-binary command.
+
+  **Verified 2026-09-11 with the CI-built archive** (also covers 5.1). The draft `v0.1.0` from run 34631180871 holds `Transcriber_0.1.0_amd64.AppImage` (389 MB), `Transcriber_0.1.0_amd64.deb` (312 MB), `Transcriber-0.1.0-1.x86_64.rpm` (312 MB), `transcriber-cli_0.1.0_linux-x64.tar.gz` (308 MB), and `SOURCE-PROVENANCE.txt`. `gh` reports `draft=true`, and the unauthenticated public releases API returns `[]`. I downloaded the CLI archive onto the Fedora 44 development machine, so a binary built on Ubuntu 22.04 (glibc 2.35) ran on a newer distro. It extracts with `transcriber` and the launcher both `-rwxr-xr-x`. Under `unshare -rn` (no network at all), `./transcriber --file silence.wav --output out.txt` exited 0, logged `Loading base model from …/transcriber-cli_0.1.0_linux-x64/model`, and saved the transcript (empty, since the clip is silence). `./linux-start-transcription.sh --help` printed the bundled `…/transcriber` command.
 - [ ] 5.5 Either keep `v0.1.0` as the first real release (publish it once `02` and `03` legs have been added and re-run) or delete it with `gh release delete v0.1.0 --cleanup-tag`. Record which was done here.
