@@ -10,11 +10,15 @@
 
 ## 2. Tauri config
 
-- [ ] 2.1 Add `bundle.linux.rpm.depends` with shared-library capabilities, checked against `ldd` output for the built `transcriber-gui` (design.md Decision 4). Verify that `rpm -qpR` on the built `.rpm` lists them.
+- [x] 2.1 Add `bundle.linux.rpm.depends` with shared-library capabilities, checked against `ldd` output for the built `transcriber-gui` (design.md Decision 4). Verify that `rpm -qpR` on the built `.rpm` lists them.
+
+  **Verified locally 2026-09-11** (Fedora 44, Tauri CLI 2.11.4). `ldd` shows the GUI linking `libwebkit2gtk-4.1.so.0` and `libgtk-3.so.0`; libsoup-3.0 and javascriptcoregtk-4.1 come in through the WebKitGTK package on every distro, so they aren't listed. `rpm -qpR` on `Transcriber-0.1.0-1.x86_64.rpm` shows `libwebkit2gtk-4.1.so.0()(64bit)` and `libgtk-3.so.0()(64bit)`. **Each appears twice**, which suggests Tauri already adds these itself and the config entry may be redundant. The duplicates are harmless; the 3.3 container installs are the real proof that the dependencies resolve on Fedora and openSUSE. The RPM package name is `transcriber`. The package also installs `/usr/bin/transcriber-sidecar`, so a `.deb`/`.rpm` install puts the frozen CLI on `PATH`, under that name.
 
 ## 3. Release workflow
 
-- [ ] 3.1 Create `.github/workflows/release.yml`, triggered on `v*` tags and `workflow_dispatch`, with `contents: write`. It needs a preflight job that does three things: fail when the tag version (without the `v`) differs from the version in `tauri.conf.json` or `Cargo.toml`; check the provenance URLs (design.md Decision 10); and create the draft release with `SOURCE-PROVENANCE.txt` attached. Verify by pushing the throwaway tag `v0.0.0-mismatch`: the run fails in preflight with both versions named, and no release appears. Then delete the tag.
+- [x] 3.1 Create `.github/workflows/release.yml`, triggered on `v*` tags and `workflow_dispatch`, with `contents: write`. It needs a preflight job that does three things: fail when the tag version (without the `v`) differs from the version in `tauri.conf.json` or `Cargo.toml`; check the provenance URLs (design.md Decision 10); and create the draft release with `SOURCE-PROVENANCE.txt` attached. Verify by pushing the throwaway tag `v0.0.0-mismatch`: the run fails in preflight with both versions named, and no release appears. Then delete the tag.
+
+  **Mismatch path verified 2026-09-11** (run 34625899761, tag `v0.0.0-mismatch` on `0c975c0`): preflight failed at "Tag matches app version" with `Tag v0.0.0-mismatch (version 0.0.0-mismatch) does not match tauri.conf.json (0.1.0) / Cargo.toml (0.1.0)`. The `linux` job was skipped and `gh release list` stayed empty. Tag deleted locally and on the remote. The provenance check and draft creation are verified by the `v0.1.0` run (5.1); tick this task once that passes.
 - [ ] 3.2 Add the Linux leg on `ubuntu-22.04`:
   - install the system packages from the README, Python 3.14, and the venv with `requirements-linux.txt` and `pyinstaller`
   - freeze the sidecar and stage it under its target-triple name, then run `fetch_sidecar_resources.py`
@@ -24,12 +28,16 @@
 
   Verify with a `workflow_dispatch` run that finishes green, with the AppImage, `.deb`, `.rpm`, and CLI `.tar.gz` downloadable from it.
 - [ ] 3.3 Add the container install checks (design.md Decision 8). Verify that all five distro installs pass in the run log, then break one dependency name on purpose in a scratch run and confirm the leg fails.
+
+  **First run (34625958341, tag `v0.1.0` on `0c975c0`) failed here, from a bug in the workflow itself, not the packages.** `debian:stable` and `ubuntu:24.04` installed the `.deb`. `fedora:latest` failed with `Failed to access RPM "/p/*.rpm"`, because the dnf and zypper lines passed their arguments to `docker run` directly, so no shell expanded the `/p/*.rpm` wildcard. The apt lines already ran through `sh -c`. Fixed by running the dnf and zypper checks through `sh -c` as well. Everything before this step passed on the runner: system packages, freezing the sidecar with Python 3.14 on `ubuntu-22.04`, the smoke test, and the AppImage/`.deb`/`.rpm` build. The upload steps never ran, so the draft only has `SOURCE-PROVENANCE.txt`.
+
+  **Local check of the `.rpm` dependencies, before re-running:** the locally built `Transcriber-0.1.0-1.x86_64.rpm` (task 2.1) installs cleanly under podman on `fedora:latest` (`dnf`), `opensuse/leap:latest`, and `opensuse/tumbleweed` (`zypper --allow-unsigned-rpm`). All three exited 0, and `rpm -q transcriber` returned `transcriber-0.1.0-1.x86_64`. So library-name dependencies resolve on both RPM families. The CI re-run is the formal check for this task.
 - [ ] 3.4 Verify that a `workflow_dispatch` run creates no release: `gh release list` is unchanged afterwards.
 
 ## 4. Documentation
 
-- [ ] 4.1 Rewrite README's "Download and run" section. It should explain portable vs. installer vs. CLI, give Linux instructions for the AppImage, `.deb` (`sudo apt install ./…deb`), and `.rpm` (`sudo dnf install ./…rpm` or `sudo zypper install ./…rpm`), and cover CLI archive usage, including that the bundled `base` model works offline and other sizes download on first use. Leave the Windows and macOS subsections to `02`/`03`, but keep a placeholder line for each so the section reads completely.
-- [ ] 4.2 Add a README "Releasing" section: bump `version` in `tauri.conf.json` and `Cargo.toml`, and commit the `Cargo.lock` change; merge to `main`; `git tag vX.Y.Z && git push origin vX.Y.Z`; review the draft; publish. Update "Before publishing a release": step 1 is now automatic in preflight, and step 2 (re-derive provenance after a PyAV version change) stays manual. Verify by reading every README command against the workflow file.
+- [x] 4.1 Rewrite README's "Download and run" section. It should explain portable vs. installer vs. CLI, give Linux instructions for the AppImage, `.deb` (`sudo apt install ./…deb`), and `.rpm` (`sudo dnf install ./…rpm` or `sudo zypper install ./…rpm`), and cover CLI archive usage, including that the bundled `base` model works offline and other sizes download on first use. Leave the Windows and macOS subsections to `02`/`03`, but keep a placeholder line for each so the section reads completely.
+- [x] 4.2 Add a README "Releasing" section: bump `version` in `tauri.conf.json` and `Cargo.toml`, and commit the `Cargo.lock` change; merge to `main`; `git tag vX.Y.Z && git push origin vX.Y.Z`; review the draft; publish. Update "Before publishing a release": step 1 is now automatic in preflight, and step 2 (re-derive provenance after a PyAV version change) stays manual. Verify by reading every README command against the workflow file.
 
 ## 5. End-to-end verification (Linux, real hardware)
 

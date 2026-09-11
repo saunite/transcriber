@@ -118,12 +118,14 @@ jobs:
               sh -c 'apt-get update -qq && apt-get install -y -qq /p/*.deb'
             echo "::endgroup::"
           done
+          # sh -c everywhere: the /p/*.rpm glob must expand inside the container.
           echo "::group::fedora:latest"
-          docker run --rm -v "$PWD/out:/p" fedora:latest dnf install -y /p/*.rpm
+          docker run --rm -v "$PWD/out:/p" fedora:latest sh -c 'dnf install -y /p/*.rpm'
           echo "::endgroup::"
           for img in opensuse/leap:latest opensuse/tumbleweed; do
             echo "::group::$img"
-            docker run --rm -v "$PWD/out:/p" "$img" zypper --non-interactive install --allow-unsigned-rpm /p/*.rpm
+            docker run --rm -v "$PWD/out:/p" "$img" \
+              sh -c 'zypper --non-interactive install --allow-unsigned-rpm /p/*.rpm'
             echo "::endgroup::"
           done
 

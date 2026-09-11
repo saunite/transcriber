@@ -17,11 +17,44 @@ A native desktop app (Tauri shell + this CLI as a bundled sidecar) is in progres
 
 ### Download and run
 
-There is no installer, no admin prompt, and no uninstaller — each platform ships as a single downloadable artifact that runs directly once extracted, and removing it is just deleting that folder/file. There is also no auto-update: getting a new version means downloading and replacing it.
+Every [release](https://github.com/saunite/transcriber/releases) offers each platform in up to three forms. They're all the same version and all include the `base` Whisper model, so the first transcription works offline. There's no auto-update; to upgrade, download the new version.
 
-- **Windows**: download the `.zip`, extract it anywhere, run `transcriber-gui.exe` from inside the extracted folder.
-- **Linux**: download the `.AppImage`, `chmod +x` it, then run it. AppImages need FUSE to run directly; if your system doesn't have it, use `./transcriber-gui.AppImage --appimage-extract-and-run` instead.
-- **macOS**: download the `.zip`, unzip it, and open `Transcriber.app`. The build is unsigned, so Gatekeeper will warn on first launch — right-click (or Control-click) the app and choose Open to bypass it once. Live capture is not yet available on macOS (see [macOS](#macos) below); file transcription works.
+- **Portable**: nothing to install, no admin rights. Deleting it is the uninstall.
+- **Installer or package**: installs like any other app, with a menu entry and an uninstaller.
+- **CLI**: the command-line transcriber on its own, with no GUI and no Python needed, plus the meeting launcher script.
+
+#### Linux
+
+The packages are install-tested on current Debian, Ubuntu LTS, Fedora, openSUSE Leap, and openSUSE Tumbleweed.
+
+| File | What it is |
+|---|---|
+| `Transcriber_<version>_amd64.AppImage` | Portable GUI. Run `chmod +x` on it, then run it. AppImages need FUSE (`libfuse2`); without it, run it with `--appimage-extract-and-run`. |
+| `Transcriber_<version>_amd64.deb` | Debian/Ubuntu package: `sudo apt install ./Transcriber_<version>_amd64.deb`. Remove with `sudo apt remove transcriber`. |
+| `Transcriber-<version>-1.x86_64.rpm` | Fedora: `sudo dnf install ./Transcriber-<version>-1.x86_64.rpm`. openSUSE: `sudo zypper install --allow-unsigned-rpm ./Transcriber-<version>-1.x86_64.rpm`. Remove with `sudo dnf remove transcriber` or `sudo zypper remove transcriber`. |
+| `transcriber-cli_<version>_linux-x64.tar.gz` | CLI (see below). |
+
+The `.deb` and `.rpm` also put the command-line transcriber on your `PATH` as `transcriber-sidecar`. Run that way, it downloads models on first use instead of using the bundled one.
+
+#### Windows
+
+Download `Transcriber_<version>_windows-x64.zip`, extract it anywhere, and run `transcriber-gui.exe` from inside the extracted folder. A per-user installer and the CLI zip are coming with the Windows release build (`openspec/changes/02-add-release-pipeline-windows/`).
+
+#### macOS
+
+Download the `.zip`, unzip it, and open `Transcriber.app`. The build is unsigned, so Gatekeeper will warn on first launch — right-click (or Control-click) the app and choose Open to bypass it once. Live capture is not yet available on macOS (see [macOS](#macos) below); file transcription works. Release builds for macOS are coming (`openspec/changes/03-add-release-pipeline-macos/`).
+
+#### CLI archive
+
+Extract it, then run it from the extracted folder:
+
+```bash
+./transcriber --file meeting.mp4                  # bundled base model, works offline
+./transcriber --file meeting.mp4 --model small    # other sizes download on first use
+./linux-start-transcription.sh sprint-review      # Teams-meeting launcher (system audio + mic)
+```
+
+The launcher scripts use the `transcriber` binary next to them when it's there, and `python transcriber.py` otherwise, so the same scripts work from a source checkout.
 
 ### Building it yourself
 
