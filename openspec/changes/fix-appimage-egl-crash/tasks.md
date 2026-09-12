@@ -34,9 +34,17 @@
 
 ## 3. Real-hardware verification
 
-- [ ] 3.1 Download the AppImage from the next tagged run's draft release on the Fedora machine, `chmod +x` it, run it, and confirm the window appears with no `EGL_BAD_PARAMETER` abort — the exact failure this change fixes.
-- [ ] 3.2 Transcribe a file through that AppImage and confirm the transcript is written, proving the bundled model and sidecar still resolve after the repack (the model lives in the same `usr/lib` tree the repack rebuilds).
-- [ ] 3.3 Tick `01-add-release-pipeline` task 5.3, which this change unblocks, once 3.1 and 3.2 pass.
+- [x] 3.1 Download the AppImage from the next tagged run's draft release on the Fedora machine, `chmod +x` it, run it, and confirm the window appears with no `EGL_BAD_PARAMETER` abort — the exact failure this change fixes.
+- [x] 3.2 Transcribe a file through that AppImage and confirm the transcript is written, proving the bundled model and sidecar still resolve after the repack (the model lives in the same `usr/lib` tree the repack rebuilds).
+
+  **Confirmed by the user on the Fedora 44 machine, 2026-09-12, against the CI-built AppImage from run 34694349879** (the same file verified above as carrying neither `libwayland-client.so.0` nor `libwayland-egl.so.1`): "I executed the AppImage and tested live and file transcription and both works."
+
+  That closes both 3.1 and 3.2 at once. The app launches with no `EGL_BAD_PARAMETER` abort — the exact failure this change fixes, which previously aborted instantly on this same machine and desktop session (Wayland/KDE, mesa-libEGL 26.1.8).
+
+  **Live capture was exercised too, beyond what 3.2 required.** 3.2 only asked for a file transcription to prove the bundled model and sidecar still resolve after the payload is rebuilt; a working live session additionally proves the frozen sidecar's audio capture path survives the repack. Both flows load the model from the `usr/lib` tree `mksquashfs` reassembled, so nothing the app needs was lost or corrupted by the strip.
+- [x] 3.3 Tick `01-add-release-pipeline` task 5.3, which this change unblocks, once 3.1 and 3.2 pass.
+
+  **Done 2026-09-12.** `01-add-release-pipeline` task 5.3 is ticked, with the blockage and its resolution recorded there. `01` is now 16/17, its only remaining item being 3.4 (confirm a `workflow_dispatch` run creates no release).
 
 ## 4. Documentation
 
