@@ -16,4 +16,6 @@
   **Below prediction, recorded honestly:** proposal.md estimated ~6m by scaling the local gzip/zstd ratio onto CI's gzip time. The real figure is 10m11s, so that extrapolation was optimistic; the runner's 4 vCPUs don't scale the way this 8-core machine did.
 
   **Compatibility confirmed on zstd payloads:** all five install checks passed, each named in the log — `debian:stable`, `ubuntu:24.04`, `fedora:latest`, `opensuse/leap:latest` and `opensuse/tumbleweed`, the last two showing `Installing: transcriber-0.1.0-1.x86_64 [...done]`. So RPM 4.14+ zstd support is real on both RPM families we target.
-- [ ] 1.3 Install the resulting `.rpm` on the Fedora machine and confirm it still installs, launches and transcribes, since this changes how the payload is stored. `dnf` reads the compressor from the package header, so a failure here would show as an install error rather than a broken app.
+- [x] 1.3 Install the resulting `.rpm` on the Fedora machine and confirm it still installs, launches and transcribes, since this changes how the payload is stored. `dnf` reads the compressor from the package header, so a failure here would show as an install error rather than a broken app.
+
+  **Verified by the user 2026-09-11/12** with the CI-built zstd package (`transcriber-0.1.0-1.x86_64.rpm`, run 34672668438): "Install, transcription and remove worked." So `dnf` reads the zstd payload without complaint, the installed app still transcribes, and removal is clean — the payload format change is invisible in use.
