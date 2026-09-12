@@ -8,7 +8,10 @@ which was Windows-only and so could not produce the Linux or macOS
 artifact.
 
 GUI artifact, per platform (remove-installer-packaging design.md Decision 3):
-  - Linux:   locate the AppImage from bundle/appimage/ -- no assembly needed.
+  - Linux:   locate the AppImage from bundle/appimage/ and repack it without
+             the host-owned libwayland libraries linuxdeploy bundles, which
+             otherwise abort with EGL_BAD_PARAMETER
+             (openspec/changes/fix-appimage-egl-crash).
   - macOS:   zip Transcriber.app from bundle/macos/ (uses `ditto` when
              available, to preserve resource forks/signing metadata).
   - Windows: copy transcriber-gui.exe, transcriber-sidecar.exe and
@@ -37,6 +40,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -124,6 +128,118 @@ def _fresh_dir(path: Path) -> Path:
     return path
 
 
+# Host-owned graphics libraries that must NOT ship inside the AppImage.
+# linuxdeploy-plugin-gtk deploys GTK with `copy_tree "$gtk3_libdir" "$APPDIR/"`
+# -- a wholesale directory copy -- so the build machine's libwayland lands in
+# the bundle and AppRun puts it ahead of the host's on LD_LIBRARY_PATH. The
+# host's much newer EGL is then forced onto a years-old libwayland-client and
+# aborts with "Could not create default EGL display: EGL_BAD_PARAMETER".
+# Upstream's AppImage excludelist does list libwayland-client, but it only
+# governs ldd-resolved deployment and never applies to a blind copy_tree.
+# See openspec/changes/fix-appimage-egl-crash/.
+STRIP_FROM_APPIMAGE = ("usr/lib/libwayland-client.so.0", "usr/lib/libwayland-egl.so.1")
+
+# Used only when the input's own settings can't be read (see _squashfs_settings).
+DEFAULT_SQUASHFS = ("zstd", 131072)
+
+
+def _squashfs_settings(image: Path, offset: int) -> tuple[str, int]:
+    # Mirror the input's compressor and block size rather than hardcoding them:
+    # repacking a zstd/128K payload with mksquashfs's default gzip made the
+    # image 9.7 MB larger, so a future bundler switching compressor would
+    # silently inflate every download (design.md Decision 3).
+    try:
+        out = subprocess.run(
+            ["unsquashfs", "-o", str(offset), "-s", str(image)],
+            capture_output=True, text=True, check=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return DEFAULT_SQUASHFS
+
+    comp, block = DEFAULT_SQUASHFS
+    for line in out.splitlines():
+        if line.startswith("Compression "):
+            comp = line.split()[1]
+        elif line.startswith("Block size "):
+            block = int(line.split()[2])
+    return comp, block
+
+
+def _verify_stripped(image: Path, offset: int, expected_size: int, source_size: int) -> None:
+    # Checks run on the OUTPUT, because that is what gets published
+    # (design.md Decision 4). A truncated payload is not hypothetical: a full
+    # disk once produced a plausible-looking short image that only failed when
+    # it was run.
+    actual = image.stat().st_size
+    if actual != expected_size:
+        raise SystemExit(
+            f"{image.name} is {actual} bytes, expected {expected_size} "
+            "(runtime header + payload) -- short write, refusing to publish it."
+        )
+    if actual > source_size * 1.05:
+        raise SystemExit(
+            f"{image.name} grew from {source_size} to {actual} bytes "
+            "-- likely a squashfs compressor mismatch, refusing to publish it."
+        )
+    listing = subprocess.run(
+        ["unsquashfs", "-o", str(offset), "-l", str(image)],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    still_there = [lib for lib in STRIP_FROM_APPIMAGE if f"squashfs-root/{lib}" in listing]
+    if still_there:
+        raise SystemExit(f"{image.name} still bundles {', '.join(still_there)} -- the strip did not apply.")
+
+
+def _strip_appimage_libs(src: Path, dest: Path, offset: int | None = None) -> Path:
+    """Rebuild `src` as `dest` without the host-owned graphics libraries.
+
+    A squashfs is read-only, so the payload has to be rebuilt: split off the
+    ELF runtime header, extract, delete, re-make, concatenate. `offset` is
+    read from the image itself unless given (the tests pass it, so they can
+    use a fake header instead of a real AppImage runtime).
+    """
+    if offset is None:
+        offset = int(subprocess.run(
+            [str(src), "--appimage-offset"], capture_output=True, text=True, check=True,
+        ).stdout.strip())
+    comp, block = _squashfs_settings(src, offset)
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=dest.parent) as tmp_name:
+        tmp = Path(tmp_name)
+        root, payload = tmp / "root", tmp / "payload.squashfs"
+        with src.open("rb") as fh:
+            runtime = fh.read(offset)
+        if len(runtime) != offset:
+            raise SystemExit(f"{src} is shorter than its own {offset}-byte runtime header.")
+
+        subprocess.run(
+            ["unsquashfs", "-o", str(offset), "-d", str(root), str(src)],
+            capture_output=True, text=True, check=True,
+        )
+        # Absence is fine, and is the outcome we want if a future linuxdeploy
+        # stops bundling these at all (design.md Decision 4).
+        for lib in STRIP_FROM_APPIMAGE:
+            (root / lib).unlink(missing_ok=True)
+        subprocess.run(
+            ["mksquashfs", str(root), str(payload),
+             "-root-owned", "-noappend", "-no-xattrs", "-comp", comp, "-b", str(block)],
+            capture_output=True, text=True, check=True,
+        )
+
+        if dest.exists():
+            dest.unlink()
+        with dest.open("wb") as out:
+            out.write(runtime)
+            with payload.open("rb") as fh:
+                shutil.copyfileobj(fh, out)
+        expected = len(runtime) + payload.stat().st_size
+
+    dest.chmod(dest.stat().st_mode | 0o111)
+    _verify_stripped(dest, offset, expected, src.stat().st_size)
+    return dest
+
+
 def build_windows(target: str | None) -> Path:
     release_dir = _release_dir(target)
     required = ["transcriber-gui.exe", "transcriber-sidecar.exe"]
@@ -161,10 +277,11 @@ def build_linux(target: str | None) -> Path:
 
     out_dir = REPO_ROOT / "dist" / "portable"
     out_dir.mkdir(parents=True, exist_ok=True)
-    dest = out_dir / matches[0].name
-    shutil.copy2(matches[0], dest)
-    dest.chmod(dest.stat().st_mode | 0o111)
-    return dest
+    # Repack on the way out instead of a plain copy: the bundler's AppImage
+    # ships host-owned libwayland and aborts on a current desktop. The
+    # bundler's own output is left untouched, so re-running is idempotent
+    # (fix-appimage-egl-crash design.md Decision 5).
+    return _strip_appimage_libs(matches[0], out_dir / matches[0].name)
 
 
 def build_macos(target: str | None) -> Path:

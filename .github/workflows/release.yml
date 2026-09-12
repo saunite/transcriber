@@ -70,11 +70,13 @@ jobs:
       - name: System packages
         # libportaudio2: PyInstaller's sounddevice hook bundles PortAudio only
         # if it can find it at freeze time. libfuse2: runs linuxdeploy's AppImage.
+        # squashfs-tools: build_portable.py repacks the AppImage without the
+        # host-owned libwayland libraries (fix-appimage-egl-crash).
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config libssl-dev \
             libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
-            librsvg2-dev patchelf libportaudio2 libfuse2
+            librsvg2-dev patchelf libportaudio2 libfuse2 squashfs-tools
 
       - uses: actions/setup-python@v6
         with:

@@ -68,7 +68,7 @@ This refines proposal.md, whose first draft said a missing library should fail t
 ## Risks / Trade-offs
 
 - **[Risk]** The host must now supply `libwayland-client`/`libwayland-egl`. → Any system with a working graphical session has them; they are host-owned libraries that upstream's own excludelist says not to bundle. The `.deb`/`.rpm` already rely on host libraries for everything.
-- **[Risk]** `unsquashfs -o` behaves differently from the runtime's extractor (permissions, symlinks, the `AppRun` symlink). → Decision 3 calls this out as untested; verification runs the repacked image, which exercises `AppRun`, the hook script and the bundled GTK stack.
+- **[Risk]** `unsquashfs -o` behaves differently from the runtime's extractor (permissions, symlinks, executable bits). → Decision 3 calls this out as untested; verification runs the repacked image, which exercises `AppRun`, the hook script and the bundled GTK stack. (Correction to an earlier draft of this line, which asserted `AppRun` is a symlink in the original: it is a regular 274-byte script, alongside `AppRun.wrapped`. The concern was the extractor round-trip, which the verification covers either way.)
 - **[Risk]** A future bundler change makes the removal insufficient and the abort returns with a different library. → The output assertions keep the build honest about what shipped, and `libepoxy` is recorded above as the next suspect.
 - **[Trade-off]** ~17 s and roughly 800 MB of transient disk per Linux build, for a ~390 MB payload. Irrelevant on a runner; worth knowing locally.
 - **[Trade-off]** The repack replaces an artifact produced by a signed-off bundler path with one this repo assembles. Mitigated by changing exactly two files inside it and rebuilding with the input's own settings.
