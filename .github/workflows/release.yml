@@ -79,6 +79,8 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-linux.txt
 
       - name: Freeze sidecar and stage resources
         run: |
@@ -91,6 +93,13 @@ jobs:
 
       - name: Smoke-test the frozen sidecar
         run: bash .github/smoke-test.sh dist/linux/transcriber-sidecar
+
+      # Caches ~/.cargo and src-tauri/target, keyed on Cargo.lock + toolchain,
+      # so only this project's own crate recompiles on a hit
+      # (openspec/changes/speed-up-release-workflow).
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
 
       - name: Build GUI packages
         working-directory: src-tauri
@@ -112,25 +121,46 @@ jobs:
 
       # Only that the package manager resolves the dependencies and installs;
       # GUI launch is checked by hand (design.md Decision 8).
+      # Only that the package manager resolves the dependencies and installs;
+      # GUI launch is checked by hand (01's design.md Decision 8). The five
+      # checks are independent, so they run concurrently against the packages
+      # already in out/ -- sequential runs cost 3m27s
+      # (openspec/changes/speed-up-release-workflow). Each writes its own log so
+      # a failure still names the distro that refused the package; sh -c
+      # everywhere, because the /p/*.rpm glob must expand inside the container.
       - name: Install checks on target distros
         run: |
-          set -e
-          for img in debian:stable ubuntu:24.04; do
-            echo "::group::$img"
+          set -u
+          declare -A CHECK=(
+            ["debian:stable"]='apt-get update -qq && apt-get install -y -qq /p/*.deb'
+            ["ubuntu:24.04"]='apt-get update -qq && apt-get install -y -qq /p/*.deb'
+            ["fedora:latest"]='dnf install -y /p/*.rpm'
+            ["opensuse/leap:latest"]='zypper --non-interactive install --allow-unsigned-rpm /p/*.rpm'
+            ["opensuse/tumbleweed"]='zypper --non-interactive install --allow-unsigned-rpm /p/*.rpm'
+          )
+          started=()
+          for img in "${!CHECK[@]}"; do
+            log="check-$(echo "$img" | tr '/:' '__').log"
             docker run --rm -v "$PWD/out:/p" -e DEBIAN_FRONTEND=noninteractive "$img" \
-              sh -c 'apt-get update -qq && apt-get install -y -qq /p/*.deb'
-            echo "::endgroup::"
+              sh -c "${CHECK[$img]}" > "$log" 2>&1 &
+            started+=("$!|$img|$log")
           done
-          # sh -c everywhere: the /p/*.rpm glob must expand inside the container.
-          echo "::group::fedora:latest"
-          docker run --rm -v "$PWD/out:/p" fedora:latest sh -c 'dnf install -y /p/*.rpm'
-          echo "::endgroup::"
-          for img in opensuse/leap:latest opensuse/tumbleweed; do
-            echo "::group::$img"
-            docker run --rm -v "$PWD/out:/p" "$img" \
-              sh -c 'zypper --non-interactive install --allow-unsigned-rpm /p/*.rpm'
-            echo "::endgroup::"
+          failed=0
+          for entry in "${started[@]}"; do
+            pid="${entry%%|*}"; rest="${entry#*|}"; img="${rest%%|*}"; log="${rest##*|}"
+            if wait "$pid"; then
+              echo "::group::$img passed"
+              tail -5 "$log"
+              echo "::endgroup::"
+            else
+              failed=1
+              echo "::error::install check failed on $img"
+              echo "::group::$img FAILED"
+              cat "$log"
+              echo "::endgroup::"
+            fi
           done
+          exit "$failed"
 
       - name: Upload to draft release
         if: github.ref_type == 'tag'
