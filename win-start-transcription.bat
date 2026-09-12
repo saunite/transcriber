@@ -25,8 +25,15 @@ shift
 goto args_loop
 :args_done
 
-REM Activate virtual environment
-call .venv\Scripts\activate.bat
+REM Prefer the standalone CLI next to this script (a release's CLI archive, no
+REM Python needed); otherwise fall back to the project venv
+REM (openspec/changes/02-add-release-pipeline-windows).
+if exist "%~dp0transcriber.exe" (
+    set "RUN="%~dp0transcriber.exe""
+) else (
+    if exist ".venv\Scripts\activate.bat" call .venv\Scripts\activate.bat
+    set "RUN=python transcriber.py"
+)
 
 REM Set up environment variables
 set PYTHONHTTPSVERIFY=0
@@ -42,7 +49,7 @@ set output_file=%NAME_PREFIX%_%timestamp%.txt
 REM Start transcription with WASAPI loopback + microphone. Built into one
 REM variable and both echoed and run from it, so the printed line can never
 REM drift from what's actually executed (openspec/changes/compact-live-cli-output).
-set "CMD=python transcriber.py --live --wasapi --include-mic --model base --output "%output_file%" --chunk-duration 10 --actual-time %REST%"
+set "CMD=%RUN% --live --wasapi --include-mic --model base --output "%output_file%" --chunk-duration 10 --actual-time %REST%"
 echo %CMD%
 %CMD%
 

@@ -44,8 +44,15 @@ echo Format: %FORMAT%
 echo ============================================================
 echo.
 
-REM Run transcription
-.venv\Scripts\python.exe transcriber.py --language en --file "%~1" --output "%~2" --format %FORMAT%
+REM Run transcription. Prefer the standalone CLI next to this script (a
+REM release's CLI archive, no Python needed); otherwise use the project venv
+REM (openspec/changes/02-add-release-pipeline-windows).
+if exist "%~dp0transcriber.exe" (
+    set "RUN="%~dp0transcriber.exe""
+) else (
+    set "RUN=.venv\Scripts\python.exe transcriber.py"
+)
+%RUN% --language en --file "%~1" --output "%~2" --format %FORMAT%
 
 if %ERRORLEVEL% EQU 0 (
     echo.
