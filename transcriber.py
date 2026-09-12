@@ -474,6 +474,51 @@ def _validate_live_capture_platform(args) -> Optional[str]:
     return None
 
 
+def _resolve_mic_device(args) -> Optional[int]:
+    """Resolve which input device a live session should use for the mic.
+
+    Returns the device index, or None when no microphone can be used at all --
+    the caller then aborts. An explicit --mic-device is passed through
+    untouched; validating it stays with the caller, whose "not an input
+    device" error is unchanged.
+
+    Why the fallback exists: a frozen build whose bundled ALSA library cannot
+    load the host's plugins reports no default input even when real inputs are
+    present, and that used to end the session outright
+    (openspec/changes/fix-linux-live-capture-alsa).
+    """
+    # Imported here, not at module scope, like every other caller in this
+    # file: importing sounddevice initialises PortAudio, and a --file run has
+    # no reason to pay for that.
+    import sounddevice as sd
+
+    if args.mic_device >= 0:
+        return args.mic_device
+
+    try:
+        mic_info = sd.query_devices(kind='input')
+        index = mic_info['index'] if isinstance(mic_info, dict) else None
+        if index is not None:
+            if args.verbose:
+                print(f"Auto-detected microphone: {mic_info['name']}\n")
+            return index
+    except Exception:
+        pass  # no default input -- fall through to the scan below
+
+    try:
+        devices = sd.query_devices()
+    except Exception:
+        devices = []
+    for device in devices:
+        if device.get('max_input_channels', 0) > 0:
+            print(f"⚠️  No default microphone; using {device['name']}")
+            return device['index']
+
+    print("❌ No microphone found.")
+    print("   Use --list-devices to see the available devices, then --mic-device <n> to choose one.")
+    return None
+
+
 def _wall_clock_stamp() -> str:
     """Current local date/time, read fresh at the call site."""
     return datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
@@ -741,18 +786,9 @@ def _transcribe_live_linux_dual(engine: TranscriptionEngine, args) -> int:
         native_rate = int(sys_info['default_samplerate'])
         sys_name = sys_info['name']
 
-    # Get microphone device (identical to transcribe_live_wasapi)
-    if args.mic_device >= 0:
-        mic_device = args.mic_device
-    else:
-        try:
-            mic_info = sd.query_devices(kind='input')
-            mic_device = mic_info['index'] if isinstance(mic_info, dict) else None
-            if args.verbose:
-                print(f"Auto-detected microphone: {mic_info['name']}\n")
-        except Exception:
-            print("⚠️  Could not auto-detect microphone")
-            return 1
+    mic_device = _resolve_mic_device(args)
+    if mic_device is None:
+        return 1
 
     try:
         mic_info = sd.query_devices(mic_device)
@@ -995,18 +1031,9 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
     mic_channels = 1  # Default to mono
     mic_name = None
     if args.include_mic:
-        if args.mic_device >= 0:
-            mic_device = args.mic_device
-        else:
-            # Auto-detect default microphone
-            try:
-                mic_info = sd.query_devices(kind='input')
-                mic_device = mic_info['index'] if isinstance(mic_info, dict) else None
-                if args.verbose:
-                    print(f"Auto-detected microphone: {mic_info['name']}\n")
-            except:
-                print("⚠️  Could not auto-detect microphone")
-                return 1
+        mic_device = _resolve_mic_device(args)
+        if mic_device is None:
+            return 1
 
         # Get device info to determine max channels
         try:
@@ -1234,17 +1261,9 @@ def transcribe_live_coreaudio_tap(engine: TranscriptionEngine, args) -> int:
     mic_channels = 1
     mic_name = None
     if args.include_mic:
-        if args.mic_device >= 0:
-            mic_device = args.mic_device
-        else:
-            try:
-                mic_info = sd.query_devices(kind='input')
-                mic_device = mic_info['index'] if isinstance(mic_info, dict) else None
-                if args.verbose:
-                    print(f"Auto-detected microphone: {mic_info['name']}\n")
-            except Exception:
-                print("⚠️  Could not auto-detect microphone")
-                return 1
+        mic_device = _resolve_mic_device(args)
+        if mic_device is None:
+            return 1
 
         try:
             mic_info = sd.query_devices(mic_device)

@@ -46,7 +46,11 @@
     },
     "linux": {
       "rpm": {
-        "depends": ["libwebkit2gtk-4.1.so.0()(64bit)", "libgtk-3.so.0()(64bit)"],
+        "depends": [
+          "libwebkit2gtk-4.1.so.0()(64bit)",
+          "libgtk-3.so.0()(64bit)",
+          "libasound.so.2()(64bit)"
+        ],
         "compression": { "type": "none" }
       }
     },

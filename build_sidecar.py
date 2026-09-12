@@ -5,26 +5,27 @@ tasks 2.1-2.3). Run this on each target OS -- PyInstaller doesn't
 cross-compile, so Windows/Linux/macOS sidecars each need building on that
 OS.
 
+The build is driven by transcriber-sidecar.spec rather than command-line
+flags, because PyInstaller has no flag to exclude a bundled shared library
+and the Linux sidecar must not ship its build host's libasound
+(openspec/changes/fix-linux-live-capture-alsa). --onefile, the binary name,
+the per-OS icon, and the faster_whisper asset data all live in that spec
+now; only --distpath/--workpath stay here.
+
 faster_whisper ships a VAD ONNX model as package data
 (faster_whisper/assets/silero_vad_v6.onnx) that PyInstaller's default
 import analysis does not pick up on its own (no bundled/community hook
 covers it as of authoring -- confirmed missing by actually running the
-frozen Windows binary, which failed with onnxruntime.NoSuchFile until
---add-data was added below). If faster_whisper adds more asset files in a
-future version, they need to be added here too.
+frozen Windows binary, which failed with onnxruntime.NoSuchFile until it
+was added explicitly). If faster_whisper adds more asset files in a future
+version, they need adding to the spec's datas too.
 
 Usage: python build_sidecar.py
 """
-import importlib.util
 import platform
 import subprocess
 import sys
 from pathlib import Path
-
-
-def _faster_whisper_assets_dir() -> str:
-    spec = importlib.util.find_spec("faster_whisper")
-    return str(Path(spec.origin).parent / "assets")
 
 
 def _in_virtualenv() -> bool:
@@ -49,24 +50,20 @@ def main() -> int:
         return 1
 
     system = platform.system().lower()
-    assets_dir = _faster_whisper_assets_dir()
-    sep = ";" if platform.system() == "Windows" else ":"
+    # Everything that used to be a command-line flag -- --onefile, --name,
+    # --add-data for faster_whisper's assets, and the per-OS --icon -- now
+    # lives in transcriber-sidecar.spec, because a spec-based build IGNORES
+    # those flags. The move exists so the Linux build can drop the bundled
+    # libasound.so.2 from the analysis, which PyInstaller offers no flag for
+    # (openspec/changes/fix-linux-live-capture-alsa design.md Decision 1).
+    spec = Path(__file__).resolve().parent / "transcriber-sidecar.spec"
     args = [
         sys.executable, "-m", "PyInstaller",
-        "--onefile",
-        "--name", "transcriber-sidecar",
         "--distpath", f"dist/{system}",
         "--workpath", f"build/{system}",
-        "--specpath", f"build/{system}",
-        "--add-data", f"{assets_dir}{sep}faster_whisper/assets",
+        "--noconfirm",
+        str(spec),
     ]
-    # The app icon on the frozen binary itself, so Explorer/Finder show it for
-    # the CLI's transcriber(.exe) (openspec/changes/add-app-icon). ELF
-    # binaries carry no icon, so Linux passes none.
-    icon = {"windows": "icon.ico", "darwin": "icon.icns"}.get(system)
-    if icon:
-        args += ["--icon", str(Path(__file__).resolve().parent / "src-tauri" / "icons" / icon)]
-    args.append("transcriber.py")
     return subprocess.call(args)
 
 
