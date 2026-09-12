@@ -40,7 +40,13 @@ The `.deb` and `.rpm` also put the command-line transcriber on your `PATH` as `t
 
 #### Windows
 
-Download `Transcriber_<version>_windows-x64.zip`, extract it anywhere, and run `transcriber-gui.exe` from inside the extracted folder. A per-user installer and the CLI zip are coming with the Windows release build (`openspec/changes/02-add-release-pipeline-windows/`).
+| File | What it is |
+|---|---|
+| `Transcriber_<version>_x64-setup.exe` | Installer. It installs for your user only, under `%LOCALAPPDATA%`, so it never asks for admin rights. Uninstall it from Settings → Apps → Installed apps. |
+| `Transcriber_<version>_windows-x64.zip` | Portable GUI. Extract it anywhere and run `transcriber-gui.exe` from inside the extracted folder. Deleting the folder is the uninstall. |
+| `transcriber-cli_<version>_windows-x64.zip` | CLI (see below): `transcriber.exe`, the `win-start-transcription.bat` and `transcribe_file.bat` launchers, and the bundled model. |
+
+All three are unsigned, so Windows SmartScreen warns the first time you run one ("Windows protected your PC"). Choose **More info**, then **Run anyway**.
 
 #### macOS
 
@@ -55,6 +61,8 @@ Extract it, then run it from the extracted folder:
 ./transcriber --file meeting.mp4 --model small    # other sizes download on first use
 ./linux-start-transcription.sh sprint-review      # Teams-meeting launcher (system audio + mic)
 ```
+
+On Windows the binary is `transcriber.exe` and the launchers are `win-start-transcription.bat` and `transcribe_file.bat`; the options are the same.
 
 The launcher scripts use the `transcriber` binary next to them when it's there, and `python transcriber.py` otherwise, so the same scripts work from a source checkout.
 
