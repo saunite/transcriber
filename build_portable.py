@@ -323,7 +323,11 @@ def build_cli(system: str) -> Path:
     _copy_notices(out_dir)
 
     if system == "windows":
-        archive = out_dir.with_suffix(".zip")
+        # Not out_dir.with_suffix(".zip"): the directory name contains the
+        # version, so with_suffix() replaces everything after the last dot and
+        # yields transcriber-cli_0.1.zip. Build the name the same way the
+        # tar.gz branch below does.
+        archive = out_dir.parent / f"{name}.zip"
         _zip_dir(out_dir, archive)
         return archive
 

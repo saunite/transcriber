@@ -11,6 +11,21 @@
 - [x] 2.3 Run `npx --yes @tauri-apps/cli@<pinned> build --target x86_64-pc-windows-gnu --bundles nsis`, then `build_portable.py --target x86_64-pc-windows-gnu`, and upload the setup exe, the portable zip, and the CLI zip (release on tag runs, artifact on dispatch runs). Verify with a `workflow_dispatch` run that all three are downloadable.
 - [ ] 2.4 Confirm that `WebView2Loader.dll` ends up in the installed app directory (design.md Decision 3). Check by extracting the NSIS installer with 7-Zip, or during the install in 4.1. If it's missing, add it for Windows builds and re-run.
 
+  **Run 34694349879 (v0.1.0, 2026-09-12): the Windows leg failed, but only on an artifact-naming bug in `build_portable.py`, now fixed.**
+
+  `cp: cannot stat 'dist/portable/transcriber-cli_*_windows-x64.zip': No such file or directory`. `build_cli()`'s Windows branch built its archive name with `out_dir.with_suffix(".zip")`, and the directory is `transcriber-cli_0.1.0_windows-x64` — `Path.with_suffix` replaces everything after the **last** dot, so it produced **`transcriber-cli_0.1.zip`**. The log confirms it: "CLI archive assembled at: …\dist\portable\transcriber-cli_0.1.zip". Fixed to `out_dir.parent / f"{name}.zip"`, matching how the `tar.gz` branch two lines below already built its name.
+
+  **Why this never showed up before:** only the Windows branch used `with_suffix`; Linux and macOS use f-strings, which is why the published `transcriber-cli_0.1.0_linux-x64.tar.gz` has always been named correctly. The bug was latent in the script from the start and could only surface the first time the Windows job ran.
+
+  **Everything else in the leg worked**, so both risks design.md flagged are retired:
+  - **Toolchain**: `rustc 1.98.1 (48a229cea 2026-09-01)` with host `stable-x86_64-pc-windows-gnu`, and `x86_64-w64-mingw32-gcc` resolved on `PATH` — the "Show toolchain" step passed, so mingw is present under the name `src-tauri/.cargo/config.toml` expects.
+  - **Smoke test**: `.github/smoke-test.sh` ran under Git Bash against the frozen `.exe` and the job proceeded past it.
+  - **NSIS**: built via `makensis`, producing `…\target\x86_64-pc-windows-gnu\release\bundle\nsis\Transcriber_0.1.0_x64-setup.exe` — the exact path and filename predicted from the bundler source. "Finished 1 bundle", correct for `--bundles nsis`.
+  - **Portable zip**: "Portable artifact assembled at: …\dist\portable\Transcriber_0.1.0_windows-x64.zip".
+
+  2.4 stays open: no Windows assets reached the draft release, because the step died before `gh release upload`. It needs one passing run.
+
+
 
   **Implemented and committed 2026-09-11/12 (`1ef885e`); every CI and hardware half is still open.**
 
@@ -25,7 +40,12 @@
 
 ## 3. Documentation
 
-- [ ] 3.1 Fill in README's Windows download subsection: the setup exe (per-user, no admin rights, uninstall from Windows settings), the portable zip (extract and run; deleting the folder uninstalls), the CLI zip (`transcriber.exe`, the launchers, and the bundled model), and the unsigned-file SmartScreen prompt ("More info → Run anyway"). Verify each described file name against a real run's outputs.
+- [x] 3.1 Fill in README's Windows download subsection: the setup exe (per-user, no admin rights, uninstall from Windows settings), the portable zip (extract and run; deleting the folder uninstalls), the CLI zip (`transcriber.exe`, the launchers, and the bundled model), and the unsigned-file SmartScreen prompt ("More info → Run anyway"). Verify each described file name against a real run's outputs.
+
+  **Installer and portable names now verified against a real run (34694349879), which is what this task asked for.** `makensis` produced **`Transcriber_0.1.0_x64-setup.exe`** and `build_portable.py` produced **`Transcriber_0.1.0_windows-x64.zip`** — both exactly as the README table states, confirming the names derived from `tauri-bundler`'s nsis module and `PLATFORM_LABEL`.
+
+  **The CLI zip row was wrong, and the code was at fault rather than the README.** The run emitted `transcriber-cli_0.1.zip` (the `with_suffix` bug recorded under 2.4). The README's `transcriber-cli_<version>_windows-x64.zip` is the intended and now-fixed name, so the table needs no edit — but this row is only confirmed once a passing run publishes it, which 2.4 covers.
+
 
   **Written 2026-09-11/12; left unticked deliberately.** README's Windows subsection is now a three-row table matching Linux's: the setup exe (per-user under `%LOCALAPPDATA%`, no admin rights, uninstall via Settings → Apps → Installed apps), the portable zip (extract, run `transcriber-gui.exe`, delete the folder to uninstall), and the CLI zip (`transcriber.exe`, both `.bat` launchers, bundled model), followed by the SmartScreen "More info → Run anyway" note. The stale sentence promising that the installer and CLI zip "are coming" is gone.
 
