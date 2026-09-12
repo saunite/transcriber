@@ -13,4 +13,20 @@
 
 ## 2. Confirm nothing was lost
 
-- [ ] 2.1 On the next tagged run, check that the release still receives the same five assets and that all five distro checks appear in the log, so the speed-ups didn't quietly drop a check. Compare the total job duration against the ~32m baseline of run 34656473927 (and against whatever `switch-rpm-compression-to-zstd` leaves it at, if that landed first) and record the figure.
+- [x] 2.1 On the next tagged run, check that the release still receives the same five assets and that all five distro checks appear in the log, so the speed-ups didn't quietly drop a check. Compare the total job duration against the ~32m baseline of run 34656473927 (and against whatever `switch-rpm-compression-to-zstd` leaves it at, if that landed first) and record the figure.
+
+  **Verified 2026-09-12** (run 34672668438, tag `v0.1.0` on `77df1da`, which carried both this change and `switch-rpm-compression-to-zstd`).
+
+  Nothing was lost: the draft received the same five assets (`transcriber-0.1.0-1.x86_64.rpm`, `transcriber_0.1.0_amd64.deb`, `transcriber_0.1.0_amd64.AppImage`, `transcriber-cli_0.1.0_linux-x64.tar.gz`, `SOURCE-PROVENANCE.txt`), and all five distro checks appear in the log as `<distro> passed`, with the openSUSE ones showing `Installing: transcriber-0.1.0-1.x86_64 [...done]`.
+
+  | Step | Baseline (34656473927) | This run |
+  |---|---|---|
+  | Install checks (5 distros) | 3m27s | **1m21s** |
+  | Cargo compile | 2m30s | 3m09s (cache miss, cold) |
+  | Freeze sidecar | 1m55s | 2m10s (cache miss, wheels downloaded) |
+  | Build GUI packages (whole step) | 25m30s | 15m50s |
+  | Linux job total | ~32m | **~20m30s** |
+
+  **The caches are populated but unproven, as predicted.** pip logged `pip cache is not found` and then `Cache saved with the key: setup-python-Linux-x64-22.04-Ubuntu-python-3.14.7-pip-…`; rust-cache ran with `workspaces: src-tauri` and saved in its post step. Both compile and freeze came in slightly *above* baseline this run, which is the expected cost of a cold cache plus normal runner variance. Tasks 1.1 and 1.2's hit figures can only be measured on the next tagged run — carry them forward rather than treating this run as their verification.
+
+  Most of the 11.5 minutes saved here came from `switch-rpm-compression-to-zstd` (rpm bundling 21m14s → 10m11s); this change contributed the install-check saving (~2m) and set up the caches for later runs.
