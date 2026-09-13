@@ -45,6 +45,8 @@ The wait must be bounded and short enough not to freeze the UI (the command is a
 
 After escalation, re-check for survivors. Report success only if none remain; otherwise log that the stop did not succeed and that capture may still be active. This is what the existing requirement asked for all along — the current code reports success because `kill()` returned `Ok`, which is true of the call and false of the outcome.
 
+**A zombie is not a survivor** (added during implementation, after the first version of this design got it wrong). `kill -0` succeeds for a zombie — a process already dead and awaiting reap by whoever spawned it, which here is `tauri-plugin-shell`'s event pump. A zombie holds no audio device, so counting one as a survivor would report a *successful* stop as a failure: the original bug's dishonesty in reverse. Liveness is therefore read from the process state (`ps -o stat=`), treating `Z` as dead, with `kill -0` kept only as a fallback for a host without `ps` — where declaring everything dead would produce a false success. This was not theoretical: a `SIGKILL`ed child in the unit test read as alive under `kill -0` until `wait()` reaped it, and failed the test.
+
 ### 4. Refuse a file transcription while a live engine is alive
 
 If `session_active` is set or a tracked child is still running, `start_file_transcription` returns an error the UI surfaces, rather than spawning a second engine.
@@ -67,5 +69,7 @@ The Unix branch covers macOS, and `pgrep -P` works there. There is no Mac to tes
 - **[Risk]** The graceful wait makes stop feel slower. → Bounded and small; escalation guarantees termination regardless.
 - **[Risk]** `SIGINT` to the bootloader could kill it before the worker flushes, orphaning the worker again. → Signal the worker first, then the bootloader, and rely on the survivor re-check.
 - **[Risk]** A hostile or hung worker ignores both signals. → Then the stop is honestly reported as failed, which is strictly better than today's false success.
+- **[Risk]** Liveness detection counts a not-yet-reaped process as alive and reports a false failure. → Addressed in Decision 3 by reading process state and treating `Z` as dead. Found by the unit test rather than by reasoning, which is the argument for keeping that test.
+- **[Observed]** A shell's backgrounded job ignores `SIGINT` entirely (measured: `sh -c "sleep 60 & sleep 60"` and both children stayed in state `S` after `SIGINT`, dying only on `SIGKILL`). That is incidental to the sidecar, whose engine installs a `SIGINT` handler, but it means the unit test genuinely exercises the escalation path rather than only the graceful one.
 - **[Trade-off]** Refusing a file run during a live session is a small workflow annoyance, accepted because the alternative silently ends a recording.
 - **[Trade-off]** No stdin stop protocol means signals remain the mechanism, so this is a robust fix rather than an elegant one. Recorded as the upgrade path, unchanged from the existing comment.

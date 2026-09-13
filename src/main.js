@@ -430,12 +430,27 @@ els.tabFile.addEventListener("click", () => selectTab("file"));
 
 // ---- Settings -------------------------------------------------------------
 
+// Capture state, not configuration: a pen is "armed" only while a live
+// session is actually running. Called from renderRunState() on every state
+// change, and after the mic checkbox changes.
+function renderPens() {
+  const capturing = liveState !== "idle";
+  const micWanted = els.includeMicCheckbox.checked;
+
+  els.penSys.dataset.armed = String(capturing);
+  els.penSys.querySelector(".pen-state").textContent = capturing ? "Capturing" : "Idle";
+
+  const micOn = capturing && micWanted;
+  els.penMic.dataset.armed = String(micOn);
+  const micState = els.penMic.querySelector(".pen-state");
+  micState.textContent = micOn ? "Capturing" : micWanted ? "Idle" : micState.dataset.off;
+}
+
 function syncMicPen() {
-  const on = els.includeMicCheckbox.checked;
-  els.micDeviceField.hidden = !on;
-  els.penMic.dataset.armed = String(on);
-  const state = els.penMic.querySelector(".pen-state");
-  state.textContent = on ? state.dataset.on : state.dataset.off;
+  // Intent for the next session: whether to include the mic, and whether the
+  // device picker is relevant. Activity is renderPens()' business.
+  els.micDeviceField.hidden = !els.includeMicCheckbox.checked;
+  renderPens();
 }
 
 els.includeMicCheckbox.addEventListener("change", syncMicPen);
@@ -582,6 +597,13 @@ function renderRunState() {
   const shown = liveState === "penlift" ? "penlift" : liveState;
   els.runState.dataset.state = shown;
   els.runStateLabel.textContent = STATE_LABEL[shown] ?? shown;
+
+  // The pens report what is being captured right now. The include-mic
+  // checkbox next to MIC still expresses intent for the next session, which
+  // is a different thing -- conflating the two is why the UI claimed the mic
+  // was capturing while the engine was idle
+  // (openspec/changes/fix-live-stop-orphans-engine).
+  renderPens();
 
   els.stopBtn.hidden = liveState === "idle";
   els.stopBtn.disabled = liveState === "stopping";

@@ -72,7 +72,90 @@ fn resolve_model_dir(app: &AppHandle) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+
+    /// Both outcomes of a stop attempt, with fabricated PIDs.
+    ///
+    /// Deliberately NOT done by calling terminate_process_tree(1) as the task
+    /// suggested: that would enumerate every child of init and signal them
+    /// all. Most would fail with EPERM, but a user-owned process parented to
+    /// PID 1 could genuinely be killed -- an unacceptable way to test a log
+    /// message.
+    #[cfg(not(windows))]
+    #[test]
+    fn stop_result_reports_success_only_with_no_survivors() {
+        assert_eq!(stop_result_line(&[]), "Capture engine stopped.");
+
+        let line = stop_result_line(&[4242, 4243]);
+        assert!(line.contains("Failed to stop"), "{line}");
+        assert!(line.contains("4242") && line.contains("4243"), "{line}");
+        assert!(
+            line.contains("may still be active"),
+            "a failed stop must warn that capture may continue: {line}"
+        );
+    }
+
+
+    /// The defect this guards against: PyInstaller's --onefile bootloader
+    /// re-executes into a worker, and stopping used to signal only the PID we
+    /// launched, leaving that worker holding the audio device
+    /// (openspec/changes/fix-live-stop-orphans-engine). A shell spawning a
+    /// child stands in for that shape -- no audio hardware needed.
+    #[cfg(not(windows))]
+    #[test]
+    fn finds_and_terminates_a_whole_process_tree() {
+        let mut parent = std::process::Command::new("sh")
+            .args(["-c", "sleep 60 & sleep 60"])
+            .spawn()
+            .expect("spawn stand-in tree");
+        let parent_pid = parent.id();
+
+        // Give the shell a moment to fork its children.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let mut kids = Vec::new();
+        while std::time::Instant::now() < deadline {
+            kids = descendant_pids(parent_pid);
+            if !kids.is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        assert!(
+            !kids.is_empty(),
+            "descendant_pids found no children of {parent_pid}; the tree walk is broken, \
+             which is exactly how the orphaned-worker bug survived"
+        );
+        assert!(kids.iter().all(|p| pid_alive(*p)), "children should be alive before the stop");
+
+        let survivors = terminate_process_tree(parent_pid);
+        assert!(
+            survivors.is_empty(),
+            "processes survived the stop: {survivors:?} -- a stop that leaves survivors must \
+             never be reported as success"
+        );
+        for pid in &kids {
+            assert!(!pid_alive(*pid), "child {pid} outlived terminate_process_tree");
+        }
+        let _ = parent.wait();
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn pid_alive_distinguishes_live_from_dead() {
+        assert!(pid_alive(std::process::id()), "this test's own process must read as alive");
+
+        let mut doomed = std::process::Command::new("sh")
+            .args(["-c", "exit 0"])
+            .spawn()
+            .expect("spawn short-lived process");
+        let pid = doomed.id();
+        let _ = doomed.wait(); // reaped, so the PID is gone rather than a zombie
+        assert!(!pid_alive(pid), "a reaped process must not read as alive");
+    }
+
     use super::{build_live_session_args, strip_extended_length_prefix};
+    // cfg-gated to match the helpers themselves, which only exist off Windows.
+    #[cfg(not(windows))]
+    use super::{descendant_pids, pid_alive, stop_result_line, terminate_process_tree};
 
     #[test]
     fn strips_local_drive_extended_prefix() {
@@ -237,6 +320,12 @@ mod tests {
 pub struct SidecarManager {
     child: Option<CommandChild>,
     session_active: bool,
+    /// A one-shot file run's process. Tracked so it can be terminated on
+    /// quit and so a live session cannot start beside it -- it used to be
+    /// dropped on the floor (`let (rx, _child) = ...`), which made a file
+    /// run unstoppable by design
+    /// (openspec/changes/fix-live-stop-orphans-engine).
+    file_child: Option<CommandChild>,
 }
 
 impl SidecarManager {
@@ -244,6 +333,7 @@ impl SidecarManager {
         Self {
             child: None,
             session_active: false,
+            file_child: None,
         }
     }
 }
@@ -454,13 +544,185 @@ pub async fn start_live_session(
     Ok(())
 }
 
+/// Descendant PIDs of `pid`, one level deep and then recursively.
+///
+/// PyInstaller's --onefile bootloader re-executes into a worker process, and
+/// that worker is what holds the audio device. Killing only the PID we
+/// launched leaves it capturing -- the exact failure the Windows branch of
+/// `stop_live_session` already documents and fixes with `taskkill /T`
+/// (openspec/changes/fix-live-stop-orphans-engine design.md Decision 1).
+///
+/// Linux exposes children directly under /proc; elsewhere (macOS) `pgrep -P`
+/// is used, which exists on both. Signal-then-recheck covers the race where
+/// a process forks again between listing and signalling.
+#[cfg(not(windows))]
+fn descendant_pids(pid: u32) -> Vec<u32> {
+    fn children_of(pid: u32) -> Vec<u32> {
+        let mut out = Vec::new();
+        let task_dir = format!("/proc/{pid}/task");
+        if let Ok(entries) = std::fs::read_dir(&task_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path().join("children");
+                if let Ok(text) = std::fs::read_to_string(path) {
+                    out.extend(text.split_whitespace().filter_map(|t| t.parse::<u32>().ok()));
+                }
+            }
+        }
+        if out.is_empty() {
+            // No /proc (macOS) or an unreadable one.
+            if let Ok(output) = std::process::Command::new("pgrep")
+                .args(["-P", &pid.to_string()])
+                .output()
+            {
+                out.extend(
+                    String::from_utf8_lossy(&output.stdout)
+                        .split_whitespace()
+                        .filter_map(|t| t.parse::<u32>().ok()),
+                );
+            }
+        }
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
+    let mut found = Vec::new();
+    let mut frontier = children_of(pid);
+    // Depth-bounded: the bootloader spawns one worker, and the engine's own
+    // multiprocessing children sit under that. A cycle is impossible in a
+    // process tree, but the bound keeps a pathological /proc read finite.
+    for _ in 0..8 {
+        if frontier.is_empty() {
+            break;
+        }
+        let mut next = Vec::new();
+        for child in frontier.drain(..) {
+            if !found.contains(&child) {
+                found.push(child);
+                next.extend(children_of(child));
+            }
+        }
+        frontier = next;
+    }
+    found
+}
+
+/// True if the process is still alive *and holding resources* -- which makes
+/// "did the stop actually work?" answerable rather than assumed
+/// (design.md Decision 3).
+///
+/// `kill -0` alone is not enough: it succeeds for a **zombie**, and a zombie
+/// is an already-dead process awaiting reap by whoever spawned it
+/// (tauri-plugin-shell's event pump here, `wait()` in a test). It holds no
+/// audio device, so counting one as a survivor would report a successful
+/// stop as a failure -- the original bug's dishonesty in reverse. Verified:
+/// a SIGKILLed child read as alive under `kill -0` until it was reaped.
+#[cfg(not(windows))]
+fn pid_alive(pid: u32) -> bool {
+    match std::process::Command::new("ps")
+        .args(["-o", "stat=", "-p", &pid.to_string()])
+        .output()
+    {
+        Ok(output) if output.status.success() => {
+            let stat = String::from_utf8_lossy(&output.stdout);
+            let stat = stat.trim();
+            // Empty means ps printed nothing for the pid; 'Z' is a zombie.
+            !stat.is_empty() && !stat.starts_with('Z')
+        }
+        // ps ran and found no such process.
+        Ok(_) => false,
+        // ps is missing: fall back to existence, which is better than
+        // declaring every process dead and reporting a false success.
+        Err(_) => std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false),
+    }
+}
+
+#[cfg(not(windows))]
+fn signal_pids(sig: &str, pids: &[u32]) {
+    for pid in pids {
+        let _ = std::process::Command::new("kill")
+            .args([sig, &pid.to_string()])
+            .output();
+    }
+}
+
+/// The log line a stop attempt produces. Pulled out of the command so both
+/// outcomes are testable without a live `AppHandle` or real processes: the
+/// failure branch is precisely the one that must not be
+/// reachable-but-untested, since reporting a false success is the original
+/// bug (design.md Decision 3).
+#[cfg(not(windows))]
+fn stop_result_line(survivors: &[u32]) -> String {
+    if survivors.is_empty() {
+        "Capture engine stopped.".to_string()
+    } else {
+        format!(
+            "Failed to stop the capture engine: {} process(es) still running ({}). \
+             Audio capture may still be active.",
+            survivors.len(),
+            survivors
+                .iter()
+                .map(|p| p.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
+}
+
+/// Signals a sidecar's whole process tree and reports what survived.
+///
+/// SIGINT first so transcriber.py's handler flushes and closes its transcript
+/// (a SIGKILL mid-write truncates the last line), then escalate, then
+/// re-check -- the return value is what makes "did the stop actually work?"
+/// answerable instead of assumed (design.md Decisions 2 and 3).
+///
+/// Blocking on purpose: tokio is not a direct dependency, and the whole
+/// sequence is bounded at ~3s. Called from an async command, so it briefly
+/// occupies a runtime worker rather than the UI thread.
+#[cfg(not(windows))]
+fn terminate_process_tree(pid: u32) -> Vec<u32> {
+    let mut targets = descendant_pids(pid);
+    // Worker before bootloader: killing the parent first can orphan the
+    // child that owns the audio device.
+    targets.push(pid);
+    signal_pids("-INT", &targets);
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    while std::time::Instant::now() < deadline && targets.iter().any(|p| pid_alive(*p)) {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+
+    let stubborn: Vec<u32> = targets.iter().copied().filter(|p| pid_alive(*p)).collect();
+    if !stubborn.is_empty() {
+        signal_pids("-KILL", &stubborn);
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+
+    // Re-scan as well as re-check: a process may have forked between the
+    // original listing and the signal.
+    let mut survivors: Vec<u32> = targets.iter().copied().filter(|p| pid_alive(*p)).collect();
+    survivors.extend(descendant_pids(pid).into_iter().filter(|p| pid_alive(*p)));
+    survivors.sort_unstable();
+    survivors.dedup();
+    survivors
+}
+
 #[tauri::command]
-// `app` is only needed by the Windows taskkill branch below.
-#[cfg_attr(not(windows), allow(unused_variables))]
 pub async fn stop_live_session(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    let mut sidecar = state.sidecar.lock().unwrap();
-    sidecar.session_active = false;
-    if let Some(child) = sidecar.child.take() {
+    // Take the child and release the lock before terminating: a std
+    // MutexGuard is not Send, so holding it across the wait would not
+    // compile, and holding a lock while waiting seconds for a process to die
+    // would be wrong regardless.
+    let child = {
+        let mut sidecar = state.sidecar.lock().unwrap();
+        sidecar.session_active = false;
+        sidecar.child.take()
+    };
+    if let Some(child) = child {
         // ponytail: hard kill, no graceful SIGINT relay -- tauri-plugin-shell
         // does not expose a portable "send Ctrl+C to child" primitive as of
         // writing, and transcriber.py's graceful shutdown is a SIGINT
@@ -502,7 +764,14 @@ pub async fn stop_live_session(app: AppHandle, state: State<'_, AppState>) -> Re
             let _ = app.emit("sidecar-log", SidecarLogPayload { line });
         }
         #[cfg(not(windows))]
-        child.kill().map_err(|e| e.to_string())?;
+        {
+            let survivors = terminate_process_tree(child.pid());
+            let line = stop_result_line(&survivors);
+            let _ = app.emit("sidecar-log", SidecarLogPayload { line });
+            if !survivors.is_empty() {
+                return Err("capture engine did not stop".to_string());
+            }
+        }
     }
     Ok(())
 }
@@ -510,12 +779,35 @@ pub async fn stop_live_session(app: AppHandle, state: State<'_, AppState>) -> Re
 #[tauri::command]
 pub async fn start_file_transcription(
     app: AppHandle,
+    state: State<'_, AppState>,
     file_path: String,
     format: String,
     task: String,
     model: String,
     language: Option<String>,
 ) -> Result<(), String> {
+    // One engine at a time. A live session's engine keeps the audio device
+    // and its own stdout pipe, so starting a file run beside it produced two
+    // engines writing into one stream -- live [MIC]/[SYS] lines landed in the
+    // file transcript (openspec/changes/fix-live-stop-orphans-engine
+    // design.md Decision 4). Refuse rather than silently ending a recording.
+    {
+        let sidecar = state.sidecar.lock().unwrap();
+        if sidecar.session_active || sidecar.child.is_some() {
+            return Err(
+                "A live session is still running. Stop it before transcribing a file.".to_string(),
+            );
+        }
+        if let Some(existing) = sidecar.file_child.as_ref() {
+            #[cfg(not(windows))]
+            if pid_alive(existing.pid()) {
+                return Err("A file transcription is already running.".to_string());
+            }
+            #[cfg(windows)]
+            let _ = existing;
+        }
+    }
+
     // The engine writes its auto-named <stem>_transcript_<stamp>.<format>
     // into its working directory, so running it from the recording's folder
     // saves the transcript next to the recording instead of wherever the app
@@ -543,9 +835,14 @@ pub async fn start_file_transcription(
     if let Some(dir) = work_dir {
         sidecar_command = sidecar_command.current_dir(dir);
     }
-    let (rx, _child) = sidecar_command.spawn().map_err(|e| e.to_string())?;
-    // Not tracked in SidecarManager / not eligible for crash-detection --
-    // file transcription is a one-shot run, not a long-lived session.
+    let (rx, child) = sidecar_command.spawn().map_err(|e| e.to_string())?;
+    {
+        // Tracked so it can be terminated on quit and so the guard above can
+        // see it; still not eligible for crash detection, which belongs to
+        // long-lived live sessions.
+        let mut sidecar = state.sidecar.lock().unwrap();
+        sidecar.file_child = Some(child);
+    }
     spawn_sidecar_events(app, rx, false);
     Ok(())
 }
