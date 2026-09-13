@@ -64,9 +64,18 @@
 
 ## 5. Real-hardware verification
 
-- [ ] 5.1 Install the CI-built `.rpm` on the Fedora machine and confirm the GUI's microphone dropdown now lists real input devices rather than only "System default (recommended)" — the visible symptom the user reported.
-- [ ] 5.2 Start a live session from that installed `.rpm` with the default mic selection and confirm it captures: no `Could not auto-detect microphone`, no `engine exited unexpectedly`, and both `[SYS]` and `[MIC]` segments appear. This is the exact flow that failed at 07:30 and 07:40.
-- [ ] 5.3 Confirm file transcription still works from the same installed package, proving the changed bundle did not disturb PyAV's decoding (design.md Decision 1's reason for keeping `av.libs`).
-- [ ] 5.4 Check the AppImage from the same run for the **unexplained asymmetry** recorded in design.md Risks: its earlier build auto-detected `hw:0,0` and transcribed while every local run of that binary saw zero inputs. Record what the fixed AppImage now reports, so the intermittency question is answered with data rather than left open.
+- [x] 5.1 Install the CI-built `.rpm` on the Fedora machine and confirm the GUI's microphone dropdown now lists real input devices rather than only "System default (recommended)" — the visible symptom the user reported.
+- [x] 5.2 Start a live session from that installed `.rpm` with the default mic selection and confirm it captures: no `Could not auto-detect microphone`, no `engine exited unexpectedly`, and both `[SYS]` and `[MIC]` segments appear. This is the exact flow that failed at 07:30 and 07:40.
+- [x] 5.3 Confirm file transcription still works from the same installed package, proving the changed bundle did not disturb PyAV's decoding (design.md Decision 1's reason for keeping `av.libs`).
+- [x] 5.4 Check the AppImage from the same run for the **unexplained asymmetry** recorded in design.md Risks: its earlier build auto-detected `hw:0,0` and transcribed while every local run of that binary saw zero inputs. Record what the fixed AppImage now reports, so the intermittency question is answered with data rather than left open.
+
+  **Confirmed by the user on Fedora 44, 2026-09-12: "both rpm and appImage worked for live and file transcription".**
+
+  - **5.1 / 5.2** The installed `.rpm` captures again — the exact flow that failed at 07:30 and 07:40 with `Could not auto-detect microphone` followed by `engine exited unexpectedly`. Live transcription now runs, so the host's `libasound` and its PipeWire plugin are reaching the packaged sidecar.
+  - **5.3** File transcription still works from the same package, so keeping PyAV's `av.libs/libasound-*.so` while dropping the top-level copy (design.md Decision 1) preserved the decoder as intended.
+  - **5.4 The unexplained asymmetry did not reappear.** design.md's open Risk was that the AppImage had once auto-detected `hw:0,0` and transcribed while every local run of that same binary saw zero inputs, raising the possibility of an intermittent device set. With this build the AppImage works, matching the `.rpm`, and the local extraction of its sidecar reports the same 16 devices / 7 inputs as the other two artifacts. So the evidence is consistent with the libasound fix having been the whole cause, and no separate intermittency has shown itself since. Recorded as "not reproduced" rather than "explained": the original divergence was never root-caused, and nothing here proves it cannot recur.
+
+  **A new, unrelated defect surfaced during this testing and is NOT covered by this change:** during *file* transcription the UI showed the microphone as capturing, even with live capture stopped. Being triaged separately — it is a GUI state/labelling issue, not an audio-capture one, and this change's scope is the ALSA fix.
+
 - [ ] 5.5 Verify the `.deb` does not regress on Debian or Ubuntu, where build-host and run-host ALSA layouts coincide and the bug was therefore invisible (design.md Decision 4). A live session there must behave exactly as before this change.
 - [ ] 5.6 Extract the Linux CLI archive and confirm `./transcriber --live --include-mic` captures on Fedora, since the CLI ships the same frozen sidecar and had the same defect.
