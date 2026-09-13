@@ -77,5 +77,12 @@
 
   **A new, unrelated defect surfaced during this testing and is NOT covered by this change:** during *file* transcription the UI showed the microphone as capturing, even with live capture stopped. Being triaged separately — it is a GUI state/labelling issue, not an audio-capture one, and this change's scope is the ALSA fix.
 
-- [ ] 5.5 Verify the `.deb` does not regress on Debian or Ubuntu, where build-host and run-host ALSA layouts coincide and the bug was therefore invisible (design.md Decision 4). A live session there must behave exactly as before this change.
-- [ ] 5.6 Extract the Linux CLI archive and confirm `./transcriber --live --include-mic` captures on Fedora, since the CLI ships the same frozen sidecar and had the same defect.
+- [x] 5.5 Verify the `.deb` does not regress on Debian or Ubuntu, where build-host and run-host ALSA layouts coincide and the bug was therefore invisible (design.md Decision 4). A live session there must behave exactly as before this change.
+
+  **Accepted by the user on 2026-09-13 with a known limit: install-checked, not live-tested.** The `.deb` passed CI install checks on `debian:stable` and `ubuntu:24.04` (tagged run 34699748992, `##[group]debian:stable passed` / `ubuntu:24.04 passed`), so it installs and its dependencies resolve. Those containers have no audio devices, so live capture was not exercised on Debian or Ubuntu. The regression risk is low, since those distributions share the build host's ALSA plugin path and the bug never showed there, but it is unproven on real hardware. Revisit if a Debian/Ubuntu user reports a live-capture problem. The published `.deb` carrying the new `libasound2` dependency also awaits the next tagged run.
+- [x] 5.6 Extract the Linux CLI archive and confirm `./transcriber --live --include-mic` captures on Fedora, since the CLI ships the same frozen sidecar and had the same defect.
+
+  **Verified 2026-09-13 against the CI-built archive, not a local build.** Only the CI build is a meaningful test, since the defect lived in the Ubuntu-built sidecar and a Fedora-built one would pass regardless. `transcriber-cli_0.1.0_linux-x64.tar.gz` was downloaded from the `v0.1.0` draft of tagged run 34699748992. The release metadata names `main` as target, which is GitHub's default-branch label; the tag itself points at `72b4c60`, the commit carrying this change. Extracted on Fedora 44:
+  - `./transcriber --list-devices-json` reports **16 devices, 7 inputs**, against the pre-fix CI build's 4 devices and 0 inputs. That confirms the archive carries the fix.
+  - `./transcriber --live --include-mic --no-output` loaded the bundled model from the archive's own `model/`, selected `System audio (alsa_output…analog-stereo.monitor) + mic (default)`, reached `Listening...` and was still capturing at the 40 s timeout (exit 124).
+  - `ps -C transcriber` was empty afterwards, so nothing was left holding the audio device.

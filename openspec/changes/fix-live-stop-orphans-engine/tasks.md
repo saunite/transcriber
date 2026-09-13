@@ -57,4 +57,6 @@
 
   Still open: 5.3 (Windows non-regression, needs a Windows build) and 5.4 (macOS, no Mac available).
 - [ ] 5.3 Confirm Windows has not regressed: its `taskkill /F /T` branch is untouched, but the shared code around it changed, so a live start/stop on Windows must still report success and leave no `transcriber-sidecar.exe` running.
-- [ ] 5.4 Record macOS as implemented-but-unverified: it takes the same Unix path and `pgrep -P` exists there, but there is no Mac to test on (design.md Decision 6). State this explicitly rather than leaving the platform's status implied.
+- [x] 5.4 Record macOS as implemented-but-unverified: it takes the same Unix path and `pgrep -P` exists there, but there is no Mac to test on (design.md Decision 6). State this explicitly rather than leaving the platform's status implied.
+
+  **Recorded 2026-09-13: macOS is implemented but UNVERIFIED.** macOS takes the same `#[cfg(not(windows))]` path as Linux. `descendant_pids` falls back to `pgrep -P` there because macOS has no `/proc`, and `pid_alive` uses `ps -o stat=`, which exists on macOS. None of it has run on a Mac: there is no Mac available to this project, consistent with how macOS packaging is already treated. Whoever first runs the app on macOS should repeat the three-step repro and check that `ps -ax | grep transcriber-sidecar` is empty after a stop.
