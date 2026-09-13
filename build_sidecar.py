@@ -50,6 +50,20 @@ def main() -> int:
         return 1
 
     system = platform.system().lower()
+
+    # The macOS CLI's --coreaudio-tap needs the native Swift helper inside the
+    # frozen binary, where macos_capture._helper_path() resolves it
+    # (openspec/changes/03-add-release-pipeline-macos). Fail loudly: freezing
+    # without it produces a CLI whose system-audio capture silently cannot work,
+    # which is the gap being closed. transcriber-sidecar.spec adds the file.
+    helper = Path(__file__).resolve().parent / "macos" / "audiotap-helper" / "audiotap-helper"
+    if system == "darwin" and not helper.is_file():
+        print(
+            f"ERROR: the macOS audio-tap helper has not been built ({helper} is missing).\n"
+            "Run macos/audiotap-helper/build.sh first, then re-run build_sidecar.py.",
+            file=sys.stderr,
+        )
+        return 1
     # Everything that used to be a command-line flag -- --onefile, --name,
     # --add-data for faster_whisper's assets, and the per-OS --icon -- now
     # lives in transcriber-sidecar.spec, because a spec-based build IGNORES

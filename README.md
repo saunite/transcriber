@@ -50,7 +50,24 @@ All three are unsigned, so Windows SmartScreen warns the first time you run one 
 
 #### macOS
 
-Download the `.zip`, unzip it, and open `Transcriber.app`. The build is unsigned, so Gatekeeper will warn on first launch — right-click (or Control-click) the app and choose Open to bypass it once. Live capture is not yet available on macOS (see [macOS](#macos) below); file transcription works. Release builds for macOS are coming (`openspec/changes/03-add-release-pipeline-macos/`).
+**Built automatically on Apple Silicon GitHub runners, but not yet tested on a real Mac. Testers welcome.** If you try them, please [open an issue](https://github.com/saunite/transcriber/issues) saying what worked, especially:
+
+- Does the `.dmg` or the zipped `.app` open after you allow it in Privacy & Security (below)?
+- Does file transcription work in the app?
+- Does the CLI's `--coreaudio-tap` live capture work?
+- Does a *downloaded* copy behave as described below the first time you open it?
+
+| File | What it is |
+|---|---|
+| `Transcriber_<version>_aarch64.dmg` | Disk image. Open it and drag `Transcriber.app` to Applications. |
+| `Transcriber_<version>_macos-arm64.zip` | Portable app. Unzip it and open `Transcriber.app`. Deleting it is the uninstall. |
+| `transcriber-cli_<version>_macos-arm64.tar.gz` | CLI (see below). |
+
+Apple Silicon (arm64) only; Intel Macs are not supported.
+
+The app is ad-hoc signed but not notarized, so the first time you open it macOS says it can't verify the developer. Go to **System Settings → Privacy & Security**, scroll to the message about Transcriber, and choose **Open Anyway**.
+
+Live capture isn't available in the macOS app yet (see [macOS](#macos) below); file transcription is.
 
 #### CLI archive
 
@@ -63,6 +80,8 @@ Extract it, then run it from the extracted folder:
 ```
 
 On Windows the binary is `transcriber.exe` and the launchers are `win-start-transcription.bat` and `transcribe_file.bat`; the options are the same.
+
+On macOS, clear the download quarantine first with `xattr -d com.apple.quarantine ./transcriber`. The launcher is `./mac-start-transcription.sh`, and system-audio capture (`--coreaudio-tap`) needs macOS 14.4 or later.
 
 The launcher scripts use the `transcriber` binary next to them when it's there, and `python transcriber.py` otherwise, so the same scripts work from a source checkout.
 

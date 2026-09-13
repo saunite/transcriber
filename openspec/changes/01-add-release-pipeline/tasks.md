@@ -34,7 +34,13 @@
   **Local check of the `.rpm` dependencies, before re-running:** the locally built `Transcriber-0.1.0-1.x86_64.rpm` (task 2.1) installs cleanly under podman on `fedora:latest` (`dnf`), `opensuse/leap:latest`, and `opensuse/tumbleweed` (`zypper --allow-unsigned-rpm`). All three exited 0, and `rpm -q transcriber` returned `transcriber-0.1.0-1.x86_64`. So library-name dependencies resolve on both RPM families. The CI re-run is the formal check for this task.
 
   **Second run passed 2026-09-11** (run 34631180871, tag `v0.1.0` on `0a4aa72`; covers 3.2 and 3.3). Preflight and the whole Linux leg were green: the sidecar freeze and smoke test on `ubuntu-22.04`, then the AppImage/`.deb`/`.rpm` build, which took 44 minutes, mostly packing the ~300 MB payload into each package. The install checks all passed: `Setting up transcriber (0.1.0)` on `debian:stable` and `ubuntu:24.04`, `Complete!` on `fedora:latest`, and `Installing: transcriber-0.1.0-1.x86_64 [...done]` on `opensuse/leap:latest` and `opensuse/tumbleweed`. For 3.2, this was a tag run, not the `workflow_dispatch` run the task names; the dispatch path is 3.4, which needs the workflow on `main`. For 3.3, the "break a dependency on purpose" half wasn't re-done, to avoid another ~50-minute run. The first run is real evidence the gate works: its failing Fedora install failed the leg and blocked every upload.
-- [ ] 3.4 Verify that a `workflow_dispatch` run creates no release: `gh release list` is unchanged afterwards.
+- [x] 3.4 Verify that a `workflow_dispatch` run creates no release: `gh release list` is unchanged afterwards.
+
+  **Verified 2026-09-13 with `workflow_dispatch` run 34765219343.** It ran on `main` after `dev` was fast-forwarded there (`450457a` → `17c1500`, 18 commits, none diverging), and all three jobs succeeded. Evidence that no release was created:
+  - **Before the run:** `gh release list` showed exactly one entry, `v0.1.0 Draft` (created 2026-09-12T14:35:44Z), and the only tag was `v0.1.0` → `72b4c60`.
+  - **Preflight on the dispatch run:** `Tag matches app version: skipped` and `Create draft release: skipped`. Only `Source-provenance links resolve` ran. Preflight is the only job that creates a release, so this shows the gate itself worked, not just that nothing happened to appear.
+  - **After every job finished:** `gh release list` was unchanged (still only `v0.1.0 Draft`, same timestamp), and the tag still pointed at `72b4c60`.
+  The run's outputs went to run artifacts instead: `linux` (1,320,430,853 bytes) and `windows` (784,333,420 bytes).
 
 ## 4. Documentation
 

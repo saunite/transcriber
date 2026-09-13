@@ -30,6 +30,8 @@ On Darwin, it adds `--add-binary macos/audiotap-helper/audiotap-helper:macos/aud
 
 **Verifying without a Mac:** list the frozen archive's contents with `pyi-archive_viewer` and check for `macos/audiotap-helper/audiotap-helper`. That's deterministic. Actually running `--coreaudio-tap` on a runner is not: it needs a capture permission a headless runner can't grant. So that stays in the testers call.
 
+**Implementation note (2026-09-13): the helper goes in through the spec file, not `--add-binary`.** After this design was written, `fix-linux-live-capture-alsa` moved the freeze to `transcriber-sidecar.spec`, and a spec-based PyInstaller build ignores command-line flags such as `--add-binary`. The helper is therefore added in the spec's `Analysis(binaries=…)` on Darwin, packed at `macos/audiotap-helper/`. The missing-helper guard stays in `build_sidecar.py`, before PyInstaller runs. The outcome this decision requires is unchanged. The guard was exercised without a Mac by forcing `platform.system()` to `Darwin`: exit 1, the missing-helper message, and PyInstaller never started.
+
 ### 3. Ad-hoc signing with `signingIdentity: "-"`
 
 Apple Silicon won't execute unsigned arm64 code, and a quarantined (downloaded) app with no valid signature can be reported as "damaged", with no Open Anyway path. An ad-hoc signature is valid, needs no Apple account, and is expected to produce the ordinary "Apple could not verify…" dialog, which System Settings → Privacy & Security → Open Anyway resolves. That's what the README documents.
@@ -51,3 +53,4 @@ Tauri's bundler builds the `.dmg` on the runner; that's the normal Tauri path on
 - **[Risk]** The helper is bundled but fails at runtime (for example over a permission-prompt attribution quirk in a frozen parent process) → invisible without hardware. It's named explicitly in the testers call.
 - **[Risk]** `macos-latest` moves to a newer macOS image and the build breaks → pin a specific `macos-NN` image if that happens.
 - **[Trade-off]** The universal helper binary is about twice the size of an arm64-only one, a few hundred KB, in exchange for leaving `build.sh` untouched.
+- **[Risk, found during implementation]** `build_portable.py`'s `build_macos` copies the licence notices into `Transcriber.app/Contents/Resources` after Tauri has signed the bundle, which could invalidate the ad-hoc signature. On Apple Silicon that shows as "damaged", with no Open Anyway path. → It is expected to hold, because Tauri's `bundle.resources` already places identical files at those paths and a signature seals contents, not timestamps. Rather than rely on that, the macOS job runs `codesign --verify --deep --strict` on the app after assembly, so a broken seal fails the run instead of shipping.

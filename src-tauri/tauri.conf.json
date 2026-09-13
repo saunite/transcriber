@@ -44,6 +44,9 @@
         "installMode": "currentUser"
       }
     },
+    "macOS": {
+      "signingIdentity": "-"
+    },
     "linux": {
       "deb": {
         "depends": ["libasound2"]

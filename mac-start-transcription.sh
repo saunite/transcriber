@@ -24,13 +24,17 @@ if [[ $# -gt 0 && "$1" != -* ]]; then
     shift
 fi
 
-# Prefer the project venv (expected to be Python 3.11+); fall back to system python
+# Prefer the standalone CLI next to this script (a release's CLI archive, no
+# Python needed), then the project venv (expected to be Python 3.11+), then
+# system python.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_PY="${SCRIPT_DIR}/.venv/bin/python"
-if [[ -x "${VENV_PY}" ]]; then
-    PY_CMD="${VENV_PY}"
+if [[ -x "${SCRIPT_DIR}/transcriber" ]]; then
+    RUN=("${SCRIPT_DIR}/transcriber")
+elif [[ -x "${VENV_PY}" ]]; then
+    RUN=("${VENV_PY}" transcriber.py)
 else
-    PY_CMD="python3"
+    RUN=(python3 transcriber.py)
 fi
 
 # Generate timestamp for output filename
@@ -41,7 +45,7 @@ output_file="${NAME_PREFIX}_${timestamp}.txt"
 # microphone, tagged [SYS]/[MIC]). Built into one array and both echoed and
 # executed from it, so the printed line can never drift from what actually
 # runs (same pattern as win-start-transcription.bat/linux-start-transcription.sh).
-CMD=("${PY_CMD}" transcriber.py --live --coreaudio-tap --include-mic --model base --output "${output_file}" --chunk-duration 10 --actual-time "$@")
+CMD=("${RUN[@]}" --live --coreaudio-tap --include-mic --model base --output "${output_file}" --chunk-duration 10 --actual-time "$@")
 printf '%q ' "${CMD[@]}"
 echo
 "${CMD[@]}"

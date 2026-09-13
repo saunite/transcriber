@@ -33,10 +33,20 @@ _ICON_NAME = {"windows": "icon.ico", "darwin": "icon.icns"}.get(SYSTEM)
 _ICON = str(Path(SPECPATH) / "src-tauri" / "icons" / _ICON_NAME) if _ICON_NAME else None
 
 
+# macOS: the Core Audio tap helper, packed at macos/audiotap-helper/ so it
+# extracts beside macos_capture.py, which is exactly where _helper_path()
+# looks. build_sidecar.py refuses to run on macOS until it has been built.
+_BINARIES = []
+if SYSTEM == "darwin":
+    _BINARIES.append(
+        (str(Path(SPECPATH) / "macos" / "audiotap-helper" / "audiotap-helper"), "macos/audiotap-helper")
+    )
+
+
 a = Analysis(
     [str(Path(SPECPATH) / "transcriber.py")],
     pathex=[],
-    binaries=[],
+    binaries=_BINARIES,
     datas=[(_faster_whisper_assets_dir(), "faster_whisper/assets")],
     hiddenimports=[],
     hookspath=[],

@@ -255,3 +255,86 @@ jobs:
         with:
           name: windows
           path: out/*
+
+  macos:
+    needs: preflight
+    # Apple Silicon only, ad-hoc signed, untested on real hardware: no Mac is
+    # available (openspec/changes/03-add-release-pipeline-macos).
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-macos.txt
+
+      - name: Build the audio-tap helper
+        # The universal swift build needs full Xcode, which the runners ship
+        # (design.md Context). build_sidecar.py refuses to freeze without it.
+        run: bash macos/audiotap-helper/build.sh
+
+      - name: Freeze sidecar and stage resources
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -r requirements-macos.txt pyinstaller
+          .venv/bin/python build_sidecar.py
+          mkdir -p src-tauri/binaries
+          cp dist/darwin/transcriber-sidecar src-tauri/binaries/transcriber-sidecar-aarch64-apple-darwin
+          .venv/bin/python fetch_sidecar_resources.py
+
+      - name: Helper is bundled in the sidecar
+        # macos_capture resolves the helper at macos/audiotap-helper/ inside the
+        # extraction directory; a freeze without it is the gap this job closes.
+        run: |
+          .venv/bin/pyi-archive_viewer -l dist/darwin/transcriber-sidecar > sidecar-archive.txt
+          grep -F "'macos/audiotap-helper/audiotap-helper'" sidecar-archive.txt \
+            || { echo "::error::macos/audiotap-helper/audiotap-helper is not inside the frozen sidecar"; exit 1; }
+
+      - name: CLI binary signature
+        # Recorded, not asserted: PyInstaller ad-hoc signs its output on macOS,
+        # and the smoke test below cannot execute an unsigned arm64 binary.
+        run: codesign -dv dist/darwin/transcriber-sidecar 2>&1 || true
+
+      - name: Smoke-test the frozen sidecar
+        run: bash .github/smoke-test.sh dist/darwin/transcriber-sidecar
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Build GUI packages
+        working-directory: src-tauri
+        run: npx --yes "@tauri-apps/cli@${TAURI_CLI_VERSION}" build --bundles app,dmg
+
+      - name: Verify the disk image
+        run: hdiutil verify src-tauri/target/release/bundle/dmg/*.dmg
+
+      - name: Assemble portable + CLI artifacts
+        run: |
+          .venv/bin/python build_portable.py
+          # build_macos copies the licence notices into the already-signed .app.
+          # Prove the ad-hoc signature still verifies before the zip ships it:
+          # an invalid signature on Apple Silicon shows as "damaged", with no
+          # Open Anyway path.
+          codesign -dv src-tauri/target/release/bundle/macos/Transcriber.app 2>&1
+          codesign --verify --deep --strict src-tauri/target/release/bundle/macos/Transcriber.app
+          mkdir -p out
+          cp src-tauri/target/release/bundle/dmg/*.dmg \
+             dist/portable/Transcriber_*_macos-arm64.zip \
+             dist/portable/transcriber-cli_*_macos-arm64.tar.gz out/
+          ls -la out
+
+      - name: Upload to draft release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" out/* --clobber
+
+      - name: Upload run artifacts
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: out/*
