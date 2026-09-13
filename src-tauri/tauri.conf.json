@@ -45,6 +45,9 @@
       }
     },
     "linux": {
+      "deb": {
+        "depends": ["libasound2"]
+      },
       "rpm": {
         "depends": [
           "libwebkit2gtk-4.1.so.0()(64bit)",

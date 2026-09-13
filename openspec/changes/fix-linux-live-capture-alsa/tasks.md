@@ -33,15 +33,34 @@
 ## 3. Package dependencies
 
 - [x] 3.1 Add the ALSA runtime soname to `src-tauri/tauri.conf.json`'s `bundle.linux.rpm.depends`, beside the existing `libwebkit2gtk-4.1.so.0()(64bit)` and `libgtk-3.so.0()(64bit)` (design.md Decision 3). Verify the JSON parses, `cargo check` in `src-tauri/` reports no config error, and a built `.rpm`'s `rpm -qpR` lists all three.
-- [ ] 3.2 Confirm the `.deb`'s generated dependencies include the ALSA library (its dependencies are derived, not hand-listed). Verify with `dpkg-deb -f <deb> Depends` on a built package; if it is absent, add it explicitly rather than assuming the derivation covers it.
+- [x] 3.2 Confirm the `.deb`'s generated dependencies include the ALSA library (its dependencies are derived, not hand-listed). Verify with `dpkg-deb -f <deb> Depends` on a built package; if it is absent, add it explicitly rather than assuming the derivation covers it.
 
 
   **3.1 done locally 2026-09-12.** `bundle.linux.rpm.depends` now lists `libasound.so.2()(64bit)` beside `libwebkit2gtk-4.1.so.0()(64bit)` and `libgtk-3.so.0()(64bit)`. The soname was taken from the local rpm database rather than guessed — `rpm -q --provides alsa-lib` reports exactly `libasound.so.2()(64bit)` (from `alsa-lib-1.2.16.1-1.fc44`), and `/lib64/libasound.so.2` is owned by that package. A misnamed soname would fail at install time on Fedora/openSUSE rather than at build time, which is why it was checked against the database. The JSON parses and `cargo check` in `src-tauri/` reports no config error.
 
+
+  **3.2 done 2026-09-12, and the derivation did NOT cover it — as suspected.** `dpkg-deb -f transcriber_0.1.0_amd64.deb Depends` on the published package listed only `libwebkit2gtk-4.1-0, libgtk-3-0`: no ALSA. Tauri derives deb dependencies from the GUI binary, which does not link ALSA — the need lives inside the frozen sidecar, where PortAudio dlopens it, and that is invisible to the derivation. So `bundle.linux.deb.depends: ["libasound2"]` was added explicitly (Debian/Ubuntu's package name, against the rpm's `libasound.so.2()(64bit)` soname form). JSON parses and `cargo check` accepts the key. The published `.deb` carrying the dependency is only provable on the next tagged run.
+
 ## 4. CI verification
 
-- [ ] 4.1 On the next tagged run, confirm the Linux job still builds and that the published `.rpm`, `.deb` and AppImage each contain no top-level bundled `libasound.so.2`. Verify by listing the packaged sidecar's bundle contents from the downloaded artifacts.
-- [ ] 4.2 Confirm the five install checks still pass, in particular `fedora:latest` and both openSUSE images, which must now resolve the new ALSA dependency from their own repositories. A missing or misnamed soname would surface as a dnf/zypper dependency error rather than a runtime failure.
+- [x] 4.1 On the next tagged run, confirm the Linux job still builds and that the published `.rpm`, `.deb` and AppImage each contain no top-level bundled `libasound.so.2`. Verify by listing the packaged sidecar's bundle contents from the downloaded artifacts.
+- [x] 4.2 Confirm the five install checks still pass, in particular `fedora:latest` and both openSUSE images, which must now resolve the new ALSA dependency from their own repositories. A missing or misnamed soname would surface as a dnf/zypper dependency error rather than a runtime failure.
+
+
+  **Verified on tagged run 34699748992 (v0.1.0 re-run, 2026-09-12) — all three jobs succeeded, 12m24s.**
+
+  - **4.1** No artifact bundles a top-level `libasound.so.2` any more. Each packaged sidecar was extracted and run on this Fedora machine, and all three now initialise the **host** library: `calling init: /lib64/libasound.so.2`, with PyAV's `av.libs/libasound-c7818c60.so.2.0.0` still initialising beside it exactly as Decision 1 intended.
+
+    | Artifact | sidecar bytes | devices / inputs |
+    |---|---|---|
+    | `.rpm` | 175,481,184 | 16 / **7** |
+    | `.deb` | 175,481,184 | 16 / **7** |
+    | AppImage | 175,485,280 | 16 / **7** |
+
+    Against the previous CI build's **4 devices / 0 inputs**, on the same machine. The AppImage's copy is 4,096 bytes larger because linuxdeploy stamps `rpath: $ORIGIN/../lib` on it; run without that directory present it exits 255 with empty stdout/stderr (the bootloader failing before Python starts), so it must be tested with its `usr/lib` extracted — two earlier "empty result" runs here were that, plus a full tmpfs, not a defect in the build.
+  - **4.2** All five install checks passed — `debian:stable`, `ubuntu:24.04`, `fedora:latest`, `opensuse/leap:latest`, `opensuse/tumbleweed` — so the new `libasound.so.2()(64bit)` rpm dependency resolves on every target. The lone `::error` string in the log is again the workflow echoing its own un-expanded `echo "::error::install check failed on $img"` template. **Not verified:** I could not find lines showing `alsa-lib`/`libasound2` actually being *pulled in* during those transactions, so the dependency resolving is proven by the installs succeeding, not by observing the package being fetched.
+
+  **Unrelated but confirmed in the same run:** rpm bundling stayed at **4.08 s** (14:42:00.75 → 14:42:04.83), and the AppImage still carries only `libwayland-cursor`/`libwayland-server`, so `fix-appimage-egl-crash`'s strip survived this build.
 
 ## 5. Real-hardware verification
 

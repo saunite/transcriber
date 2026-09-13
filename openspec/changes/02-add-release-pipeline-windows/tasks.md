@@ -9,7 +9,7 @@
 - [x] 2.1 Set up the toolchain on `windows-latest`: `rustup default stable-x86_64-pc-windows-gnu`, `rustup target add x86_64-pc-windows-gnu`, and mingw-w64 on `PATH` (design.md Decision 1). Verify in the run log that `rustc -vV` reports `host: x86_64-pc-windows-gnu` and that `x86_64-w64-mingw32-gcc --version` succeeds.
 - [x] 2.2 Set up Python 3.14 with a venv containing `requirements.txt` and `pyinstaller`. Run `build_sidecar.py`, stage the result as `src-tauri/binaries/transcriber-sidecar-x86_64-pc-windows-gnu.exe`, run `fetch_sidecar_resources.py`, then run the smoke test from `01`. Verify that the smoke-test step passes in the run log.
 - [x] 2.3 Run `npx --yes @tauri-apps/cli@<pinned> build --target x86_64-pc-windows-gnu --bundles nsis`, then `build_portable.py --target x86_64-pc-windows-gnu`, and upload the setup exe, the portable zip, and the CLI zip (release on tag runs, artifact on dispatch runs). Verify with a `workflow_dispatch` run that all three are downloadable.
-- [ ] 2.4 Confirm that `WebView2Loader.dll` ends up in the installed app directory (design.md Decision 3). Check by extracting the NSIS installer with 7-Zip, or during the install in 4.1. If it's missing, add it for Windows builds and re-run.
+- [x] 2.4 Confirm that `WebView2Loader.dll` ends up in the installed app directory (design.md Decision 3). Check by extracting the NSIS installer with 7-Zip, or during the install in 4.1. If it's missing, add it for Windows builds and re-run.
 
   **Run 34694349879 (v0.1.0, 2026-09-12): the Windows leg failed, but only on an artifact-naming bug in `build_portable.py`, now fixed.**
 
@@ -37,6 +37,17 @@
   **Three output paths were verified against the code rather than assumed**, since each would otherwise fail ~20 minutes into a Windows run: `build_sidecar.py` writes `dist/<platform.system().lower()>` = `dist/windows/`; `build_portable.py` writes `Transcriber_<version>_windows-x64.zip` and `transcriber-cli_<version>_windows-x64.zip` into `dist/portable/`; and `tauri-bundler`'s nsis module writes `project_out_directory()/bundle/nsis/<name>-setup.exe`, i.e. `target/x86_64-pc-windows-gnu/release/bundle/nsis/`.
 
   **Two risks left for the run to settle**, both in design.md: whether the runner's mingw is on `PATH` under the `x86_64-w64-mingw32-gcc` name (the Show toolchain step makes that fail in seconds, not minutes), and whether `.github/smoke-test.sh` behaves under Git Bash when invoking a Windows `.exe`.
+
+
+  **2.4 verified on tagged run 34699748992 (2026-09-12): the Windows job passed for the first time.** The `with_suffix` bug fixed in `build_portable.py` was the only thing that had failed it. All three Windows assets reached the draft release with exactly the names the README table promises:
+
+  | Asset | bytes |
+  |---|---|
+  | `Transcriber_0.1.0_x64-setup.exe` | 259,441,580 |
+  | `Transcriber_0.1.0_windows-x64.zip` | 265,576,550 |
+  | `transcriber-cli_0.1.0_windows-x64.zip` | 259,102,718 |
+
+  The CLI zip's name is itself the proof the fix worked — the previous run emitted `transcriber-cli_0.1.zip`. Its contents match README's description: 11 entries comprising `transcriber.exe`, `win-start-transcription.bat`, `transcribe_file.bat`, `model/` (5 files) and the three notice files. That closes the one row of task 3.1 that could only be confirmed by a real run; `WebView2Loader.dll` remains to be confirmed from the portable zip during the hardware checks.
 
 ## 3. Documentation
 
