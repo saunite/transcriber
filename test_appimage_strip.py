@@ -39,8 +39,12 @@ def _fake_appimage(path: Path, tmp: Path, *, with_libs: bool) -> int:
     if payload.exists():
         payload.unlink()
     subprocess.run(
+        # No -no-xattrs here, on purpose: on an SELinux host the fake then carries
+        # security.selinux labels exactly like a locally built AppImage, so the
+        # strip is tested against what broke it (a non-root unsquashfs cannot
+        # restore those labels). On a host without SELinux this changes nothing.
         ["mksquashfs", str(root), str(payload),
-         "-root-owned", "-noappend", "-no-xattrs", "-comp", "zstd", "-b", "131072"],
+         "-root-owned", "-noappend", "-comp", "zstd", "-b", "131072"],
         capture_output=True, check=True,
     )
     with path.open("wb") as out:

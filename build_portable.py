@@ -128,6 +128,20 @@ def _fresh_dir(path: Path) -> Path:
     return path
 
 
+def _run(args: list[str]) -> subprocess.CompletedProcess:
+    """subprocess.run that fails the build with the tool's own error message.
+
+    check=True alone reports only "returned non-zero exit status 2", which hid
+    the real cause of a local AppImage repack failure: unsquashfs refusing to
+    restore SELinux labels as a non-root user.
+    """
+    result = subprocess.run(args, capture_output=True, text=True)
+    if result.returncode != 0:
+        detail = [l for l in (result.stderr or result.stdout).splitlines() if l.strip()][-5:]
+        raise SystemExit(f"{args[0]} failed (exit {result.returncode}):\n  " + "\n  ".join(detail))
+    return result
+
+
 # Host-owned graphics libraries that must NOT ship inside the AppImage.
 # linuxdeploy-plugin-gtk deploys GTK with `copy_tree "$gtk3_libdir" "$APPDIR/"`
 # -- a wholesale directory copy -- so the build machine's libwayland lands in
@@ -181,10 +195,7 @@ def _verify_stripped(image: Path, offset: int, expected_size: int, source_size: 
             f"{image.name} grew from {source_size} to {actual} bytes "
             "-- likely a squashfs compressor mismatch, refusing to publish it."
         )
-    listing = subprocess.run(
-        ["unsquashfs", "-o", str(offset), "-l", str(image)],
-        capture_output=True, text=True, check=True,
-    ).stdout
+    listing = _run(["unsquashfs", "-o", str(offset), "-l", str(image)]).stdout
     still_there = [lib for lib in STRIP_FROM_APPIMAGE if f"squashfs-root/{lib}" in listing]
     if still_there:
         raise SystemExit(f"{image.name} still bundles {', '.join(still_there)} -- the strip did not apply.")
@@ -199,9 +210,7 @@ def _strip_appimage_libs(src: Path, dest: Path, offset: int | None = None) -> Pa
     use a fake header instead of a real AppImage runtime).
     """
     if offset is None:
-        offset = int(subprocess.run(
-            [str(src), "--appimage-offset"], capture_output=True, text=True, check=True,
-        ).stdout.strip())
+        offset = int(_run([str(src), "--appimage-offset"]).stdout.strip())
     comp, block = _squashfs_settings(src, offset)
 
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -213,19 +222,17 @@ def _strip_appimage_libs(src: Path, dest: Path, offset: int | None = None) -> Pa
         if len(runtime) != offset:
             raise SystemExit(f"{src} is shorter than its own {offset}-byte runtime header.")
 
-        subprocess.run(
-            ["unsquashfs", "-o", str(offset), "-d", str(root), str(src)],
-            capture_output=True, text=True, check=True,
-        )
+        # -no-xattrs: an AppImage built on an SELinux host (Fedora, RHEL) carries
+        # security.selinux labels, which a non-root unsquashfs cannot restore --
+        # it fails with exit 2. The repack below drops xattrs anyway, so
+        # extracting them was pointless. CI (Ubuntu, no SELinux) never saw this.
+        _run(["unsquashfs", "-no-xattrs", "-o", str(offset), "-d", str(root), str(src)])
         # Absence is fine, and is the outcome we want if a future linuxdeploy
         # stops bundling these at all (design.md Decision 4).
         for lib in STRIP_FROM_APPIMAGE:
             (root / lib).unlink(missing_ok=True)
-        subprocess.run(
-            ["mksquashfs", str(root), str(payload),
-             "-root-owned", "-noappend", "-no-xattrs", "-comp", comp, "-b", str(block)],
-            capture_output=True, text=True, check=True,
-        )
+        _run(["mksquashfs", str(root), str(payload),
+              "-root-owned", "-noappend", "-no-xattrs", "-comp", comp, "-b", str(block)])
 
         if dest.exists():
             dest.unlink()
