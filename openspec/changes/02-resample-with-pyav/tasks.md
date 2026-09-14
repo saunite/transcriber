@@ -37,8 +37,12 @@
 
 ## 3. Full verification
 
-- [ ] 3.1 Run `.venv/bin/python run_tests.py` with the recording set, and verify it exits 0. Verify a local CLI live session with `--include-mic` on Linux still prints and saves `[SYS]` and `[MIC]` lines, and so does `--live` without `--include-mic` (the single-source path).
+- [x] 3.1 Run `.venv/bin/python run_tests.py` with the recording set, and verify it exits 0. Verify a local CLI live session with `--include-mic` on Linux still prints and saves `[SYS]` and `[MIC]` lines, and so does `--live` without `--include-mic` (the single-source path).
 
   **Automated half done 2026-09-14; the live half is waiting on the user.** With the recording set, `run_tests.py` passed 12/12 in 25.9s, including the new `test_resample.py`. `tests/test_engine.py --engine dist/linux/transcriber-sidecar` also passes both checks against the SciPy-free frozen binary. Packages built from it: AppImage 399,141,368 → 370,358,776 bytes, `.rpm` 321,462,573 → 292,504,145 bytes. The CLI live sessions need real audio and are the user's L2–L4.
+
+  **Live half user-verified on Fedora, 2026-09-14** with the SciPy-free frozen sidecar (`dist/linux/transcriber-sidecar` from `7e46cdb`'s code, containing `01` and `02`). Dual capture (`--live --include-mic`) worked. The single-source path (`--live --audio-device 11`, a 44.1 kHz device, so `_process_audio_chunk` resamples with PyAV) also worked. **The user noticed L4 took long to show its first line.** That is the CLI default `--chunk-duration 30.0`: with no mic, nothing prints until 30 s of audio have built up. L2/L3's `[MIC]` lines are fixed 5 s chunks, so they looked quicker, and the GUI and launchers pass `--chunk-duration 10`. Not a regression: the single-source path only gained the resampler, about 9 ms per chunk. The test instructions should have passed `--chunk-duration 10`.
 - [ ] 3.2 Trigger a `workflow_dispatch` CI run on `dev` (the user must ask for it). Verify all four jobs pass, the macOS smoke test included, and record each platform's sidecar size from the job logs or artifacts.
 - [ ] 3.3 **User check on Windows and Linux** with builds containing `01` and `02`. This can be the same round as `01`'s 4.2 and 4.3: a live GUI session on each platform transcribes system audio and the mic correctly.
+
+  **Linux half user-verified 2026-09-14** (the GUI with the local AppImage/`.rpm`; see `01` 4.3). The Windows half is waiting on a CI build.

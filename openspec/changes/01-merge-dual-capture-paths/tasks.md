@@ -22,13 +22,15 @@
 
 ## 3. Switch the platforms over
 
-- [ ] 3.1 Rewrite `_transcribe_live_linux_dual` to keep only its system-source detection (parec, or `--audio-device` via `sd`), `_resolve_mic_config`, and a `_run_dual_capture` call with its `run_sys` for both modes, `sys_rate` and title. Verify `python test_dual_capture.py` still passes, and that a local live session works in both modes: `transcriber.py --live --include-mic` (monitor auto-detect), and `--live --include-mic --audio-device <monitor index from --list-devices>`. Each must print `[SYS]` and `[MIC]` lines and save them on Ctrl+C.
+- [x] 3.1 Rewrite `_transcribe_live_linux_dual` to keep only its system-source detection (parec, or `--audio-device` via `sd`), `_resolve_mic_config`, and a `_run_dual_capture` call with its `run_sys` for both modes, `sys_rate` and title. Verify `python test_dual_capture.py` still passes, and that a local live session works in both modes: `transcriber.py --live --include-mic` (monitor auto-detect), and `--live --include-mic --audio-device <monitor index from --list-devices>`. Each must print `[SYS]` and `[MIC]` lines and save them on Ctrl+C.
 
   **Implemented 2026-09-14; the audio half is still open.** `_transcribe_live_linux_dual` now keeps only its two system-source setups, each with its own `run_sys`: parec calls `on_chunk`, and `--audio-device` uses an `sd.InputStream` that only `enqueue`s, polled by `check_silence()`. Then `_resolve_mic_config` and the runner. `test_dual_capture.py` passes. **Smoke-tested silently on Fedora:**
   - `--live --include-mic` auto-detected `alsa_output.pci-0000_00_1f.3.analog-stereo.monitor` and the default mic;
   - `--live --include-mic --audio-device 11` (`pipewire`) opened too;
   - both printed the status and `Listening...`, stopped on SIGINT, wrote the `# Live Transcription (System Audio + Microphone)` header, and printed no traceback.
   **Not yet checked:** real `[SYS]` and `[MIC]` lines, which need audio playing and someone speaking. That was left to the user rather than playing sound on their machine unannounced.
+
+  **Audio half user-verified on Fedora, 2026-09-14** with the SciPy-free frozen sidecar (`dist/linux/transcriber-sidecar` from `7e46cdb`'s code, containing `01` and `02`), with a video playing and the user speaking: `--live --include-mic` (monitor auto-detect) and `--live --include-mic --audio-device 11` (`pipewire`) both worked: "all seems good".
 - [x] 3.2 Rewrite `transcribe_live_wasapi` the same way, with `sys_rate=lambda: capture.sample_rate`, `cleanup=capture.cleanup`, and the mic only when `--include-mic` is set. Verify `python -c "import transcriber"` succeeds and the automated tests pass. Real Windows verification is 4.2.
 
   **Done 2026-09-14.** The detection block is kept verbatim; the mic goes through `_resolve_mic_config` when `--include-mic` is set, then `_run_dual_capture` with `sys_rate=lambda: capture.sample_rate` and `cleanup=capture.cleanup`. `import transcriber` succeeds. **Added beyond the task text:** with no Windows machine here, `test_dual_capture.py` case 4 runs `transcribe_live_wasapi` against a fake `WASAPICapture` whose device opens at 44100 Hz, with the runner replaced by a recorder. It confirms `sys_rate()` returns 44100, the title is `WASAPI Loopback`, and `cleanup` releases the capture. With `sys_rate=lambda: 48000` it fails: `WASAPI must pass the rate its capture opened`.
@@ -45,4 +47,6 @@
 
   **Done 2026-09-14.** With `TRANSCRIBER_TEST_SPEECH` set, 11/11 suites passed in 24.3s, including the new `test_dual_capture.py` (3.7s). `transcriber.py` went from **1451 to 1154 lines (-297)**, more than the ~200 estimated, because the three copies of the mic query also went into `_resolve_mic_config`.
 - [ ] 4.2 **User check on Windows** with a build containing this change (it may be combined with `02`'s round): a GUI live session and `win-start-transcription.bat` each show `[SYS]` and `[MIC]` lines and save the transcript. If an output device can be switched to 44.1 kHz in Windows Sound settings, repeat the GUI session with it and confirm the system audio still transcribes correctly.
-- [ ] 4.3 **User check on Linux** with a local build (the AppImage or `.rpm`): a GUI live session shows `[SYS]` and `[MIC]` lines, stops cleanly, and saves the transcript.
+- [x] 4.3 **User check on Linux** with a local build (the AppImage or `.rpm`): a GUI live session shows `[SYS]` and `[MIC]` lines, stops cleanly, and saves the transcript.
+
+  **User-verified on Fedora, 2026-09-14** with the local AppImage/`.rpm` built from the same code (`~/Downloads/transcriber-test/dualcapture-local/`): a GUI live session worked ("L1 test worked").
