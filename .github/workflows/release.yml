@@ -57,7 +57,21 @@ jobs:
         if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "$GITHUB_REF_NAME" --generate-notes SOURCE-PROVENANCE.txt
+          REPO: ${{ github.repository }}
+        # The GPL source directions go in the notes, linked at this tag so they
+        # always match what this release bundled, rather than as a download
+        # among the packages (openspec/changes/tidy-release-workflow). The same
+        # file also ships inside every artifact.
+        run: |
+          notes=$(cat <<EOF
+          ## Source code for bundled GPL components
+
+          These downloads include FFmpeg, x264 and x265 (GPL-licensed) through PyAV.
+          Where to get their exact source: [SOURCE-PROVENANCE.txt](https://github.com/$REPO/blob/$GITHUB_REF_NAME/SOURCE-PROVENANCE.txt).
+          The same file is also inside every download.
+          EOF
+          )
+          gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "$GITHUB_REF_NAME" --notes "$notes" --generate-notes
 
   linux:
     needs: preflight
@@ -172,7 +186,7 @@ jobs:
 
       - name: Upload run artifacts
         if: github.ref_type != 'tag'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux
           path: out/*
@@ -251,7 +265,7 @@ jobs:
 
       - name: Upload run artifacts
         if: github.ref_type != 'tag'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows
           path: out/*
@@ -337,7 +351,7 @@ jobs:
 
       - name: Upload run artifacts
         if: github.ref_type != 'tag'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos
           path: out/*
