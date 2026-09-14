@@ -1,5 +1,9 @@
 # Audio transcription with faster-whisper
 faster-whisper>=1.0.0
+# Exact pin: PyAV bundles GPL FFmpeg/x264/x265, and SOURCE-PROVENANCE.txt must
+# describe this exact build. Bumping it means re-deriving that file; release.yml's
+# preflight fails otherwise (openspec/changes/refresh-source-provenance-for-pyav).
+av==18.1.0
 
 # Audio processing and capture
 sounddevice>=0.4.6

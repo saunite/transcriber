@@ -42,6 +42,38 @@ jobs:
       # Automates README "Releasing" licensing check: these links are the GPL
       # source-availability mechanism, so a dead one blocks the release.
       # Templated URLs ({platform}) are skipped; their tag-tree URL is checked.
+      # SOURCE-PROVENANCE.txt names one exact PyAV build (its bundled GPL FFmpeg,
+      # x264, x265). Unpinned, every build took the newest PyAV and the file went
+      # stale silently, so every run -- manual too -- checks the pin matches it
+      # (openspec/changes/refresh-source-provenance-for-pyav).
+      - name: PyAV pin matches source provenance
+        run: |
+          fail=0
+          want=""
+          for f in requirements.txt requirements-linux.txt requirements-macos.txt; do
+            lines=$(grep -E '^av([^A-Za-z0-9_-]|$)' "$f" || true)
+            v=$(printf '%s\n' "$lines" | sed -nE 's/^av==([0-9][0-9A-Za-z.+-]*)$/\1/p')
+            if [ -z "$v" ] || [ "$(printf '%s\n' "$lines" | grep -c .)" != 1 ]; then
+              echo "::error::$f must pin PyAV to one exact version (av==<version>); found: ${lines:-no av line}"
+              fail=1
+              continue
+            fi
+            echo "$f: av==$v"
+            if [ -z "$want" ]; then
+              want=$v
+              first=$f
+            elif [ "$v" != "$want" ]; then
+              echo "::error::$f pins av==$v but $first pins av==$want"
+              fail=1
+            fi
+          done
+          recorded=$(sed -nE 's/.*[[:space:]]av == ([0-9][^[:space:]]*).*/\1/p' SOURCE-PROVENANCE.txt | head -n 1)
+          if [ -n "$want" ] && [ "$recorded" != "$want" ]; then
+            echo "::error::requirements pin av==$want but SOURCE-PROVENANCE.txt records av == ${recorded:-nothing}; re-derive SOURCE-PROVENANCE.txt for this PyAV"
+            fail=1
+          fi
+          exit $fail
+
       - name: Source-provenance links resolve
         run: |
           fail=0
