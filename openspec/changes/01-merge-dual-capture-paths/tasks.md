@@ -46,7 +46,9 @@
 - [x] 4.1 Run `.venv/bin/python run_tests.py`; it must exit 0. Record the change in `transcriber.py`'s line count, measured with `wc -l` before and after.
 
   **Done 2026-09-14.** With `TRANSCRIBER_TEST_SPEECH` set, 11/11 suites passed in 24.3s, including the new `test_dual_capture.py` (3.7s). `transcriber.py` went from **1451 to 1154 lines (-297)**, more than the ~200 estimated, because the three copies of the mic query also went into `_resolve_mic_config`.
-- [ ] 4.2 **User check on Windows** with a build containing this change (it may be combined with `02`'s round): a GUI live session and `win-start-transcription.bat` each show `[SYS]` and `[MIC]` lines and save the transcript. If an output device can be switched to 44.1 kHz in Windows Sound settings, repeat the GUI session with it and confirm the system audio still transcribes correctly.
+- [x] 4.2 **User check on Windows** with a build containing this change (it may be combined with `02`'s round): a GUI live session and `win-start-transcription.bat` each show `[SYS]` and `[MIC]` lines and save the transcript. If an output device can be switched to 44.1 kHz in Windows Sound settings, repeat the GUI session with it and confirm the system audio still transcribes correctly.
+
+  **User-verified 2026-09-14** (Windows 11, the `windows` artifact from CI run 34885359545 at `1656436`, containing `01` and `02`), "All 3 windows tests passed". W1: a GUI live session showed and saved `[SYS]` and `[MIC]` lines. W2: `win-start-transcription.bat TEST` saved them to `TEST_<date>_<time>.txt`. W3: with the output device switched to 44100 Hz, system audio still transcribed correctly, which confirms the WASAPI real-rate fix on hardware.
 - [x] 4.3 **User check on Linux** with a local build (the AppImage or `.rpm`): a GUI live session shows `[SYS]` and `[MIC]` lines, stops cleanly, and saves the transcript.
 
   **User-verified on Fedora, 2026-09-14** with the local AppImage/`.rpm` built from the same code (`~/Downloads/transcriber-test/dualcapture-local/`): a GUI live session worked ("L1 test worked").

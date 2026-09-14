@@ -54,6 +54,8 @@
 
   Each macOS package shrank by about 14.6 MB (`.dmg` 220,131,191 → 205,506,666). SciPy's arm64 wheel is smaller than its x86-64 one.
 
-- [ ] 3.3 **User check on Windows and Linux** with builds containing `01` and `02`. This can be the same round as `01`'s 4.2 and 4.3: a live GUI session on each platform transcribes system audio and the mic correctly.
+- [x] 3.3 **User check on Windows and Linux** with builds containing `01` and `02`. This can be the same round as `01`'s 4.2 and 4.3: a live GUI session on each platform transcribes system audio and the mic correctly.
 
   **Linux half user-verified 2026-09-14** (the GUI with the local AppImage/`.rpm`; see `01` 4.3). The Windows half is waiting on a CI build.
+
+  **Windows half user-verified 2026-09-14** (Windows 11, the `windows` artifact from CI run 34885359545 at `1656436`, containing `01` and `02`): W1–W3 passed, including the 44.1 kHz output device, which goes through the PyAV resampler. With the Linux half recorded above, both platforms are done.
