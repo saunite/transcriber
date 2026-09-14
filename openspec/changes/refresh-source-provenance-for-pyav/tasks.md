@@ -41,7 +41,7 @@
   - **Library versions** (`av.library_versions`, identical to the version suffixes on the macOS dylibs): avutil 60.26.102, avcodec 62.28.102, avformat 62.12.102, avdevice 62.3.102, avfilter 11.14.102, swscale 9.5.102, swresample 6.3.102.
   - **Configure strings**, read with `strings` from each platform's avutil: all share `--enable-version3 --enable-libx264 --enable-libx265` and the codec flags. Linux adds `--enable-alsa --enable-gnutls --enable-libxcb --enable-nvenc --enable-nvdec --enable-amf --enable-libvpl`; Windows adds `--enable-mediafoundation --enable-nvenc --enable-nvdec --enable-amf --enable-libvpl`; macOS adds `--enable-videotoolbox --enable-audiotoolbox`. They match `build-ffmpeg.py`'s per-platform switches. **`--enable-gpl` is still absent on every platform**, the same unexplained oddity the old file recorded. **`--enable-gmp` is gone**: 8.0-2's Windows build had it.
   - **No SBOM:** the `ffmpeg-manylinux-x86_64.tar.gz` release tarball contains headers and libraries only. `sbom.py` just prints from the recipe, so it adds nothing beyond `pkg.py`.
-- [ ] 2.2 Rewrite `SOURCE-PROVENANCE.txt`, keeping its section structure (how the binaries got here, what ships, per-component source, maintenance):
+- [x] 2.2 Rewrite `SOURCE-PROVENANCE.txt`, keeping its section structure (how the binaries got here, what ships, per-component source, maintenance):
   - `av == 18.1.0`, pinning `8.1.2-1`, with links to the recipe files at that tag;
   - the library versions and Linux configure string from 2.1;
   - a per-platform subsection whose Windows and macOS flags are stated as recipe-derived;
@@ -50,13 +50,29 @@
   - the maintenance section saying PyAV is pinned and the preflight guard enforces the match;
   - "Last verified" set to the date of 2.3.
   Verify with the guard script from 1.2, which must now pass, and `git diff` shows no leftover `16.0.1`, `8.0-2` or `FFmpeg 8.0` text.
-- [ ] 2.3 Run the preflight link check's command locally against the new file. Verify every non-template URL resolves (`curl -fsSL -r 0-0`), and record any that don't, fixing or noting them before continuing.
-- [ ] 2.4 Update `THIRD-PARTY-LICENSES.txt` (Decision 4): the "Bundled media libraries" entries (FFmpeg 8.1.2, x264, x265 4.2, the component list per 2.1) and the `PyAV 18.1.0` table line, with the `--enable-version3` statement re-checked against the new configure string. Verify that `grep -n "16.0.1\|FFmpeg 8.0\|x265 4.1\|TwoLAME"` finds nothing, unless 2.1 showed that component is still built.
-- [ ] 2.5 Update README's licensing maintenance bullet to say PyAV is pinned (`av==18.1.0`), and that a bump must re-derive `SOURCE-PROVENANCE.txt`, which the preflight check enforces. Verify the bullet no longer says "If the pinned PyAV version changed".
+
+  **Done 2026-09-14.** `SOURCE-PROVENANCE.txt` is rewritten in its four sections, with `av == 18.1.0` → `8.1.2-1` and links to PyAV's `ffmpeg-8.1.json` and to the recipe's tree, `pkg.py` and `build-ffmpeg.py` at the tag. It records the library versions, and the configure strings read from **all three** platforms' avutil (a common block plus per-platform additions), keeping the missing `--enable-gpl` note. A per-platform bundled-library list adds the Linux libraries copied in from the build image, the Windows MSYS2 libiconv 1.19 and GCC 16.1.0 runtime, and says libpng is built but not shipped. Copyleft sources are split into all-platform, Linux-only and Windows-only (toolchain) groups; permissive ones are listed; the removed codecs are gone; the x265 hosting-risk note is kept. The maintenance section now describes the pin and the guard. "Last verified: 2026-09-14". The guard script from 1.2 now **passes** (exit 0), and no `16.0.1`, `8.0-2` or `FFmpeg 8.0` text remains.
+- [x] 2.3 Run the preflight link check's command locally against the new file. Verify every non-template URL resolves (`curl -fsSL -r 0-0`), and record any that don't, fixing or noting them before continuing.
+
+  **Done 2026-09-14.** Running the preflight "Source-provenance links resolve" script, taken from the parsed workflow, against the new file: **all 29 non-template URLs resolve**, exit 0. They include the x265 4.2 Bitbucket download, libiconv-1.19, gcc-16.1.0 and every `pkg.py` source. None needed fixing.
+- [x] 2.4 Update `THIRD-PARTY-LICENSES.txt` (Decision 4): the "Bundled media libraries" entries (FFmpeg 8.1.2, x264, x265 4.2, the component list per 2.1) and the `PyAV 18.1.0` table line, with the `--enable-version3` statement re-checked against the new configure string. Verify that `grep -n "16.0.1\|FFmpeg 8.0\|x265 4.1\|TwoLAME"` finds nothing, unless 2.1 showed that component is still built.
+
+  **Done 2026-09-14.** In `THIRD-PARTY-LICENSES.txt`:
+  - the effective-licence bullet now says `--enable-version3` is on every platform, pulls in opencore-amr under version-3 terms, and pulls in GnuTLS with GMP, nettle and libunistring on Linux;
+  - the Bundled media libraries section is rebuilt with FFmpeg 8.1.2 and all-platform, Linux-only and Windows-only copyleft groups, with the permissive list updated;
+  - the removed codecs are dropped, and libvpl, the AMF and NVIDIA headers, and libdrm/libXau/libxcb are added;
+  - the PyAV table line reads `PyAV 18.1.0`;
+  - the MIT/BSD blanket notice now also covers BSD-3-Clause-Clear, for SVT-AV1.
+  The leftover grep finds nothing.
+- [x] 2.5 Update README's licensing maintenance bullet to say PyAV is pinned (`av==18.1.0`), and that a bump must re-derive `SOURCE-PROVENANCE.txt`, which the preflight check enforces. Verify the bullet no longer says "If the pinned PyAV version changed".
+
+  **Done 2026-09-14.** The README bullet now reads "PyAV is pinned (`av==18.1.0` in the three `requirements*.txt` files), and bumping it means re-deriving everything in `SOURCE-PROVENANCE.txt`…", listing `pkg.py`, `build-ffmpeg.py` and the wheels, and saying the preflight fails a build whose pin differs. "If the pinned PyAV version changed" no longer appears.
 
 ## 3. Verification
 
-- [ ] 3.1 Run `.venv/bin/python run_tests.py` with the recording set, in a venv matching the pinned requirements. Verify it exits 0.
+- [x] 3.1 Run `.venv/bin/python run_tests.py` with the recording set, in a venv matching the pinned requirements. Verify it exits 0.
+
+  **Done 2026-09-14.** In the project `.venv`, which has `av 18.1.0` (the pinned version), with the recording set: 12/12 suites passed in 24.8s.
 - [ ] 3.2 Manual `workflow_dispatch` run on `dev` (only when the user asks for it). Verify:
   - the new guard step passes;
   - "Source-provenance links resolve" passes with the new URLs;

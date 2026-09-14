@@ -22,9 +22,10 @@ however, bundles components that are more restrictive than that:
 
   * x264 and x265 are GPL-2.0-or-later ONLY.  Their compiled libraries ship
     inside the sidecar executable.
-  * The bundled FFmpeg was built with --enable-version3 (confirmed by reading
-    the configure string out of the shipped avutil binary), pulling in
-    GMP and opencore-amr under version-3 terms.
+  * The bundled FFmpeg was built with --enable-version3 on every platform
+    (confirmed by reading the configure string out of each shipped avutil
+    binary), pulling in opencore-amr (Apache-2.0) under version-3 terms, and on
+    Linux GnuTLS with GMP, nettle and libunistring (LGPL-3.0-or-later options).
 
 Combining GPLv3-terms components with GPL-2.0-OR-LATER source is permitted --
 the "or later" clause allows the combined work to be conveyed under GPLv3 --
@@ -46,51 +47,68 @@ The transcription engine decodes audio and video through PyAV, whose binary
 wheels bundle pre-compiled FFmpeg libraries.  No external ffmpeg program is
 used, required, or installed by this project.
 
-  FFmpeg 8.0 (libavcodec, libavdevice, libavfilter, libavformat, libavutil,
-              libswresample, libswscale)
+  FFmpeg 8.1.2 (libavcodec, libavdevice, libavfilter, libavformat, libavutil,
+                libswresample, libswscale)
     LGPL-2.1-or-later core, built here with GPL and version-3 components
     Copyright (c) the FFmpeg developers
     https://ffmpeg.org
 
+  All platforms:
   x264            GPL-2.0-or-later    Copyright (c) VideoLAN and contributors
                                       https://www.videolan.org/developers/x264.html
-  x265 4.1        GPL-2.0-or-later    Copyright (c) MulticoreWare, Inc.
+  x265 4.2        GPL-2.0-or-later    Copyright (c) MulticoreWare, Inc.
                                       https://www.x265.org
+  LAME 3.100      LGPL-2.0-or-later   https://lame.sourceforge.io
+
+  Linux only:
+  GnuTLS 3.8.13   LGPL-2.1-or-later   https://www.gnutls.org
   GMP 6.3.0       LGPL-3.0-or-later OR GPL-2.0-or-later
                                       Copyright (c) Free Software Foundation
                                       https://gmplib.org
-  LAME 3.100      LGPL-2.0-or-later   https://lame.sourceforge.io
-  TwoLAME 0.4.0   LGPL-2.1-or-later   https://www.twolame.org
-  GNU libiconv    LGPL-2.1-or-later   https://www.gnu.org/software/libiconv/
-  libgcc, libstdc++
+  nettle 3.10.2   LGPL-3.0-or-later OR GPL-2.0-or-later
+    ships as libnettle and libhogweed https://www.lysator.liu.se/~nisse/nettle/
+  libunistring 1.4.2
+                  LGPL-3.0-or-later OR GPL-2.0-or-later
+                                      https://www.gnu.org/software/libunistring/
+  alsa-lib 1.2.14 LGPL-2.1-or-later   https://www.alsa-project.org
+
+  Windows only:
+  GNU libiconv 1.19
+                  LGPL-2.1-or-later   https://www.gnu.org/software/libiconv/
+  libgcc, libstdc++ (GCC 16.1.0)
                   GPL-3.0-or-later WITH GCC Runtime Library Exception
                                       https://gcc.gnu.org
-  libwinpthread   MIT / BSD (mingw-w64 runtime)
+  libwinpthread   MIT (mingw-w64 runtime)
                                       https://www.mingw-w64.org
 
-  opencore-amr 0.1.5   Apache-2.0     https://opencore-amr.sourceforge.io
-  Opus 1.5.2           BSD-3-Clause   Copyright (c) Xiph.Org Foundation
-  Speex 1.2.1          BSD-3-Clause   Copyright (c) Xiph.Org Foundation
-  libvorbis 1.3.7      BSD-3-Clause   Copyright (c) Xiph.Org Foundation
-  libogg 1.3.5         BSD-3-Clause   Copyright (c) Xiph.Org Foundation
-  libvpx 1.15.1        BSD-3-Clause   Copyright (c) The WebM Project
-  libaom 3.11.0        BSD-2-Clause + AOM Patent License
+  opencore-amr 0.1.6   Apache-2.0     https://opencore-amr.sourceforge.io
+  Opus 1.6.1           BSD-3-Clause   Copyright (c) Xiph.Org Foundation
+  libvpx 1.16.0        BSD-3-Clause   Copyright (c) The WebM Project
+  dav1d 1.5.3          BSD-2-Clause   Copyright (c) VideoLAN and dav1d authors
+  SVT-AV1 4.1.0        BSD-3-Clause-Clear + AOM Patent License
                                       Copyright (c) Alliance for Open Media
-  dav1d 1.5.1          BSD-2-Clause   Copyright (c) VideoLAN and dav1d authors
-  SVT-AV1 3.1.0        BSD-3-Clause + AOM Patent License
-                                      Copyright (c) Alliance for Open Media
-  libwebp 1.5.0        BSD-3-Clause   Copyright (c) Google Inc.
+  libwebp 1.6.0        BSD-3-Clause   Copyright (c) Google Inc.
     ships as libwebp, libwebpmux and libsharpyuv -- all part of the libwebp
     project and covered by the same licence and copyright
-  OpenH264 2.6.0       BSD-2-Clause   Copyright (c) Cisco Systems, Inc.
-  zlib                 zlib License   Copyright (c) Jean-loup Gailly, Mark Adler
+  libvpl 2.16.0        MIT            Copyright (c) Intel Corporation
+                                      (Linux, Windows)
+  AMF headers 1.5.0    MIT            Copyright (c) Advanced Micro Devices, Inc.
+                                      (compiled in; Linux, Windows)
+  nv-codec-headers 13.0.19.0
+                       MIT            Copyright (c) NVIDIA Corporation
+                                      (compiled in; Linux, Windows)
+  libdrm, libXau, libxcb (libxcb-shape, -shm, -xfixes)
+                       MIT            freedesktop.org / X.Org contributors
+                                      (Linux; from the build image)
+  zlib 1.3.2           zlib License   Copyright (c) Jean-loup Gailly, Mark Adler
+                                      (Windows; Linux and macOS use the system's)
 
 
 --------------------------------------------------------------------------------
 BUNDLED PYTHON COMPONENTS (frozen into the sidecar executable)
 --------------------------------------------------------------------------------
 
-  PyAV 16.0.1              BSD-3-Clause    https://github.com/PyAV-Org/PyAV
+  PyAV 18.1.0              BSD-3-Clause    https://github.com/PyAV-Org/PyAV
   faster-whisper 1.2.1     MIT             Copyright (c) SYSTRAN
                                            https://github.com/SYSTRAN/faster-whisper
   CTranslate2 4.6.2        MIT             Copyright (c) OpenNMT / SYSTRAN
@@ -162,7 +180,7 @@ Mozilla Public License 2.0:                  https://www.mozilla.org/MPL/2.0/
 
 The MIT and BSD licenses above carry the standard permission notice and the
 warranty disclaimer, reproduced here once for all components listed as MIT,
-BSD-2-Clause, or BSD-3-Clause:
+BSD-2-Clause, BSD-3-Clause, or BSD-3-Clause-Clear:
 
   Permission is hereby granted, free of charge, to any person obtaining a copy
   of this software and associated documentation files, to deal in the Software

@@ -213,7 +213,7 @@ To build everything without releasing, for example to check that a branch still 
 **Licensing: one step still needs a human.** The artifacts bundle GPL-licensed libraries (FFmpeg, x264, x265, via PyAV), so publishing one carries a source-availability obligation. `build_portable.py` and the Tauri bundle config copy `LICENSE`, `THIRD-PARTY-LICENSES.txt`, and `SOURCE-PROVENANCE.txt` into every artifact, and every release's notes link to `SOURCE-PROVENANCE.txt` as it was at that release's tag, instead of attaching it among the downloads.
 
 - The links in that file *are* the compliance mechanism (GPLv3 §6(d)); a dead link is an unmet obligation. The workflow's link check fails the release when one stops resolving. The x265 archive on Bitbucket is the most likely to disappear; if the check flags it, correct the link or rehost the archive.
-- **If the pinned PyAV version changed since the last release**, re-derive everything in `SOURCE-PROVENANCE.txt` before tagging: read the new PyAV `scripts/ffmpeg-*.json` for its `pyav-ffmpeg` tag, then that tag's build recipe for the new component versions.
+- **PyAV is pinned (`av==18.1.0` in the three `requirements*.txt` files), and bumping it means re-deriving everything in `SOURCE-PROVENANCE.txt`**: read the new PyAV `scripts/ffmpeg-*.json` for its `pyav-ffmpeg` tag, that tag's `scripts/pkg.py` and `build-ffmpeg.py` for the component versions and flags, and the new wheels for what actually ships. The workflow's preflight enforces it: a build fails when any pin differs from the `av ==` version the file records.
 
 ### Running the tests
 
