@@ -73,8 +73,10 @@
 - [x] 3.1 Run `.venv/bin/python run_tests.py` with the recording set, in a venv matching the pinned requirements. Verify it exits 0.
 
   **Done 2026-09-14.** In the project `.venv`, which has `av 18.1.0` (the pinned version), with the recording set: 12/12 suites passed in 24.8s.
-- [ ] 3.2 Manual `workflow_dispatch` run on `dev` (only when the user asks for it). Verify:
+- [x] 3.2 Manual `workflow_dispatch` run on `dev` (only when the user asks for it). Verify:
   - the new guard step passes;
   - "Source-provenance links resolve" passes with the new URLs;
   - all platform jobs pass;
   - a job log's pip output shows `av-18.1.0` being installed.
+
+  **Done 2026-09-14,** `workflow_dispatch` run 34893981518 on `dev` at `8e6f296`, requested by the user. **"PyAV pin matches source provenance" passed**, printing `requirements.txt: av==18.1.0`, `requirements-linux.txt: av==18.1.0` and so on, with no error annotation. **"Source-provenance links resolve" passed** with the new URLs. All four jobs succeeded. Each platform job's pip installed exactly the pinned wheel: `av-18.1.0-cp311-abi3-manylinux_2_28_x86_64.whl`, `…-win_amd64.whl` and `…-macosx_14_0_arm64.whl` — the three wheels the provenance was derived from.
