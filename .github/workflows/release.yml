@@ -320,6 +320,9 @@ jobs:
           # Open Anyway path.
           codesign -dv src-tauri/target/release/bundle/macos/Transcriber.app 2>&1
           codesign --verify --deep --strict src-tauri/target/release/bundle/macos/Transcriber.app
+          # Unzipping must produce Transcriber.app itself, not its loose Contents/.
+          unzip -l dist/portable/Transcriber_*_macos-arm64.zip | grep -q " Transcriber.app/Contents/Info.plist$" \
+            || { echo "::error::the zipped app does not unpack to Transcriber.app"; exit 1; }
           mkdir -p out
           cp src-tauri/target/release/bundle/dmg/*.dmg \
              dist/portable/Transcriber_*_macos-arm64.zip \

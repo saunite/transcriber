@@ -309,7 +309,8 @@ def build_macos(target: str | None) -> Path:
 
     ditto = shutil.which("ditto")
     if ditto:
-        subprocess.run([ditto, "-c", "-k", "--sequesterRsrc", str(app_path), str(zip_path)], check=True)
+        # --keepParent: without it the zip holds Contents/ rather than Transcriber.app/.
+        subprocess.run([ditto, "-c", "-k", "--sequesterRsrc", "--keepParent", str(app_path), str(zip_path)], check=True)
     else:
         _zip_dir(app_path, zip_path)
     return zip_path
