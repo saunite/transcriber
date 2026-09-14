@@ -45,6 +45,20 @@ def functions_missing_listening(transcriber_py: Path) -> list[str]:
     return missing
 
 
+def csp_problems(tauri_conf: Path) -> list[str]:
+    """What is wrong with the app window's Content Security Policy
+    (openspec/changes/harden-webview-csp-and-tls). Chromium here runs without
+    Tauri, so this pins the configured policy rather than proving enforcement."""
+    csp = json.loads(tauri_conf.read_text(encoding="utf-8")).get("app", {}).get("security", {}).get("csp")
+    if not isinstance(csp, str) or not csp.strip():
+        return [f"no CSP is set (csp = {csp!r})"]
+    problems = []
+    if "default-src 'self'" not in csp:
+        problems.append("missing default-src 'self'")
+    problems += [f"allows {bad}" for bad in ("'unsafe-inline'", "'unsafe-eval'") if bad in csp]
+    return problems
+
+
 def calls(page, cmd):
     return page.evaluate("cmd => __fake.calls.filter(c => c.cmd === cmd)", cmd)
 
@@ -94,6 +108,11 @@ def test_command_drift():
 def test_listening_wording():
     missing = functions_missing_listening(ROOT / "transcriber.py")
     assert not missing, f"live capture functions no longer print 'Listening...': {', '.join(missing)}"
+
+
+def test_csp():
+    problems = csp_problems(ROOT / "src-tauri" / "tauri.conf.json")
+    assert not problems, "tauri.conf.json CSP: " + "; ".join(problems)
 
 
 def test_live_start_stop(browser):
@@ -203,6 +222,7 @@ def main() -> int:
 
     report("command drift", test_command_drift)
     report("listening wording", test_listening_wording)
+    report("content security policy", test_csp)
     with sync_playwright() as p:
         browser = p.chromium.launch()
         report("page loads", test_page_loads, browser)

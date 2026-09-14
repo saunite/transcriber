@@ -36,7 +36,6 @@ if exist "%~dp0transcriber.exe" (
 )
 
 REM Set up environment variables
-set PYTHONHTTPSVERIFY=0
 set HF_HUB_DISABLE_SYMLINKS_WARNING=1
 set PYTHONIOENCODING=utf-8
 chcp 65001 >nul

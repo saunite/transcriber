@@ -33,7 +33,6 @@ set FORMAT=txt
 if not "%~3"=="" set FORMAT=%~3
 
 REM Set up environment variables
-set PYTHONHTTPSVERIFY=0
 
 echo ============================================================
 echo Audio/Video Transcription

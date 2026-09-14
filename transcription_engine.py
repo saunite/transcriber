@@ -4,8 +4,6 @@ Handles both file-based and streaming audio transcription.
 """
 
 import os
-import ssl
-from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Tuple, List
@@ -22,21 +20,6 @@ from tqdm import tqdm
 tqdm.set_lock(threading.RLock())
 
 from faster_whisper import WhisperModel
-
-
-@contextmanager
-def _suppress_ssl_verification():
-    """Temporarily disable SSL verification for corporate network compatibility.
-
-    Context manager that restores SSL verification on exit.
-    Used when downloading Whisper models may fail due to corporate firewalls.
-    """
-    original_context = ssl._create_default_https_context
-    ssl._create_default_https_context = ssl._create_unverified_context
-    try:
-        yield
-    finally:
-        ssl._create_default_https_context = original_context
 
 
 class NoDecodableAudioError(ValueError):
@@ -100,12 +83,11 @@ class TranscriptionEngine:
             model_dir = None
             print(f"Loading {model_size} model on {device} with {compute_type}...")
 
-        with _suppress_ssl_verification():
-            self.model = WhisperModel(
-                str(model_dir) if model_dir else model_size,
-                device=device,
-                compute_type=compute_type
-            )
+        self.model = WhisperModel(
+            str(model_dir) if model_dir else model_size,
+            device=device,
+            compute_type=compute_type
+        )
         print("✓ Model loaded successfully")
     
     def transcribe_file(
