@@ -430,11 +430,14 @@ els.tabFile.addEventListener("click", () => selectTab("file"));
 
 // ---- Settings -------------------------------------------------------------
 
-// Capture state, not configuration: a pen is "armed" only while a live
-// session is actually running. Called from renderRunState() on every state
-// change, and after the mic checkbox changes.
+// Capture state, not configuration: a pen is "armed" only while the engine is
+// actually capturing -- not while it is still loading its model ("loaded")
+// (openspec/changes/fix-capturing-shown-before-listening). "stopping" still
+// counts: the engine holds the devices until the stop returns. Called from
+// renderRunState() on every state change, and after the mic checkbox changes.
+const CAPTURING_STATES = new Set(["listening", "advancing", "penlift", "stopping"]);
 function renderPens() {
-  const capturing = liveState !== "idle";
+  const capturing = CAPTURING_STATES.has(liveState);
   const micWanted = els.includeMicCheckbox.checked;
 
   els.penSys.dataset.armed = String(capturing);
@@ -878,12 +881,17 @@ listen("transcript-line", (event) => {
 });
 
 listen("sidecar-log", (event) => {
-  // Engine chatter proves the process came up, so it advances the initial
-  // "starting" state -- the engine reaches "Listening..." up to a full chunk
-  // before the first transcript line, and leaving the status on "Starting"
-  // that whole time reads as hung. It deliberately does NOT clear a stall:
-  // once chunks have been flowing, only a real chunk proves recovery.
-  if (currentFlow !== "file" && liveState === "loaded") setLiveState("listening");
+  // The engine's "Listening..." confirmation (printed by every live capture
+  // path, after the model has loaded) advances the initial "starting" state --
+  // it arrives up to a full chunk before the first transcript line, and
+  // leaving the status on "Starting" that whole time reads as hung. Any other
+  // chatter, such as model loading, must not: the engine is not capturing yet
+  // (openspec/changes/fix-capturing-shown-before-listening). It deliberately
+  // does NOT clear a stall: once chunks have been flowing, only a real chunk
+  // proves recovery.
+  if (currentFlow !== "file" && liveState === "loaded" && event.payload.line.includes("Listening...")) {
+    setLiveState("listening");
+  }
   appendDebugLine(event.payload.line);
 });
 

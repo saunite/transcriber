@@ -20,6 +20,8 @@ from playwright.sync_api import expect, sync_playwright
 ROOT = Path(__file__).resolve().parent.parent
 FAKE_BRIDGE = (Path(__file__).resolve().parent / "fake_tauri.js").read_text(encoding="utf-8")
 REFUSAL = "A live session is still running. Stop it before transcribing a file."
+LIVE_FUNCTIONS = ("transcribe_live_simple", "_transcribe_live_linux_dual", "transcribe_live_wasapi", "transcribe_live_coreaudio_tap")
+MODEL_LOADING = ("Loading base model from /m on cpu with int8...", "✓ Model loaded successfully")
 
 
 def missing_commands(main_js: Path, main_rs: Path) -> list[str]:
@@ -28,6 +30,18 @@ def missing_commands(main_js: Path, main_rs: Path) -> list[str]:
     handler = re.search(r"generate_handler!\[(.*?)\]", main_rs.read_text(encoding="utf-8"), re.S)
     registered = {name.strip().split("::")[-1] for name in handler.group(1).split(",") if name.strip()}
     return sorted(used - registered)
+
+
+def functions_missing_listening(transcriber_py: Path) -> list[str]:
+    """Live capture functions whose body never prints the "Listening..." line
+    the GUI waits for (openspec/changes/fix-capturing-shown-before-listening)."""
+    src = transcriber_py.read_text(encoding="utf-8")
+    missing = []
+    for name in LIVE_FUNCTIONS:
+        body = re.search(rf"(?ms)^def {name}\(.*?(?=^def |\Z)", src)
+        if not body or "Listening..." not in body.group(0):
+            missing.append(name)
+    return missing
 
 
 def calls(page, cmd):
@@ -52,6 +66,10 @@ def open_page(browser, responses=None):
     return page, errors
 
 
+def log(page, line):
+    page.evaluate("line => __fake.emit('sidecar-log', {line})", line)
+
+
 def drop(page, *paths):
     page.evaluate("paths => __fake.emit('tauri://drag-drop', {paths})", list(paths))
 
@@ -72,24 +90,60 @@ def test_command_drift():
     assert not missing, f"main.js invokes commands the app does not register: {', '.join(missing)}"
 
 
+def test_listening_wording():
+    missing = functions_missing_listening(ROOT / "transcriber.py")
+    assert not missing, f"live capture functions no longer print 'Listening...': {', '.join(missing)}"
+
+
 def test_live_start_stop(browser):
     page, errors = open_page(browser)
-    sys_pen, mic_pen = page.locator(".pen-sys .pen-state"), page.locator(".pen-mic .pen-state")
+    pens = page.locator(".pen-sys .pen-state, .pen-mic .pen-state")
+    status = page.locator("#run-state-label")
     page.click("#start-live-btn")
     wait_for_calls(page, "start_live_session", 1)
     args = calls(page, "start_live_session")[0]["args"]
     assert args["micDevice"] is None, f"expected the system-default mic, got micDevice={args['micDevice']!r}"
-    expect(sys_pen).to_have_text("Capturing")
-    expect(mic_pen).to_have_text("Capturing")
+    expect(status).to_have_text("Starting — waiting for the engine")
+    expect(pens).to_have_text(["Idle", "Idle"])
+
+    # Model loading is engine output, but nothing is being captured yet.
+    for line in MODEL_LOADING:
+        log(page, line)
+    page.wait_for_timeout(100)
+    expect(status).to_have_text("Starting — waiting for the engine")
+    expect(pens).to_have_text(["Idle", "Idle"])
+
+    log(page, "Listening... (Ctrl+C to stop)")
+    expect(pens).to_have_text(["Capturing", "Capturing"])
+    expect(status).to_have_text("Listening — no speech yet")
 
     page.click("#stop-btn")
     wait_for_calls(page, "stop_live_session", 1)
-    expect(sys_pen).to_have_text("Idle")
-    expect(mic_pen).to_have_text("Idle")
+    expect(pens).to_have_text(["Idle", "Idle"])
     # The session controls once said "Start Recording". ("Drop recordings" on
     # the File tab is about audio files, not the action, so it is not checked.)
     labels = page.eval_on_selector_all("#start-live-btn, #stop-btn", "els => els.map(e => e.textContent)")
     assert not any(re.search(r"record", label, re.I) for label in labels), f"a control says 'Record': {labels}"
+    return page, errors
+
+
+def test_exit_before_listening(browser):
+    page, errors = open_page(browser)
+    # Record every text the pens ever show, so a brief "Capturing" can't slip by.
+    page.evaluate("""() => {
+        window.__penTexts = [];
+        const record = () => document.querySelectorAll('.pen-state').forEach(e => __penTexts.push(e.textContent));
+        new MutationObserver(record).observe(document.body, {subtree: true, childList: true, characterData: true});
+    }""")
+    page.click("#start-live-btn")
+    wait_for_calls(page, "start_live_session", 1)
+    for line in MODEL_LOADING:
+        log(page, line)
+    page.evaluate("__fake.emit('sidecar-crashed', {message: 'No microphone found.'})")
+    expect(page.locator("#note-root")).to_contain_text("No microphone found.")
+    expect(page.locator(".pen-sys .pen-state, .pen-mic .pen-state")).to_have_text(["Idle", "Idle"])
+    seen = page.evaluate("window.__penTexts")
+    assert "Capturing" not in seen, f"a pen showed Capturing before the engine was listening: {seen}"
     return page, errors
 
 
@@ -147,10 +201,12 @@ def main() -> int:
             print(f"FAIL  {name}: " + "\n      ".join(str(exc).splitlines()[:4]))
 
     report("command drift", test_command_drift)
+    report("listening wording", test_listening_wording)
     with sync_playwright() as p:
         browser = p.chromium.launch()
         report("page loads", test_page_loads, browser)
         report("live start/stop", test_live_start_stop, browser)
+        report("exit before listening", test_exit_before_listening, browser)
         report("file queue", test_file_queue, browser)
         report("unsupported file", test_unsupported_file, browser)
         report("refusal shown", test_refusal_shown, browser)
