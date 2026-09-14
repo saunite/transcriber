@@ -26,4 +26,6 @@
 - [x] 3.1 Run `.venv/bin/python run_tests.py` and verify it exits 0 with every suite passing.
 
   **Done 2026-09-14.** With `TRANSCRIBER_TEST_SPEECH` set to the maintainer's local recording, 10/10 suites passed in 35.8s, and `tests/test_gui.py` now runs 8 scenarios.
-- [ ] 3.2 **User check in the real app** (any platform, since the page is shared): start a live session and watch SYS/MIC during model loading. Verify they read "Idle" and the status reads "Starting — waiting for the engine" until the engine log shows `Listening...`, then switch to "Capturing" and "Listening — no speech yet".
+- [x] 3.2 **User check in the real app** (any platform, since the page is shared): start a live session and watch SYS/MIC during model loading. Verify they read "Idle" and the status reads "Starting — waiting for the engine" until the engine log shows `Listening...`, then switch to "Capturing" and "Listening — no speech yet".
+
+  **User-verified on Linux (Fedora), 2026-09-14:** "It is working in the linux!" Tested with local builds of `24246e3`: `Transcriber_0.1.0_amd64.AppImage` and `Transcriber-0.1.0-1.x86_64.rpm`. The app was recompiled after the `src/main.js` change, the AppImage had 0 bundled `libwayland` libraries, and the sidecar was the current `dist/linux` freeze. Windows and macOS run the same page, so they were not re-tested.
