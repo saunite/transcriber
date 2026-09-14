@@ -71,3 +71,10 @@
 - [ ] 4.2 Uninstall through Windows settings. Confirm the app files and the Start Menu entry are gone with no admin prompt, apart from the WebView2 cache already documented in `05` task 2.5.
 - [ ] 4.3 (moved from `05-remove-installer-packaging-windows` task 2.4) On a machine that has never had the app, extract the **CI-built** portable zip, run `transcriber-gui.exe`, and confirm there's no admin prompt and a transcription works. This needs a genuinely clean machine: another PC or a cloud VM (design.md Decision 5).
 - [ ] 4.4 Extract the CLI zip and run `transcriber.exe --file <clip>` with the network disconnected. It must transcribe with the bundled model. Then run `win-start-transcription.bat` and confirm a live session starts from the bundled exe.
+
+  **Partial user results, 2026-09-14** (CI build from run 34859698393, `e9c7d68`; no task ticked yet):
+  - Installer: installed, appeared in the Start Menu, and live and file transcription both worked. Still unconfirmed for 4.1: that the account was a standard (non-admin) one with no UAC prompt, that the install landed under the user's profile, and that no console window opened.
+  - Uninstall: worked. Still unconfirmed for 4.2: no admin prompt, and the app files and Start Menu entry gone.
+  - Portable `transcriber-gui.exe`: ran and worked, and stop killed the sidecar. Still unconfirmed for 4.3: a machine that had never had the app, and no admin prompt. The installer had run on the same machine, so it does not count as clean.
+  - CLI zip (4.4): not tested yet.
+  - Found while testing: the GUI shows the capture indicators as "Capturing" (and moves the status to "Listening") before the model has loaded; recorded in `openspec/backlog.md`.
