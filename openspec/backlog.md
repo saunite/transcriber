@@ -4,11 +4,9 @@
 
 ## Waiting on a Windows session
 
-The Windows packages are built. Download the `windows` artifact (784 MB, kept until 2026-12-13) from the **Artifacts** section of run 34859698393 while signed in to GitHub.
+Nothing. Every Windows check was completed on 2026-09-14.
 
-- **`02-add-release-pipeline-windows` 4.2, 4.4, 4.5.** 4.1 and 4.3 were accepted on 2026-09-14. Still to do: confirm uninstall removes the files with no admin prompt (4.2); fix `win-start-transcription.bat`'s `wmic` timestamp, which broke the output name on Windows 11 (4.5); then re-test the launcher from the CLI zip (4.4).
-
-Verified since this list was written, so removed: `fix-live-stop-orphans-engine` 5.3 (stop kills the sidecar on Windows, 2026-09-14), the published `.deb` requires `libasound2` (its `Depends` is `libasound2, libwebkit2gtk-4.1-0, libgtk-3-0`, run 34765219343), and a `workflow_dispatch` run creates no release (`01-add-release-pipeline` 3.4, now complete).
+Verified since this list was written, so removed: `02-add-release-pipeline-windows` 4.1–4.5 (per-user install and uninstall with no admin prompt, portable app, CLI offline, and the launcher's `wmic` fix), `fix-live-stop-orphans-engine` 5.3 (stop kills the sidecar on Windows), the published `.deb` requires `libasound2` (run 34765219343), and a `workflow_dispatch` run creates no release (`01-add-release-pipeline` 3.4).
 
 ## Parked changes (each needs a proposal)
 
