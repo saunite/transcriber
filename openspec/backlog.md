@@ -17,6 +17,7 @@ Verified since this list was written, so removed: `02-add-release-pipeline-windo
 
 ## Known limits, accepted for now
 
+- **WASAPI capture only mixes 2-channel output to mono.** `WASAPICapture.capture_stream` opens the loopback at the device's `maxInputChannels` and reshapes only when that is 2 (`wasapi_capture.py`). A 5.1 or 7.1 output device would feed interleaved samples straight to transcription as if they were mono. Found during the ponytail audit on 2026-09-14 and deliberately left out of `01-merge-dual-capture-paths`. The likely fix is `reshape(-1, CHANNELS).mean(axis=1)` for any channel count.
 - **`.deb` live capture is not tested on real Debian/Ubuntu hardware.** It passes CI install checks in containers, which have no audio. Low risk (those distributions share the build host's ALSA layout), but unproven.
 - **macOS artifacts are untested on real hardware.** `03-add-release-pipeline-macos` is complete in CI (runs 34856241319 and 34859698393), but there is no Mac. The README's call for testers covers opening the app, file transcription, `--coreaudio-tap`, and a downloaded copy's Gatekeeper behaviour.
 - **macOS stop behaviour is untested.** It uses the same Unix path as Linux (`pgrep -P` instead of `/proc`).
