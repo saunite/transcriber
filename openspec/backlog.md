@@ -4,12 +4,11 @@
 
 ## Waiting on a Windows session
 
-The Windows packages are built. Download them from the **Artifacts** section of `workflow_dispatch` run 34765219343 (`windows`, 784 MB) while GitHub still keeps them. Both checks fit in one sitting:
+The Windows packages are built. Download the `windows` artifact (784 MB, kept until 2026-12-13) from the **Artifacts** section of run 34859698393 while signed in to GitHub.
 
-- **`fix-live-stop-orphans-engine` 5.3.** Stop a live session on Windows and confirm it reports success and leaves no `transcriber-sidecar.exe` running. The `taskkill /F /T` branch is untouched, but the shared code around it changed.
-- **`02-add-release-pipeline-windows` 4.1–4.4.** Install as a non-admin user, uninstall, test on a clean machine, and run the CLI zip offline.
+- **`02-add-release-pipeline-windows` 4.1–4.4.** The installer, uninstall, portable app, stop and live/file transcription already worked on 2026-09-14 (see its tasks.md). Still to confirm: a standard (non-admin) account with no UAC prompt, the install under the user's profile, no console window, the files gone after uninstall, the portable zip on a machine that never had the app, and the CLI zip run offline.
 
-Verified since this list was written, so removed: the published `.deb` requires `libasound2` (its `Depends` is `libasound2, libwebkit2gtk-4.1-0, libgtk-3-0`, run 34765219343), and a `workflow_dispatch` run creates no release (`01-add-release-pipeline` 3.4, now complete).
+Verified since this list was written, so removed: `fix-live-stop-orphans-engine` 5.3 (stop kills the sidecar on Windows, 2026-09-14), the published `.deb` requires `libasound2` (its `Depends` is `libasound2, libwebkit2gtk-4.1-0, libgtk-3-0`, run 34765219343), and a `workflow_dispatch` run creates no release (`01-add-release-pipeline` 3.4, now complete).
 
 ## Parked changes (each needs a proposal)
 
