@@ -41,9 +41,16 @@ set HF_HUB_DISABLE_SYMLINKS_WARNING=1
 set PYTHONIOENCODING=utf-8
 chcp 65001 >nul
 
-REM Generate timestamp for output filename
-for /f "tokens=2 delims==" %%I in ('wmic os get localdatetime /value') do set datetime=%%I
-set timestamp=%datetime:~0,8%_%datetime:~8,6%
+REM Generate timestamp for output filename. PowerShell, not wmic: WMIC is
+REM disabled or removed on current Windows 11, and its empty output once named
+REM the file TEST_~0,8datetime:~8,6.txt -- the ":" hid the transcript in an
+REM NTFS alternate data stream (openspec/changes/02-add-release-pipeline-windows).
+set timestamp=
+for /f %%I in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss"') do set timestamp=%%I
+if not defined timestamp (
+    echo Could not read the current time from PowerShell, so no output filename can be built.
+    exit /b 1
+)
 set output_file=%NAME_PREFIX%_%timestamp%.txt
 
 REM Start transcription with WASAPI loopback + microphone. Built into one
