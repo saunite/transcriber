@@ -1,1 +1,8 @@
 /target
+
+# Tauri writes a schema per build platform, byte-identical to desktop-schema.json,
+# which is the only one referenced (capabilities/default.json). Keep that one tracked
+# (openspec/changes/ignore-duplicate-tauri-schemas).
+/gen/schemas/linux-schema.json
+/gen/schemas/windows-schema.json
+/gen/schemas/macOS-schema.json

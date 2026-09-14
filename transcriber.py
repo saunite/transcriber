@@ -420,6 +420,36 @@ def transcribe_file(engine: TranscriptionEngine, args) -> int:
     return 0
 
 
+def _new_resampler():
+    """A 16 kHz mono float32 resampler; the input rate comes from the first frame."""
+    import av
+    return av.AudioResampler(format="flt", layout="mono", rate=16000)
+
+
+def _resample(resampler, block, rate, flush=False):
+    """Resample a mono float32 block with PyAV's libswresample, which is already
+    bundled for decoding -- no SciPy (openspec/changes/02-resample-with-pyav).
+
+    One resampler per continuous stream keeps its filter state across blocks,
+    so block edges carry no artifacts, and a block too short to yield a sample
+    is simply held until the next one. flush=True also drains what it holds,
+    for a one-off chunk.
+    """
+    import av
+    import numpy as np
+
+    frames = []
+    if len(block):
+        frame = av.AudioFrame.from_ndarray(
+            np.ascontiguousarray(block, dtype=np.float32)[None, :], format="flt", layout="mono")
+        frame.sample_rate = rate
+        frames = resampler.resample(frame)
+    if flush:
+        frames = list(frames) + list(resampler.resample(None))
+    out = [f.to_ndarray()[0] for f in frames]
+    return np.concatenate(out) if out else np.empty(0, dtype=np.float32)
+
+
 def _process_audio_chunk(
     engine,
     audio_data,
@@ -436,13 +466,13 @@ def _process_audio_chunk(
     (read from the system clock at emit time) when actual-time mode is on.
     """
     import numpy as np
-    from scipy import signal
 
     if audio_data.dtype != np.float32:
         audio_data = audio_data.astype(np.float32)
     if sample_rate != 16000:
-        num_samples = int(len(audio_data) * 16000 / sample_rate)
-        audio_data = signal.resample(audio_data, num_samples)
+        # A fresh, flushed resampler: chunks here overlap by a second, so one
+        # continuous stream would be fed the same audio twice.
+        audio_data = _resample(_new_resampler(), audio_data, sample_rate, flush=True)
 
     chunk_duration_sec = len(audio_data) / 16000
     segments = engine.transcribe_chunk(audio_data, language=language)
@@ -641,7 +671,6 @@ def _run_dual_capture(engine, args, *, title, mode_summary, sys_rate, run_sys, m
       capture_errors -- exceptions that end the session with exit code 1
     """
     import numpy as np
-    from scipy import signal
     import sounddevice as sd
     import queue
     import threading
@@ -704,22 +733,21 @@ def _run_dual_capture(engine, args, *, title, mode_summary, sys_rate, run_sys, m
 
     def _to_target_rate(rate_fn):
         """Resample from a source's real rate to 16 kHz, on the worker thread.
-        The rate is read on the first block. Some backends (the ALSA
-        "pipewire" plugin device, in particular) deliver few-frame slivers
-        that resample to zero samples -- drop those rather than let
-        scipy.signal.resample divide by zero."""
+        The rate is read on the first block (Core Audio only knows it once
+        capture starts). One stateful resampler per stream carries its filter
+        across blocks, and holds few-frame slivers -- which some backends,
+        the ALSA "pipewire" plugin device in particular, deliver -- until the
+        next block (openspec/changes/02-resample-with-pyav)."""
         rate = None
+        resampler = None
 
         def transform(raw):
-            nonlocal rate
+            nonlocal rate, resampler
             if rate is None:
                 rate = rate_fn() or target_rate
-            if rate != target_rate:
-                out_len = int(len(raw) * target_rate / rate)
-                if out_len < 1:
-                    return np.empty(0, dtype=raw.dtype)
-                raw = signal.resample(raw, out_len)
-            return raw
+                if rate != target_rate:
+                    resampler = _new_resampler()
+            return _resample(resampler, raw, rate) if resampler else raw
         return transform
 
     def _drain_and_transcribe(q, buffer, threshold, tag, gate, transform):

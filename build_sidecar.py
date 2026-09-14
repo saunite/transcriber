@@ -40,10 +40,10 @@ def main() -> int:
             "ERROR: build_sidecar.py must run from a venv (python -m venv .venv; "
             "source .venv/bin/activate; pip install -r requirements-linux.txt pyinstaller), "
             "not the system Python.\n"
-            "System numpy/scipy on some distros (e.g. Fedora) link against FlexiBLAS, "
+            "System numpy on some distros (e.g. Fedora) link against FlexiBLAS, "
             "which loads its actual math backend via dlopen() at runtime -- invisible to "
             "PyInstaller's static analysis. The frozen binary then ships libflexiblas.so.3 "
-            "with no backend and aborts on first use. A venv's pip-installed numpy/scipy "
+            "with no backend and aborts on first use. A venv's pip-installed numpy "
             "wheels bundle their own BLAS statically, so this can't happen.",
             file=sys.stderr,
         )

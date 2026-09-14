@@ -94,18 +94,31 @@ def main() -> None:
     mic = transcriber.MicConfig(device=3, channels=1, name="Fake Mic", rate=16000)
 
     with tempfile.TemporaryDirectory() as tmp:
-        # 1. System audio at 44.1 kHz reaches the engine as 16 kHz: 4410-frame
-        #    blocks become 1600 samples each, so the first 1-second chunk is
-        #    exactly 16000 (a wrongly assumed 48 kHz would give 16170). A 2-frame block, which resamples to zero samples,
-        #    must neither crash the worker nor stop the run.
+        # 1. System audio at 44.1 kHz reaches the engine as 16 kHz: twelve
+        #    4410-frame blocks resample to 19200 samples in total, less at most
+        #    the resampler's 16 held samples (a wrongly assumed 48 kHz would give
+        #    17640). A 2-frame block, too short to yield a sample, must neither
+        #    crash the worker nor stop the run.
         output = os.path.join(tmp, "one.txt")
         engine = _FakeEngine()
         blocks = [np.zeros(4410, np.float32)] * 5 + [np.zeros(2, np.float32)] + [np.zeros(4410, np.float32)] * 7
-        code, out = _run(engine, _args(output), title="Test Loopback + Microphone", mode_summary="Test",
-                         sys_rate=lambda: 44100, run_sys=_feed(blocks, gap=0.12), mic=mic)
+        resampled = []
+        real_resample = transcriber._resample
+
+        def counting_resample(resampler, block, rate, flush=False):
+            result = real_resample(resampler, block, rate, flush)
+            resampled.append(len(result))
+            return result
+
+        transcriber._resample = counting_resample
+        try:
+            code, out = _run(engine, _args(output), title="Test Loopback + Microphone", mode_summary="Test",
+                             sys_rate=lambda: 44100, run_sys=_feed(blocks, gap=0.12), mic=mic)
+        finally:
+            transcriber._resample = real_resample
         assert code == 0, out
-        sys_chunks = [n for n in engine.chunk_lengths if n != 5 * 16000]  # the mic's one 5-second chunk aside
-        assert sys_chunks and sys_chunks[0] == 16000, engine.chunk_lengths
+        assert 19200 - 16 <= sum(resampled) <= 19200, (sum(resampled), resampled)
+        assert any(n != 5 * 16000 for n in engine.chunk_lengths), engine.chunk_lengths  # system audio was transcribed
         assert "Listening..." in out, out
         written = open(output, encoding="utf-8").read()
         assert written.startswith("# Live Transcription (Test Loopback + Microphone)\n"), written

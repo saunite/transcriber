@@ -100,7 +100,6 @@ BUNDLED PYTHON COMPONENTS (frozen into the sidecar executable)
   tokenizers 0.22.1        Apache-2.0      Copyright (c) Hugging Face
   huggingface-hub 1.2.2    Apache-2.0      Copyright (c) Hugging Face
   NumPy 2.4.0              BSD-3-Clause    Copyright (c) NumPy Developers
-  SciPy 1.16.3             BSD-3-Clause    Copyright (c) SciPy Developers
   sounddevice 0.5.3        MIT             Copyright (c) Matthias Geier
   PortAudio                MIT             https://www.portaudio.com
   PyAudioWPatch 0.2.12.7   Apache-2.0      https://github.com/s0d3s/PyAudioWPatch

@@ -132,7 +132,7 @@ target-dir = "/home/YOU/.cache/transcriber-target"
 
 An exported `CARGO_TARGET_DIR` still works too and takes precedence if set. `build_portable.py` finds the real location either way (it asks `cargo metadata` directly, rather than only checking the env var).
 
-Freeze the Linux sidecar from a **venv**, not the system Python — on distros where numpy/scipy are system packages (e.g. Fedora, linked against FlexiBLAS), building against system Python bundles a BLAS shim with no backend, and the frozen binary aborts on first transcription:
+Freeze the Linux sidecar from a **venv**, not the system Python — on distros where numpy is a system package (e.g. Fedora, linked against FlexiBLAS), building against system Python bundles a BLAS shim with no backend, and the frozen binary aborts on first transcription:
 
 ```bash
 python3 -m venv .venv
