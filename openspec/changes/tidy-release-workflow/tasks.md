@@ -15,8 +15,15 @@
 
 ## 2. Verification runs
 
-- [ ] 2.1 Manual `workflow_dispatch` run on `dev` (only when the user asks for it). Verify all four jobs pass, each `Upload run artifacts` step succeeds, the run shows no "Node.js 20 is deprecated" annotation, and the `linux`, `windows` and `macos` artifacts are listed and downloadable.
-- [ ] 2.2 Tagged verification (design.md Decision 3). **Ask the user** whether to re-tag `v0.1.0` (delete the stale draft and tag with `gh release delete v0.1.0 --cleanup-tag`, then push `v0.1.0` at the change's commit) or to wait for the real next release. On the chosen draft, verify:
+- [x] 2.1 Manual `workflow_dispatch` run on `dev` (only when the user asks for it). Verify all four jobs pass, each `Upload run artifacts` step succeeds, the run shows no "Node.js 20 is deprecated" annotation, and the `linux`, `windows` and `macos` artifacts are listed and downloadable.
+
+  **Done 2026-09-14,** `workflow_dispatch` run 34890446044 on `dev` at `3d17f94`, requested by the user. All four jobs passed, and all three `Upload run artifacts` steps succeeded on `@v7`: `linux` 1,203,968,685, `windows` 694,009,056 and `macos` 611,535,139 bytes, all listed. **No Node 20 annotation:** the check-run annotations API returns none for the four jobs. The same query on the previous run, 34885359545, returns three `Node.js 20 is deprecated … actions/upload-artifact` warnings, so the check itself is proven to find them.
+- [x] 2.2 Tagged verification (design.md Decision 3). **Ask the user** whether to re-tag `v0.1.0` (delete the stale draft and tag with `gh release delete v0.1.0 --cleanup-tag`, then push `v0.1.0` at the change's commit) or to wait for the real next release. On the chosen draft, verify:
   - its notes begin with the provenance section;
   - the link opens `SOURCE-PROVENANCE.txt` at that tag;
   - the asset list has no `SOURCE-PROVENANCE.txt`, but still has every platform's packages.
+
+  **Done 2026-09-14.** The user chose to re-tag. The old draft `v0.1.0` from 2026-09-12 and its tag were deleted with `gh release delete v0.1.0 --cleanup-tag`, and a new annotated `v0.1.0` was pushed at `3d17f94`. Tagged run 34890494629 passed all four jobs and created a draft (created 2026-09-14T20:02:22Z):
+  - **Notes** begin with "## Source code for bundled GPL components", linking to `https://github.com/saunite/transcriber/blob/v0.1.0/SOURCE-PROVENANCE.txt` (HTTP 200), followed by GitHub's generated "Full Changelog" line.
+  - **Assets:** 10 files and no `SOURCE-PROVENANCE.txt`: Linux AppImage, `.deb`, `.rpm` and CLI tar.gz; Windows setup `.exe`, portable zip and CLI zip; macOS `.dmg`, zip and CLI tar.gz. Each is a separate download.
+  - The draft carries `SOURCE-PROVENANCE.txt`'s still-stale PyAV versions, which is fine for a private draft; it must not be published until that separate fix lands.
