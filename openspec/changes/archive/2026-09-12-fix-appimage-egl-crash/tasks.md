@@ -30,7 +30,7 @@
 
   **Correction: the fix is NOT size-neutral in CI.** Published size **390,371,832 bytes** against the previous CI AppImage's **389,188,088** (run 34672668438's `ls -la out`) — **+1,183,744 bytes (+1.13 MiB)**, even though the content shrank by 17 entries. Ubuntu 22.04's `mksquashfs` 4.5 evidently compresses slightly worse than appimagetool's built-in at the same zstd/128K settings, which the repack faithfully mirrors. The 5% growth guard passed it at 0.3%.
 
-  **This corrects a figure I reported earlier in this change.** proposal.md and task 1.x record a repack as 24 KB *smaller*; that measurement was made with Fedora's newer `mksquashfs` on this machine, and I initially compared CI's output against my own local repack (389,163,512 bytes, which happened to sit beside the real baseline in `~/Downloads/transcriber-test/`) instead of against CI's previous build. The local numbers stand for local builds; CI costs ~1.1 MiB. Not worth chasing a 0.3% delta by guessing appimagetool's compression level.
+  **This corrects a figure I reported earlier in this change.** proposal.md and task 1.x record a repack as 24 KB *smaller*; that measurement was made with Fedora's newer `mksquashfs` on this machine, and I initially compared CI's output against my own local repack (389,163,512 bytes, which happened to sit beside the real baseline in a local download folder) instead of against CI's previous build. The local numbers stand for local builds; CI costs ~1.1 MiB. Not worth chasing a 0.3% delta by guessing appimagetool's compression level.
 
 ## 3. Real-hardware verification
 

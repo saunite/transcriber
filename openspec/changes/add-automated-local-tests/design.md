@@ -53,7 +53,7 @@ Tests assert on two things only: the recorded calls, and visible state read thro
 
 ### 4. Engine test: a subprocess, a selectable engine, loose word matching
 
-`tests/test_engine.py` runs the engine as a subprocess with `--file <clip> --model-path src-tauri/resources/model --output <tmp>`. By default the engine is `[sys.executable, "transcriber.py"]`; `--engine <path>` swaps in a frozen binary, the same idea as `.github/smoke-test.sh`'s argument.
+`tests/test_engine.py` runs the engine as a subprocess with `--file <recording> --model-path src-tauri/resources/model --output <tmp>`. By default the engine is `[sys.executable, "transcriber.py"]`; `--engine <path>` swaps in a frozen binary, the same idea as `.github/smoke-test.sh`'s argument.
 
 **Speech check.** It fails unless:
 - the exit status is 0;
@@ -72,11 +72,13 @@ Tests assert on two things only: the recorded calls, and visible state read thro
 
 **Missing model:** if `src-tauri/resources/model/model.bin` is absent, the test stops with a message naming `fetch_sidecar_resources.py`, instead of letting the engine try a network download.
 
-### 5. The speech fixture
+### 5. The speech recording stays outside the repository
 
-The fixture lives at `tests/fixtures/speech-en.<ext>`, in whatever format the recording device produced, since the engine decodes it through PyAV. Beside it, `tests/fixtures/speech-en.txt` holds the script it was read from. The test finds the recording with `speech-en.*`, excluding the `.txt`. It is recorded by the maintainer, so it is redistributable under the repository's licence. The recording should be 10–15 seconds long, spoken at a normal pace somewhere quiet, reading:
+The maintainer's recording is not theirs to redistribute, so it is never committed. `tests/test_engine.py` takes its path from `--speech <audio>` or, so `run_tests.py` can pass it without arguments, the `TRANSCRIBER_TEST_SPEECH` environment variable. The words it says are read from `--script`/`TRANSCRIBER_TEST_SCRIPT`, defaulting to the recording's path with `.txt`, so the pair lives together outside the repo. Any English recording in any format PyAV decodes works.
 
-> This is a test of the transcriber. The quick brown fox jumps over the lazy dog. Please record this meeting and save the notes.
+**No recording set:** the speech check prints `SKIP` with how to supply one, and the undecodable-input check still runs. A clone without the maintainer's file cannot fail forever on a file it can never have, and the skip stays visible in the output. **Set but a file missing:** that is a mistake, so it fails.
+
+**Rejected: a committed fixture.** It would be deterministic for everyone, but only with a recording made to be redistributed, which is not the one in use.
 
 ### 6. One runner, at the repository root
 
@@ -98,4 +100,5 @@ Each suite runs as a subprocess with `sys.executable`, so running it as `.venv/b
 - **[Risk]** A future model or CTranslate2 update shifts the transcription. → The 70% threshold absorbs small changes. A failure beyond that is worth looking at, not suppressing.
 - **[Risk]** The Playwright browser download needs network access once, and a cached build may not match the pip-installed Playwright version. → `playwright install chromium` fetches the right build. After that, tests run offline.
 - **[Trade-off]** The engine test loads a 142 MB model, so it takes roughly 5–15 seconds. That is acceptable for a command run before committing, and the GUI tests stay fast because they never touch the engine.
-- **[Trade-off]** The recording is a binary file in git. It is small (tens of kilobytes compressed) and is the only way to test real speech deterministically without adding a text-to-speech dependency whose output differs between machines.
+- **[Trade-off]** The speech check only runs where the recording exists, the maintainer's machine. Elsewhere, and in any future CI, it is skipped until a redistributable recording is supplied. A text-to-speech substitute was not chosen, because its output differs between machines.
+- **[Risk]** A script derived from the engine's own transcript would only prove the engine repeats itself. → The script should be what the recording actually says, checked by a person.

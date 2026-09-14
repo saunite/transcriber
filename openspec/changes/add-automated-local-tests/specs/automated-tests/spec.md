@@ -1,6 +1,6 @@
 ## Purpose
 
-Defines what the project's automated tests guarantee: one command runs every suite, the GUI's behaviour is checked without the desktop app, and the transcription engine is checked on real recorded speech and on undecodable input.
+Defines what the project's automated tests guarantee: one command runs every suite, the GUI's behaviour is checked without the desktop app, and the transcription engine is checked on a local speech recording and on undecodable input.
 
 ## ADDED Requirements
 
@@ -47,13 +47,13 @@ The GUI tests SHALL load the application's real frontend files in a headless bro
 - **THEN** the GUI tests fail and name that command
 
 ### Requirement: The engine transcribes a recorded speech sample
-The engine tests SHALL transcribe a committed recording of human speech with the bundled model, offline. They SHALL fail unless the engine:
+The engine tests SHALL transcribe a recording of human speech in English with the bundled model, offline. They SHALL fail unless the engine:
 - exits successfully without a traceback;
 - writes a transcript whose lines carry `[start -> end] text` timestamps;
 - reports the recording's language;
 - recognises most of the key words of the script the recording was read from.
 
-The engine under test SHALL be selectable: the source engine by default, or a given frozen engine binary. The recording SHALL be one the project may redistribute, recorded for this purpose by the maintainer, and SHALL be stored alongside the script it was read from.
+The engine under test SHALL be selectable: the source engine by default, or a given frozen engine binary. The recording and its script SHALL be supplied from outside the repository and SHALL NOT be committed, so a recording the project may not redistribute can still be used locally. When no recording is supplied, the speech check SHALL be reported as skipped, with how to supply one, rather than silently passing or failing.
 
 #### Scenario: The speech sample transcribes
 - **WHEN** the engine tests run against the source engine
@@ -62,6 +62,10 @@ The engine under test SHALL be selectable: the source engine by default, or a gi
 #### Scenario: A frozen engine binary is tested
 - **WHEN** the engine tests are given the path to a frozen engine binary
 - **THEN** the same checks run against that binary instead of the source engine
+
+#### Scenario: No recording is supplied
+- **WHEN** the engine tests run without a recording
+- **THEN** the speech check is reported as skipped with how to supply a recording, and the other engine checks still run
 
 #### Scenario: The model is not available
 - **WHEN** the engine tests run before the bundled model has been staged

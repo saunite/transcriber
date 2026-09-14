@@ -31,6 +31,20 @@ Thumbs.db
 *.wav
 *.mp3
 *.flac
+# Recordings are never committed: the engine tests take a local one from outside
+# the repo (TRANSCRIBER_TEST_SPEECH), and these may not be ours to redistribute.
+*.ogg
+*.opus
+*.m4a
+*.wma
+*.mp4
+*.mkv
+*.mov
+*.webm
+*.avi
+*.m4v
+*.wmv
+*.flv
 extracted_audio_*.wav
 
 # Output transcripts (uncomment if you don't want to track them)
@@ -48,6 +62,7 @@ extracted_audio_*.wav
 # produces requirements-review_<timestamp>.txt). Add a line when adding a manifest.
 !requirements.txt
 !requirements-linux.txt
+!requirements-dev.txt
 !requirements-macos.txt
 
 # The licence notices ship inside every artifact to satisfy the bundled

@@ -7,7 +7,7 @@ The tests that do exist are not run by anything. The repo has 7 `test_*.py` scri
 ## What Changes
 
 - **GUI behaviour tests without the desktop app.** The window is a web page (`frontendDist: "../src"`), and its only link to the app is `window.__TAURI__` (`withGlobalTauri: true`). The tests load `src/index.html` in headless Chromium through Playwright and inject a fake `window.__TAURI__` before `main.js` runs. The fake records `invoke` calls, returns canned data, and lets a test fire the app's events (`transcript-line`, `sidecar-crashed`, `file-transcription-complete`, `tauri://drag-drop`). Tests drive the real page and check what it sends and shows.
-- **An engine test on real speech.** It transcribes a committed voice clip, recorded by the user reading a fixed script. It checks the engine exits cleanly, writes a transcript whose lines have the expected `[start -> end] text` format, detects the language, and recognises most of the script's key words. A second test feeds undecodable input and expects a clean failure: exit 1, the "No decodable audio" message, no traceback and no output file. The engine is a parameter: `transcriber.py` from the venv by default, or a frozen sidecar binary when given one.
+- **An engine test on real speech.** It transcribes a local English recording that the maintainer keeps outside the repository and never commits, so it is not redistributed. Its path is given to the test, and the words it says sit in a text file beside it. It checks the engine exits cleanly, writes a transcript whose lines have the expected `[start -> end] text` format, detects the language, and recognises most of the script's key words. A second test feeds undecodable input and expects a clean failure: exit 1, the "No decodable audio" message, no traceback and no output file. The engine is a parameter: `transcriber.py` from the venv by default, or a frozen sidecar binary when given one.
 - **One command runs everything:** `cargo test` in `src-tauri/`, every existing `test_*.py`, and both new suites. It exits non-zero if anything fails.
 - **A development dependency file** for Playwright, and a README section on setting up and running the tests.
 - **Not in scope:**
@@ -28,9 +28,9 @@ The tests that do exist are not run by anything. The repo has 7 `test_*.py` scri
 
 ## Impact
 
-- **New files:** a test runner at the repo root; GUI tests with the fake-bridge script; engine tests; the speech fixture and its expected script; a development requirements file.
+- **New files:** a test runner at the repo root; GUI tests with the fake-bridge script; engine tests; a development requirements file. The speech recording and its script stay outside the repository.
 - **Changed:** `README.md`, since `documentation` requires it to cover setup and requirements files.
 - **New development dependency:** Playwright for Python, plus a one-time Chromium download. Not needed by the app, its build or its users.
 - **Unchanged:** application code, packaging, CI, and the existing tests, which stay where they are and run unmodified.
-- **User action required:** record the speech clip from the design's script before the engine speech test can pass.
+- **User action required:** point the engine test at a local recording and its script before the speech check runs. Without one it is reported as skipped.
 - **Runtime:** GUI tests a few seconds, the engine speech test roughly 5–15 seconds (model load plus a short clip), the existing Python and Rust tests about as long as they take today.

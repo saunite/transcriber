@@ -215,6 +215,44 @@ To build everything without releasing, for example to check that a branch still 
 - The links in that file *are* the compliance mechanism (GPLv3 §6(d)); a dead link is an unmet obligation. The workflow's link check fails the release when one stops resolving. The x265 archive on Bitbucket is the most likely to disappear; if the check flags it, correct the link or rehost the archive.
 - **If the pinned PyAV version changed since the last release**, re-derive everything in `SOURCE-PROVENANCE.txt` before tagging: read the new PyAV `scripts/ffmpeg-*.json` for its `pyav-ffmpeg` tag, then that tag's build recipe for the new component versions.
 
+### Running the tests
+
+One-time setup, in the project venv. The tests also need the bundled model (`python fetch_sidecar_resources.py`) and a Rust toolchain for `cargo test`:
+
+```bash
+pip install -r requirements-dev.txt          # Playwright, for the GUI tests only
+python -m playwright install chromium        # one-time browser download
+```
+
+Run everything:
+
+```bash
+.venv/bin/python run_tests.py
+```
+
+It runs each suite, prints PASS/FAIL with its duration, and exits 1 if any failed. A failing suite does not stop the others.
+
+| Suite | What it covers |
+|---|---|
+| `cargo test` (in `src-tauri/`) | Sidecar argument building, Windows path handling, and stopping the whole engine process tree |
+| `test_*.py` (repo root) | Engine and packaging units: bundled model default, live output path, transcript line format, mic fallback, macOS/WASAPI capture helpers, AppImage stripping |
+| `tests/test_gui.py` | The real `src/index.html` in headless Chromium with a fake `window.__TAURI__` (`tests/fake_tauri.js`), so no app build, audio or engine: live start/stop and the SYS/MIC indicators, the one-at-a-time file queue, unsupported files, a refused file run, and a check that every command the page invokes is registered in `src-tauri/src/main.rs` |
+| `tests/test_engine.py` | Transcribes a local English recording and checks the timestamped transcript, the detected language and at least 70% of its script's key words; random bytes must fail cleanly with no traceback and no transcript file |
+
+**The speech recording is not in the repo.** Use any English recording you have, in any format the engine decodes, kept outside the repository and never committed. Put the words it says in a `.txt` with the same name beside it, then:
+
+```bash
+TRANSCRIBER_TEST_SPEECH=~/recordings/sample.ogg .venv/bin/python run_tests.py   # reads ~/recordings/sample.txt
+```
+
+Without it, the speech check prints `SKIP` and the rest still runs. `tests/test_engine.py` also takes `--speech <audio>` and `--script <txt>` directly.
+
+**Testing a frozen engine.** The engine tests use `transcriber.py` by default. Point them at a built sidecar with `--engine`:
+
+```bash
+.venv/bin/python tests/test_engine.py --engine dist/linux/transcriber-sidecar
+```
+
 ## Requirements
 
 ### System Dependencies
