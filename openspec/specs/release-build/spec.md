@@ -108,3 +108,10 @@ The macOS standalone CLI executable SHALL contain the native audio-tap helper th
 #### Scenario: Helper was not built
 - **WHEN** the macOS sidecar freeze runs before the audio-tap helper has been built
 - **THEN** the freeze fails with a message saying the helper must be built first
+
+### Requirement: Windows release artifacts
+The Windows leg SHALL produce a per-user installer, a portable zip, and a standalone CLI zip for 64-bit Windows, and SHALL attach all three to the release.
+
+#### Scenario: Windows artifacts in a release
+- **WHEN** a release's Windows leg completes
+- **THEN** the release contains the Windows installer, the Windows portable zip, and the Windows CLI zip, each named with the release version
