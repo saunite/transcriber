@@ -67,14 +67,18 @@
 
 ## 4. Real-hardware verification
 
-- [ ] 4.1 From a **standard (non-admin)** Windows account, run the CI-built installer. Confirm there's no UAC prompt, the install lands under that user's profile, the Start Menu launch shows no console window, and both a live session and an offline file transcription work.
+- [x] 4.1 From a **standard (non-admin)** Windows account, run the CI-built installer. Confirm there's no UAC prompt, the install lands under that user's profile, the Start Menu launch shows no console window, and both a live session and an offline file transcription work.
+
+  **User-verified 2026-09-14, with one deviation** (CI build from run 34859698393, `e9c7d68`, Windows 11). The installer defaulted to `C:\Users\<User>\AppData\Local\Transcriber` and showed no UAC dialog of any kind, not only no password prompt. The Start Menu entry launched with no console window, and live and file transcription both worked. **Deviation:** the account had administrator rights, not a standard account. The user accepted it: an administrator still gets a UAC consent box whenever an installer requests elevation, so a per-user install with no dialog at all shows the installer never requests it, which is what a standard account needs.
 - [ ] 4.2 Uninstall through Windows settings. Confirm the app files and the Start Menu entry are gone with no admin prompt, apart from the WebView2 cache already documented in `05` task 2.5.
-- [ ] 4.3 (moved from `05-remove-installer-packaging-windows` task 2.4) On a machine that has never had the app, extract the **CI-built** portable zip, run `transcriber-gui.exe`, and confirm there's no admin prompt and a transcription works. This needs a genuinely clean machine: another PC or a cloud VM (design.md Decision 5).
+
+  **Partial, 2026-09-14:** uninstalling through Windows settings worked, with "Delete the application data" ticked. Still unconfirmed: no admin prompt during uninstall, and the app files and Start Menu entry gone afterwards.
+- [x] 4.3 (moved from `05-remove-installer-packaging-windows` task 2.4) On a machine that has never had the app, extract the **CI-built** portable zip, run `transcriber-gui.exe`, and confirm there's no admin prompt and a transcription works. This needs a genuinely clean machine: another PC or a cloud VM (design.md Decision 5).
+
+  **Accepted by the user, 2026-09-14, on a not-quite-clean machine** (Windows 11, same build). The portable `transcriber-gui.exe` ran with no admin prompt, and live and file transcription worked. The machine had the app installed and then uninstalled with its application data deleted, so nothing app-specific was left behind. What remains is what Windows 11 ships anyway, notably the WebView2 runtime. **Not covered:** a Windows 10 machine without WebView2, where the portable app has no installer to provide it.
 - [ ] 4.4 Extract the CLI zip and run `transcriber.exe --file <clip>` with the network disconnected. It must transcribe with the bundled model. Then run `win-start-transcription.bat` and confirm a live session starts from the bundled exe.
 
-  **Partial user results, 2026-09-14** (CI build from run 34859698393, `e9c7d68`; no task ticked yet):
-  - Installer: installed, appeared in the Start Menu, and live and file transcription both worked. Still unconfirmed for 4.1: that the account was a standard (non-admin) one with no UAC prompt, that the install landed under the user's profile, and that no console window opened.
-  - Uninstall: worked. Still unconfirmed for 4.2: no admin prompt, and the app files and Start Menu entry gone.
-  - Portable `transcriber-gui.exe`: ran and worked, and stop killed the sidecar. Still unconfirmed for 4.3: a machine that had never had the app, and no admin prompt. The installer had run on the same machine, so it does not count as clean.
-  - CLI zip (4.4): not tested yet.
-  - Found while testing: the GUI shows the capture indicators as "Capturing" (and moves the status to "Listening") before the model has loaded; recorded in `openspec/backlog.md`.
+  **Partial, 2026-09-14** (Windows 11, same build):
+  - `transcriber.exe --file <clip>` with the network off transcribed with the bundled model. **Passes.**
+  - **`win-start-transcription.bat TEST` fails to save a readable transcript.** The live session itself ran from the bundled exe, and `[SYS]`/`[MIC]` lines printed. But the script builds its timestamp with `wmic os get localdatetime`, and WMIC is disabled or removed on current Windows 11 (`'wmic' is not recognized`). `datetime` stayed unset, so the output name expanded to `TEST_~0,8datetime:~8,6.txt`. NTFS treats the `:` as an alternate data stream, so a 0-byte `TEST_~0,8datetime` appeared and the transcript went into its hidden `~8,6.txt` stream. It can be read with `Get-Content '.\TEST_~0,8datetime' -Stream '~8,6.txt'`. Fixed by 4.5; re-test the launcher after it.
+- [ ] 4.5 In `win-start-transcription.bat`, replace the `wmic os get localdatetime` timestamp with `powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss"`, keeping the `<prefix>_YYYYMMDD_HHMMSS.txt` name that `teams-launcher` requires. Verify on Windows that `win-start-transcription.bat TEST` from the extracted CLI zip names the file `TEST_<YYYYMMDD>_<HHMMSS>.txt`, that the file holds the printed transcript lines after stopping, and that no `wmic` error appears. Then complete 4.4.
