@@ -73,6 +73,37 @@ def _run(devices, default_index, mic_device=-1):
     return result, "\n".join(printed)
 
 
+def _config(devices, default_index, accepts_16k=True, mic_device=-1):
+    """Call _resolve_mic_config with the same faked device layer, plus
+    check_input_settings; return (result, output)."""
+    printed: list[str] = []
+    fake = types.ModuleType("sounddevice")
+    fake.query_devices = _FakeSd(devices, default_index).query_devices
+
+    def check_input_settings(device=None, channels=None, samplerate=None):
+        if samplerate == 16000 and not accepts_16k:
+            raise RuntimeError("Invalid sample rate")
+
+    fake.check_input_settings = check_input_settings
+    real_module = sys.modules.get("sounddevice")
+    sys.modules["sounddevice"] = fake
+    try:
+        import builtins
+
+        real_print = builtins.print
+        builtins.print = lambda *a, **k: printed.append(" ".join(str(x) for x in a))
+        try:
+            result = transcriber._resolve_mic_config(_args(mic_device=mic_device))
+        finally:
+            builtins.print = real_print
+    finally:
+        if real_module is None:
+            del sys.modules["sounddevice"]
+        else:
+            sys.modules["sounddevice"] = real_module
+    return result, "\n".join(printed)
+
+
 def main() -> None:
     # 1. A resolvable default input is used as-is.
     result, out = _run([SPEAKERS, MONITOR, MIC, MIC], default_index=2)
@@ -97,6 +128,20 @@ def main() -> None:
     result, out = _run([SPEAKERS, MONITOR, MIC], default_index=2, mic_device=1)
     assert result == 1, (result, out)
     assert out == "", f"explicit selection should print nothing: {out!r}"
+
+    # 5. A mic that takes 16 kHz is opened at 16 kHz, stereo capped at 2.
+    result, out = _config([SPEAKERS, MONITOR, MIC, MIC], default_index=2)
+    assert result == transcriber.MicConfig(3, 2, "Real Mic", 16000), (result, out)
+
+    # 6. A mic that refuses 16 kHz is opened at its own default rate, on every
+    #    platform now, not only Linux (openspec/changes/01-merge-dual-capture-paths).
+    result, out = _config([SPEAKERS, MONITOR, MIC, MIC], default_index=2, accepts_16k=False)
+    assert result is not None and result.rate == 48000, (result, out)
+
+    # 7. An explicit device with no input channels is refused with the existing error.
+    result, out = _config([SPEAKERS, MONITOR, MIC], default_index=2, mic_device=1)
+    assert result is None, (result, out)
+    assert "is not an input device" in out, out
 
     print("test_mic_fallback: all checks passed")
 

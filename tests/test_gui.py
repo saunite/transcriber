@@ -20,7 +20,7 @@ from playwright.sync_api import expect, sync_playwright
 ROOT = Path(__file__).resolve().parent.parent
 FAKE_BRIDGE = (Path(__file__).resolve().parent / "fake_tauri.js").read_text(encoding="utf-8")
 REFUSAL = "A live session is still running. Stop it before transcribing a file."
-LIVE_FUNCTIONS = ("transcribe_live_simple", "_transcribe_live_linux_dual", "transcribe_live_wasapi", "transcribe_live_coreaudio_tap")
+LIVE_FUNCTIONS = ("transcribe_live_simple", "_run_dual_capture")
 MODEL_LOADING = ("Loading base model from /m on cpu with int8...", "✓ Model loaded successfully")
 
 
@@ -39,7 +39,8 @@ def functions_missing_listening(transcriber_py: Path) -> list[str]:
     missing = []
     for name in LIVE_FUNCTIONS:
         body = re.search(rf"(?ms)^def {name}\(.*?(?=^def |\Z)", src)
-        if not body or "Listening..." not in body.group(0):
+        code = "\n".join(l for l in body.group(0).splitlines() if not l.strip().startswith("#")) if body else ""
+        if "Listening..." not in code:  # comments don't count: only a real print keeps the GUI moving
             missing.append(name)
     return missing
 

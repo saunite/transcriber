@@ -42,7 +42,7 @@ class _FakeStream:
         self._stopped.set()
 
 
-def _make_fake_pyaudio_module(fake_stream):
+def _make_fake_pyaudio_module(fake_stream, rate=16000):
     fake_pyaudio = types.SimpleNamespace()
     fake_pyaudio.paInt16 = 8
     fake_pyaudio.paInputOverflowed = -9981
@@ -59,7 +59,7 @@ def _make_fake_pyaudio_module(fake_stream):
                 "name": "Speakers [Loopback]",
                 "index": 0,
                 "maxInputChannels": 1,
-                "defaultSampleRate": 16000,
+                "defaultSampleRate": rate,
             }
 
         def get_device_info_by_index(self, index):
@@ -67,7 +67,7 @@ def _make_fake_pyaudio_module(fake_stream):
                 "name": "Speakers [Loopback]",
                 "index": index,
                 "maxInputChannels": 1,
-                "defaultSampleRate": 16000,
+                "defaultSampleRate": rate,
             }
 
         def terminate(self):
@@ -112,5 +112,29 @@ def test_capture_stream_exits_promptly_when_read_stalls():
     print(f"OK: capture_stream() returned in {elapsed:.3f}s despite a stalled read")
 
 
+def test_sample_rate_is_the_device_rate():
+    """transcriber.py used to assume every WASAPI loopback ran at 48 kHz, so a
+    44.1 kHz output device reached Whisper ~9% slow
+    (openspec/changes/01-merge-dual-capture-paths)."""
+    fake_stream = _FakeStream(np.zeros(1024, dtype=np.int16).tobytes())
+    with mock.patch.dict(sys.modules, {"pyaudiowpatch": _make_fake_pyaudio_module(fake_stream, rate=44100)}):
+        sys.modules.pop("wasapi_capture", None)
+        import wasapi_capture
+
+        capture = wasapi_capture.WASAPICapture()
+        assert capture.sample_rate is None
+        seen = []
+
+        def callback(audio_chunk):
+            seen.append(capture.sample_rate)
+            capture.is_capturing = False
+
+        capture.capture_stream(callback=callback, device_index=0)
+        assert seen and seen[0] == 44100, seen
+
+    print("OK: sample_rate reports the device's 44100 Hz while streaming")
+
+
 if __name__ == "__main__":
     test_capture_stream_exits_promptly_when_read_stalls()
+    test_sample_rate_is_the_device_rate()

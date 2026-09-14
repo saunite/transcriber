@@ -15,6 +15,10 @@ class WASAPICapture:
         """Initialize WASAPI capture."""
         self.p = pyaudio.PyAudio()
         self.is_capturing = False
+        # The rate the loopback was actually opened at -- the device's own
+        # default, which is not always 48 kHz. Set before the first callback
+        # (openspec/changes/01-merge-dual-capture-paths).
+        self.sample_rate: Optional[int] = None
         
     def get_default_loopback_device(self):
         """Get the loopback device for the default output."""
@@ -70,6 +74,7 @@ class WASAPICapture:
         # Audio parameters
         CHANNELS = device_info['maxInputChannels']
         RATE = int(device_info['defaultSampleRate'])
+        self.sample_rate = RATE
         chunk_size = 1024
 
         # Open stream

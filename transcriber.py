@@ -32,6 +32,7 @@ import signal
 import argparse
 import multiprocessing
 import platform
+from collections import namedtuple
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -519,6 +520,47 @@ def _resolve_mic_device(args) -> Optional[int]:
     return None
 
 
+MicConfig = namedtuple("MicConfig", "device channels name rate")
+
+
+def _resolve_mic_config(args) -> Optional[MicConfig]:
+    """Pick the mic and how to open it, for every dual-capture platform.
+
+    Returns None after printing why when no usable microphone exists. A mic
+    that refuses 16 kHz (a raw ALSA hw: device, for one) is opened at its own
+    default rate and resampled by the caller instead of failing the session
+    (openspec/changes/fix-gui-file-queue-and-linux-live) -- once Linux-only,
+    now shared (openspec/changes/01-merge-dual-capture-paths).
+    """
+    import sounddevice as sd
+
+    mic_device = _resolve_mic_device(args)
+    if mic_device is None:
+        return None
+    try:
+        mic_info = sd.query_devices(mic_device)
+        max_input_channels = mic_info.get('max_input_channels', 0)
+        if max_input_channels == 0:
+            print(f"❌ Error: Device {mic_device} is not an input device (0 input channels)")
+            print(f"   Device name: {mic_info['name']}")
+            print("\nUse --list-devices to find your microphone device number")
+            return None
+        channels = min(max_input_channels, 2)
+        try:
+            sd.check_input_settings(device=mic_device, channels=channels, samplerate=16000)
+            rate = 16000
+        except Exception:
+            rate = int(mic_info['default_samplerate'])
+        if args.verbose:
+            print(f"Microphone capture enabled (device {mic_device})")
+            print(f"   Device: {mic_info['name']}")
+            print(f"   Channels: {channels}\n")
+    except Exception as e:
+        print(f"❌ Error querying microphone device {mic_device}: {e}")
+        return None
+    return MicConfig(mic_device, channels, mic_info['name'], rate)
+
+
 def _wall_clock_stamp() -> str:
     """Current local date/time, read fresh at the call site."""
     return datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
@@ -574,6 +616,192 @@ def _print_summary(all_segments: list, args, output_path: Optional[str] = None) 
     if output_path:
         print(f"Saved to: {output_path}")
     print(f"{'='*60}\n")
+
+
+def _run_dual_capture(engine, args, *, title, mode_summary, sys_rate, run_sys, mic,
+                      cleanup=None, capture_errors=()) -> int:
+    """The shared core of every dual-source live path: system audio plus an
+    optional microphone, each drained and transcribed on its own thread and
+    tagged [SYS]/[MIC] (openspec/changes/01-merge-dual-capture-paths).
+
+    Platforms pass in only what differs:
+      title          -- the transcript file's "# Live Transcription (...)" label
+      mode_summary   -- the capture-mode part of the compact status line
+      sys_rate()     -- the system source's real sample rate, read on its first
+                        block (Core Audio only knows it once capture starts)
+      run_sys(on_chunk, enqueue, check_silence)
+                     -- blocks while system audio is captured. on_chunk
+                        enqueues after checking the silence timeout, for
+                        callbacks on the capture's own drain loop; enqueue
+                        only enqueues, for PortAudio's thread, which must
+                        never raise; check_silence raises KeyboardInterrupt
+                        once the timeout passes, for a poll loop.
+      mic            -- a MicConfig, or None to capture system audio only
+      cleanup        -- releases the capture after the session
+      capture_errors -- exceptions that end the session with exit code 1
+    """
+    import numpy as np
+    from scipy import signal
+    import sounddevice as sd
+    import queue
+    import threading
+
+    # Compact default status: identity, model/language/mode/device summary,
+    # and a listening confirmation (openspec/changes/compact-live-cli-output).
+    # The GUI waits for the "Listening..." line before showing capture as
+    # active (openspec/changes/fix-capturing-shown-before-listening).
+    print(f"Transcriber → {args.output}" if args.output else "Transcriber (not saving a transcript file)")
+    print(f"{args.model} model ({engine.device}/{engine.compute_type}), {args.language or 'auto-detect'} language, {mode_summary}")
+    listen_line = "Listening... (Ctrl+C to stop"
+    if args.silence_timeout > 0:
+        listen_line += f", auto-stop after {args.silence_timeout/60:.1f}m silence"
+    print(listen_line + ")")
+
+    all_segments = []
+    last_speech_time = time.time()
+    target_rate = 16000
+    chunk_duration_samples = int(target_rate * args.chunk_duration)
+    mic_chunk_samples = int(target_rate * 5.0)
+    overlap_samples = int(target_rate * 1.0)  # keeps speech at chunk boundaries
+
+    sys_audio_queue = queue.Queue()
+    mic_audio_queue = queue.Queue()
+    stop_event = threading.Event()
+    write_lock = threading.Lock()
+
+    output_file = None
+    if args.output:
+        output_file = open(args.output, 'w', encoding='utf-8')
+        output_file.write(f"# Live Transcription ({title})\n")
+        output_file.write(f"# Model: {args.model}\n")
+        output_file.write(f"# Language: {args.language or 'auto-detect'}\n\n")
+        output_file.flush()
+
+    def check_silence():
+        if args.silence_timeout > 0 and (time.time() - last_speech_time) > args.silence_timeout:
+            print(f"\nAuto-stop: {args.silence_timeout/60:.1f} minutes of silence detected")
+            raise KeyboardInterrupt("Silence timeout")
+
+    def on_chunk(audio_chunk):
+        check_silence()
+        sys_audio_queue.put(audio_chunk)
+
+    # Capture callbacks only enqueue -- they run on the capture's own thread
+    # and must return immediately or the stream overflows.
+    def mic_callback(indata, frames, time_info, status):
+        if status and "overflow" not in str(status).lower():
+            print(f"Mic status: {status}")
+        mic_audio = indata[:, 0] if len(indata.shape) > 1 else indata
+        mic_audio_queue.put(mic_audio.flatten().copy())
+
+    def _emit(line):
+        """Print and write a transcription line (thread-safe)."""
+        print(line)
+        if output_file:
+            with write_lock:
+                output_file.write(line + "\n")
+                output_file.flush()
+
+    def _to_target_rate(rate_fn):
+        """Resample from a source's real rate to 16 kHz, on the worker thread.
+        The rate is read on the first block. Some backends (the ALSA
+        "pipewire" plugin device, in particular) deliver few-frame slivers
+        that resample to zero samples -- drop those rather than let
+        scipy.signal.resample divide by zero."""
+        rate = None
+
+        def transform(raw):
+            nonlocal rate
+            if rate is None:
+                rate = rate_fn() or target_rate
+            if rate != target_rate:
+                out_len = int(len(raw) * target_rate / rate)
+                if out_len < 1:
+                    return np.empty(0, dtype=raw.dtype)
+                raw = signal.resample(raw, out_len)
+            return raw
+        return transform
+
+    def _drain_and_transcribe(q, buffer, threshold, tag, gate, transform):
+        """Dedicated thread: drains an audio queue and runs inference."""
+        nonlocal last_speech_time
+        time_offset = 0.0
+
+        while not stop_event.is_set() or not q.empty():
+            while not q.empty():
+                buffer.append(transform(q.get_nowait()))
+
+            total = sum(len(c) for c in buffer)
+            if total >= threshold:
+                data = np.concatenate(buffer)
+                if len(data) > overlap_samples:
+                    buffer[:] = [data[-overlap_samples:]]
+                else:
+                    buffer.clear()
+                if not gate or np.max(np.abs(data)) > 0.01:
+                    try:
+                        results, spoke, time_offset = _process_audio_chunk(
+                            engine, data, time_offset,
+                            language=args.language, sample_rate=target_rate
+                        )
+                        if spoke:
+                            last_speech_time = time.time()
+                        for ts, seg in results:
+                            stamp = _wall_clock_stamp() if args.actual_time else ts
+                            _emit(f"{stamp} [{tag}] {seg['text']}")
+                            all_segments.append(seg)
+                    except Exception as e:
+                        print(f"  ❌ Error transcribing {tag.lower()} audio: {e}")
+            else:
+                time.sleep(0.05)
+
+    # Separate worker threads, so system audio and the mic never block each other.
+    sys_thread = threading.Thread(
+        target=_drain_and_transcribe,
+        args=(sys_audio_queue, [], chunk_duration_samples, "SYS", False, _to_target_rate(sys_rate)),
+        daemon=True
+    )
+    sys_thread.start()
+    mic_thread = None
+    if mic:
+        mic_thread = threading.Thread(
+            target=_drain_and_transcribe,
+            args=(mic_audio_queue, [], mic_chunk_samples, "MIC", True, _to_target_rate(lambda: mic.rate)),
+            daemon=True
+        )
+        mic_thread.start()
+
+    exit_code = 0
+    mic_stream = None
+    try:
+        if mic:
+            mic_stream = sd.InputStream(device=mic.device, channels=mic.channels, samplerate=mic.rate,
+                                        blocksize=1024, callback=mic_callback)
+            mic_stream.start()
+        run_sys(on_chunk, sys_audio_queue.put, check_silence)
+    except KeyboardInterrupt:
+        print("\n\nStopping transcription...")
+    except capture_errors as e:
+        print(f"❌ {e}")
+        exit_code = 1
+    finally:
+        # Stop feeding the queues before waiting for the workers to drain them.
+        if mic_stream:
+            mic_stream.stop()
+            mic_stream.close()
+        stop_event.set()
+        sys_thread.join(timeout=60)
+        if mic_thread:
+            mic_thread.join(timeout=60)
+        if output_file:
+            output_file.close()
+        if cleanup:
+            cleanup()
+
+    if args.verbose:
+        _print_summary(all_segments, args, output_path=args.output)
+    _print_compact_stop(all_segments, args.output)
+    return exit_code
 
 
 def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
@@ -723,19 +951,10 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
 
 def _transcribe_live_linux_dual(engine: TranscriptionEngine, args) -> int:
     """Linux dual-source live transcription: system audio (auto-detected
-    PulseAudio/PipeWire monitor) + microphone, tagged [SYS]/[MIC].
-
-    Structurally mirrors transcribe_live_wasapi's queue/worker-thread split
-    (sounddevice callbacks run on PortAudio's own thread and must never
-    block on transcription), but both sides are plain sd.InputStream --
-    Linux needs no platform-specific loopback API the way Windows/WASAPI
-    does (openspec/changes/add-linux-dual-source-live-capture).
-    """
-    import numpy as np
-    from scipy import signal
+    PulseAudio/PipeWire monitor) + microphone, tagged [SYS]/[MIC]
+    (openspec/changes/add-linux-dual-source-live-capture). The capture loop
+    itself is shared with WASAPI and Core Audio in _run_dual_capture."""
     import sounddevice as sd
-    import queue
-    import threading
 
     if args.verbose:
         _print_header(args.model, args.language, args.chunk_duration, "System audio + microphone (Linux)")
@@ -744,14 +963,11 @@ def _transcribe_live_linux_dual(engine: TranscriptionEngine, args) -> int:
     # can't see the real PipeWire/PulseAudio monitor source
     # (openspec/changes/fix-linux-loopback-detection) -- auto-detect on
     # Linux goes through pactl/parec instead. An explicit device index (or
-    # a non-Linux platform reaching this function) keeps the old
-    # sounddevice-based path, including its manual resample step, unchanged.
+    # a non-Linux platform reaching this function) keeps the
+    # sounddevice-based path.
     device_id = args.audio_device if args.audio_device >= 0 else None
-    use_linux_loopback = platform.system() == "Linux" and device_id is None
-    linux_capture = None
-    sys_device = None
 
-    if use_linux_loopback:
+    if platform.system() == "Linux" and device_id is None:
         from linux_loopback_capture import LinuxLoopbackCapture
         linux_capture = LinuxLoopbackCapture()
         device_info = linux_capture.get_default_loopback_device()
@@ -762,9 +978,15 @@ def _transcribe_live_linux_dual(engine: TranscriptionEngine, args) -> int:
             print("  - Run: pactl list sources | grep -i monitor")
             return 1
         sys_name = device_info['name']
-        native_rate = 16000  # parec resamples server-side; nothing to do here
+        native_rate = 16000  # parec resamples server-side
         if args.verbose:
             print(f"Auto-detected loopback: {sys_name}\n")
+
+        def run_sys(on_chunk, enqueue, check_silence):
+            # The parec callback runs on LinuxLoopbackCapture's own drain loop,
+            # not PortAudio's thread, so it may raise the silence timeout.
+            # capture_stream cleans up its own subprocess.
+            linux_capture.capture_stream(callback=on_chunk, device_index=sys_name, verbose=args.verbose)
     else:
         audio_capture = AudioCapture()
         if device_id is not None:
@@ -786,218 +1008,39 @@ def _transcribe_live_linux_dual(engine: TranscriptionEngine, args) -> int:
         native_rate = int(sys_info['default_samplerate'])
         sys_name = sys_info['name']
 
-    mic_device = _resolve_mic_device(args)
-    if mic_device is None:
-        return 1
+        def run_sys(on_chunk, enqueue, check_silence):
+            # PortAudio's callback thread must only enqueue; the silence
+            # timeout is checked from this poll loop instead.
+            def sys_callback(indata, frames, time_info, status):
+                if status and "overflow" not in str(status).lower():
+                    print(f"Audio callback status: {status}", file=sys.stderr)
+                sys_audio = indata[:, 0] if len(indata.shape) > 1 else indata
+                enqueue(sys_audio.flatten().copy())
 
-    try:
-        mic_info = sd.query_devices(mic_device)
-        max_input_channels = mic_info.get('max_input_channels', 0)
-        if max_input_channels == 0:
-            print(f"❌ Error: Device {mic_device} is not an input device (0 input channels)")
-            print(f"   Device name: {mic_info['name']}")
-            print("\nUse --list-devices to find your microphone device number")
-            return 1
-        mic_channels = min(max_input_channels, 2)
-        mic_name = mic_info['name']
-        # A raw ALSA hw: device can refuse 16 kHz (openspec/changes/
-        # fix-gui-file-queue-and-linux-live): open it at its own rate and
-        # resample on the mic worker thread instead of failing the session.
-        try:
-            sd.check_input_settings(device=mic_device, channels=mic_channels, samplerate=16000)
-            mic_rate = 16000
-        except Exception:
-            mic_rate = int(mic_info['default_samplerate'])
-        if args.verbose:
-            print(f"Microphone capture enabled (device {mic_device})")
-            print(f"   Device: {mic_name}")
-            print(f"   Channels: {mic_channels}\n")
-    except Exception as e:
-        print(f"❌ Error querying microphone device {mic_device}: {e}")
-        return 1
-
-    # Compact default status: identity, model/language/mode/device summary,
-    # and a listening confirmation (openspec/changes/compact-live-cli-output).
-    print(f"Transcriber → {args.output}" if args.output else "Transcriber (not saving a transcript file)")
-    mode_summary = f"System audio ({sys_name}) + mic ({mic_name})"
-    print(f"{args.model} model ({engine.device}/{engine.compute_type}), {args.language or 'auto-detect'} language, {mode_summary}")
-    listen_line = "Listening... (Ctrl+C to stop"
-    if args.silence_timeout > 0:
-        listen_line += f", auto-stop after {args.silence_timeout/60:.1f}m silence"
-    print(listen_line + ")")
-
-    # Storage
-    all_segments = []
-    last_speech_time = time.time()
-    silence_timeout_enabled = args.silence_timeout > 0
-
-    overlap_duration = 1.0
-    target_rate = 16000
-    chunk_duration_samples = int(target_rate * args.chunk_duration)
-    mic_chunk_samples = int(target_rate * 5.0)
-    overlap_samples = int(target_rate * overlap_duration)
-
-    sys_audio_queue = queue.Queue()
-    mic_audio_queue = queue.Queue()
-    stop_event = threading.Event()
-    write_lock = threading.Lock()
-
-    output_file = None
-    if args.output:
-        output_file = open(args.output, 'w', encoding='utf-8')
-        output_file.write(f"# Live Transcription (System Audio + Microphone)\n")
-        output_file.write(f"# Model: {args.model}\n")
-        output_file.write(f"# Language: {args.language or 'auto-detect'}\n\n")
-        output_file.flush()
-
-    # Capture callbacks only enqueue raw audio -- never resample or
-    # transcribe here, since they run on PortAudio's own thread and must
-    # return immediately or the stream overflows. (Non-Linux-loopback path only.)
-    def sys_callback_raw(indata, frames, time_info, status):
-        if status and "overflow" not in str(status).lower():
-            print(f"Audio callback status: {status}", file=sys.stderr)
-        sys_audio = indata[:, 0] if len(indata.shape) > 1 else indata
-        sys_audio_queue.put(sys_audio.flatten().copy())
-
-    def sys_callback_native(audio_chunk):
-        """LinuxLoopbackCapture's callback: runs synchronously on its own
-        main-thread drain loop (not PortAudio's thread), already at
-        target_rate (parec resampled server-side) -- no transform needed."""
-        if silence_timeout_enabled and (time.time() - last_speech_time) > args.silence_timeout:
-            print(f"\nAuto-stop: {args.silence_timeout/60:.1f} minutes of silence detected")
-            raise KeyboardInterrupt("Silence timeout")
-        sys_audio_queue.put(audio_chunk)
-
-    def mic_callback(indata, frames, time_info, status):
-        if status and "overflow" not in str(status).lower():
-            print(f"Mic status: {status}")
-        mic_audio = indata[:, 0] if len(indata.shape) > 1 else indata
-        chunk = mic_audio.flatten().copy()
-        mic_audio_queue.put(chunk)
-
-    def _emit(line):
-        """Print and write a transcription line (thread-safe)."""
-        print(line)
-        if output_file:
-            with write_lock:
-                output_file.write(line + "\n")
-                output_file.flush()
-
-    def _drain_and_transcribe(q, buffer, threshold, tag, gate, transform=None):
-        """Dedicated thread: drains an audio queue and runs inference."""
-        nonlocal last_speech_time
-        time_offset = 0.0
-
-        while not stop_event.is_set() or not q.empty():
-            while not q.empty():
-                item = q.get_nowait()
-                if transform:
-                    item = transform(item)
-                buffer.append(item)
-
-            total = sum(len(c) for c in buffer)
-            if total >= threshold:
-                data = np.concatenate(buffer)
-                if len(data) > overlap_samples:
-                    buffer[:] = [data[-overlap_samples:]]
-                else:
-                    buffer.clear()
-                if not gate or np.max(np.abs(data)) > 0.01:
-                    try:
-                        results, spoke, time_offset = _process_audio_chunk(
-                            engine, data, time_offset,
-                            language=args.language, sample_rate=target_rate
-                        )
-                        if spoke:
-                            last_speech_time = time.time()
-                        for ts, seg in results:
-                            stamp = _wall_clock_stamp() if args.actual_time else ts
-                            _emit(f"{stamp} [{tag}] {seg['text']}")
-                            all_segments.append(seg)
-                    except Exception as e:
-                        print(f"  ❌ Error transcribing {tag.lower()} audio: {e}")
-            else:
-                time.sleep(0.05)
-
-    def _to_target_rate(rate):
-        """Resample a capture's `rate` -> 16kHz away from the capture
-        callback. Some capture backends (the ALSA "pipewire" plugin device, in
-        particular) deliver irregular block sizes, including occasional
-        few-frame slivers that resample down to zero output samples --
-        drop those rather than let scipy.signal.resample divide by zero."""
-        def transform(raw):
-            if rate != target_rate:
-                out_len = int(len(raw) * target_rate / rate)
-                if out_len < 1:
-                    return np.empty(0, dtype=raw.dtype)
-                raw = signal.resample(raw, out_len)
-            return raw
-        return transform
-
-    # Start dedicated worker threads (sys and mic run in parallel, never
-    # blocking each other). The Linux-loopback path's sys callback already
-    # resamples (via parec), so it needs no transform; the mic needs one only
-    # when it had to open at its own rate (see mic_rate above).
-    sys_thread = threading.Thread(
-        target=_drain_and_transcribe,
-        args=(sys_audio_queue, [], chunk_duration_samples, "SYS", False, None if use_linux_loopback else _to_target_rate(native_rate)),
-        daemon=True
-    )
-    sys_thread.start()
-    mic_thread = threading.Thread(
-        target=_drain_and_transcribe,
-        args=(mic_audio_queue, [], mic_chunk_samples, "MIC", True, None if mic_rate == target_rate else _to_target_rate(mic_rate)),
-        daemon=True
-    )
-    mic_thread.start()
-
-    try:
-        if use_linux_loopback:
-            # LinuxLoopbackCapture.capture_stream is the blocking call here
-            # (mirrors transcribe_live_wasapi's structure) -- start the mic
-            # stream first so both sides run concurrently while it blocks.
-            mic_stream = sd.InputStream(device=mic_device, channels=mic_channels, samplerate=mic_rate, blocksize=1024, callback=mic_callback)
-            mic_stream.start()
-            try:
-                linux_capture.capture_stream(callback=sys_callback_native, device_index=sys_name, verbose=args.verbose)
-            finally:
-                mic_stream.stop()
-                mic_stream.close()
-        else:
-            with sd.InputStream(device=sys_device, channels=1, samplerate=native_rate, blocksize=1024, callback=sys_callback_raw), \
-                 sd.InputStream(device=mic_device, channels=mic_channels, samplerate=mic_rate, blocksize=1024, callback=mic_callback):
+            with sd.InputStream(device=sys_device, channels=1, samplerate=native_rate,
+                                blocksize=1024, callback=sys_callback):
                 while True:
-                    if silence_timeout_enabled and (time.time() - last_speech_time) > args.silence_timeout:
-                        print(f"\nAuto-stop: {args.silence_timeout/60:.1f} minutes of silence detected")
-                        break
+                    check_silence()
                     time.sleep(0.1)
-    except KeyboardInterrupt:
-        print("\n\nStopping transcription...")
-    finally:
-        # linux_capture.capture_stream() already cleans up its own
-        # subprocess in its own finally block.
-        stop_event.set()
-        sys_thread.join(timeout=60)
-        mic_thread.join(timeout=60)
-        if output_file:
-            output_file.close()
 
-    # Print summary
-    if args.verbose:
-        _print_summary(all_segments, args, output_path=args.output)
-    _print_compact_stop(all_segments, args.output)
+    mic = _resolve_mic_config(args)
+    if mic is None:
+        return 1
 
-    return 0
+    return _run_dual_capture(
+        engine, args,
+        title="System Audio + Microphone",
+        mode_summary=f"System audio ({sys_name}) + mic ({mic.name})",
+        sys_rate=lambda: native_rate,
+        run_sys=run_sys,
+        mic=mic,
+    )
 
 
 def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
-    """Live transcription using WASAPI loopback (Windows, Bluetooth-compatible)."""
-    import numpy as np
+    """Live transcription using WASAPI loopback (Windows, Bluetooth-compatible).
+    The capture loop is shared in _run_dual_capture."""
     from wasapi_capture import WASAPICapture
-    from scipy import signal
-    import sounddevice as sd
-    import queue
-    import threading
 
     # Print header
     if args.verbose:
@@ -1026,223 +1069,43 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
         if args.verbose:
             print(f"Auto-detected loopback: {loopback_name}\n")
 
-    # Get microphone device if requested
-    mic_stream = None
-    mic_channels = 1  # Default to mono
-    mic_name = None
+    mic = None
     if args.include_mic:
-        mic_device = _resolve_mic_device(args)
-        if mic_device is None:
+        mic = _resolve_mic_config(args)
+        if mic is None:
             return 1
 
-        # Get device info to determine max channels
-        try:
-            mic_info = sd.query_devices(mic_device)
-            max_input_channels = mic_info.get('max_input_channels', 0)
-            if max_input_channels == 0:
-                print(f"❌ Error: Device {mic_device} is not an input device (0 input channels)")
-                print(f"   Device name: {mic_info['name']}")
-                print("\nUse --list-devices to find your microphone device number")
-                return 1
-            # Use device's max channels (usually 1 for headset, 2 for arrays)
-            mic_channels = min(max_input_channels, 2)
-            mic_name = mic_info['name']
-            if args.verbose:
-                print(f"Microphone capture enabled (device {mic_device})")
-                print(f"   Device: {mic_name}")
-                print(f"   Channels: {mic_channels}\n")
-        except Exception as e:
-            print(f"❌ Error querying microphone device {mic_device}: {e}")
-            return 1
-
-    # Compact default status: identity, model/language/mode/device summary,
-    # and a listening confirmation -- the one thing every run needs to show,
-    # regardless of --verbose (openspec/changes/compact-live-cli-output).
-    print(f"Transcriber → {args.output}" if args.output else "Transcriber (not saving a transcript file)")
     mode_summary = "WASAPI"
-    if args.include_mic:
-        mode_summary += f" + mic ({mic_name})" if mic_name else " + mic"
-    print(f"{args.model} model ({engine.device}/{engine.compute_type}), {args.language or 'auto-detect'} language, {mode_summary}")
-    listen_line = "Listening... (Ctrl+C to stop"
-    if args.silence_timeout > 0:
-        listen_line += f", auto-stop after {args.silence_timeout/60:.1f}m silence"
-    print(listen_line + ")")
+    if mic:
+        mode_summary += f" + mic ({mic.name})"
 
-    # Storage
-    all_segments = []
-    last_speech_time = time.time()  # Track time of last detected speech
-    silence_timeout_enabled = args.silence_timeout > 0
-
-    # Overlap settings to prevent speech loss at chunk boundaries
-    overlap_duration = 1.0  # 1 second overlap between chunks
-
-    # WASAPI typically uses 48kHz, we need 16kHz for Whisper
-    wasapi_rate = 48000
-    target_rate = 16000
-    # Chunk duration in TARGET rate (16kHz) since we resample before buffering
-    chunk_duration_samples = int(target_rate * args.chunk_duration)
-    mic_chunk_samples = int(target_rate * 5.0)  # Transcribe mic every 5 seconds
-    overlap_samples = int(target_rate * overlap_duration)
-
-    # Thread-safe queues: capture callbacks push raw audio here (non-blocking)
-    # The transcription worker thread drains these queues independently.
-    sys_audio_queue = queue.Queue()
-    mic_audio_queue = queue.Queue()
-    stop_event = threading.Event()
-    write_lock = threading.Lock()
-
-    # Open output file for incremental writing
-    output_file = None
-    if args.output:
-        output_file = open(args.output, 'w', encoding='utf-8')
-        output_file.write(f"# Live Transcription (WASAPI Loopback")
-        if args.include_mic:
-            output_file.write(f" + Microphone")
-        output_file.write(f")\n")
-        output_file.write(f"# Model: {args.model}\n")
-        output_file.write(f"# Language: {args.language or 'auto-detect'}\n\n")
-        output_file.flush()
-
-    # Microphone callback: enqueue only, never blocks
-    def mic_callback(indata, frames, time_info, status):
-        if status and "overflow" not in str(status).lower():
-            print(f"Mic status: {status}")
-        mic_audio = indata[:, 0] if len(indata.shape) > 1 else indata
-        chunk = mic_audio.flatten().copy()
-        mic_audio_queue.put(chunk)
-
-    # Start microphone capture if enabled
-    if args.include_mic:
-        mic_stream = sd.InputStream(
-            device=mic_device,
-            channels=mic_channels,
-            samplerate=16000,
-            callback=mic_callback
-        )
-        mic_stream.start()
-
-    # WASAPI callback: enqueue RAW audio only (no resampling here), never blocks
-    def audio_callback(audio_chunk):
-        if silence_timeout_enabled:
-            elapsed_silence = time.time() - last_speech_time
-            if elapsed_silence > args.silence_timeout:
-                print(f"\nAuto-stop: {args.silence_timeout/60:.1f} minutes of silence detected")
-                raise KeyboardInterrupt("Silence timeout")
-        sys_audio_queue.put(audio_chunk)
-
-    def _emit(line):
-        """Print and write a transcription line (thread-safe)."""
-        print(line)
-        if output_file:
-            with write_lock:
-                output_file.write(line + "\n")
-                output_file.flush()
-
-    def _drain_and_transcribe(queue, buffer, threshold, tag, gate, transform=None):
-        """Dedicated thread: drains an audio queue and runs inference."""
-        nonlocal last_speech_time
-        time_offset = 0.0
-
-        while not stop_event.is_set() or not queue.empty():
-            while not queue.empty():
-                item = queue.get_nowait()
-                if transform:
-                    item = transform(item)
-                buffer.append(item)
-
-            total = sum(len(c) for c in buffer)
-            if total >= threshold:
-                data = np.concatenate(buffer)
-                if len(data) > overlap_samples:
-                    buffer[:] = [data[-overlap_samples:]]
-                else:
-                    buffer.clear()
-                if not gate or np.max(np.abs(data)) > 0.01:
-                    try:
-                        results, spoke, time_offset = _process_audio_chunk(
-                            engine, data, time_offset,
-                            language=args.language, sample_rate=target_rate
-                        )
-                        if spoke:
-                            last_speech_time = time.time()
-                        for ts, seg in results:
-                            stamp = _wall_clock_stamp() if args.actual_time else ts
-                            _emit(f"{stamp} [{tag}] {seg['text']}")
-                            all_segments.append(seg)
-                    except Exception as e:
-                        print(f"  ❌ Error transcribing {tag.lower()} audio: {e}")
-            else:
-                time.sleep(0.05)
-
-    def transform_sys(raw):
-        """Resample 48kHz -> 16kHz away from the capture callback."""
-        return signal.resample(raw, int(len(raw) * target_rate / wasapi_rate))
-
-    # Start dedicated worker threads (sys and mic run in parallel, never blocking each other)
-    sys_thread = threading.Thread(
-        target=_drain_and_transcribe,
-        args=(sys_audio_queue, [], chunk_duration_samples, "SYS", False, transform_sys),
-        daemon=True
+    return _run_dual_capture(
+        engine, args,
+        title="WASAPI Loopback" + (" + Microphone" if mic else ""),
+        mode_summary=mode_summary,
+        # The rate WASAPICapture actually opened the device at, which is not
+        # always 48 kHz (openspec/changes/01-merge-dual-capture-paths).
+        sys_rate=lambda: capture.sample_rate,
+        run_sys=lambda on_chunk, enqueue, check_silence: capture.capture_stream(
+            callback=on_chunk, device_index=device_index, verbose=args.verbose),
+        mic=mic,
+        cleanup=capture.cleanup,
     )
-    sys_thread.start()
-    mic_thread = None
-    if args.include_mic:
-        mic_thread = threading.Thread(
-            target=_drain_and_transcribe,
-            args=(mic_audio_queue, [], mic_chunk_samples, "MIC", True),
-            daemon=True
-        )
-        mic_thread.start()
-
-    try:
-        # Start capturing (callbacks only enqueue audio now, never block)
-        capture.capture_stream(
-            callback=audio_callback,
-            device_index=device_index,
-            verbose=args.verbose
-        )
-    except KeyboardInterrupt:
-        print("\n\nStopping transcription...")
-    finally:
-        stop_event.set()
-        sys_thread.join(timeout=60)
-        if mic_thread:
-            mic_thread.join(timeout=60)
-        if mic_stream:
-            mic_stream.stop()
-            mic_stream.close()
-        if output_file:
-            output_file.close()
-        capture.cleanup()
-
-    # Print summary
-    if args.verbose:
-        _print_summary(all_segments, args, output_path=args.output)
-    _print_compact_stop(all_segments, args.output)
-
-    return 0
 
 
 def transcribe_live_coreaudio_tap(engine: TranscriptionEngine, args) -> int:
     """Live transcription using macOS's native Core Audio Process Tap (no virtual driver required).
 
     UNVERIFIED against real macOS hardware as of writing -- see
-    openspec/changes/add-macos-capture/design.md. Structurally mirrors
-    transcribe_live_wasapi (dual sys/mic queues drained by dedicated
-    threads) since it's the same shape of problem: a background capture
-    source pushing audio that must never block on transcription.
+    openspec/changes/add-macos-capture/design.md. The capture loop is shared
+    with Linux and WASAPI in _run_dual_capture.
     """
-    import numpy as np
     from macos_capture import (
         MacOSCapture,
         UnsupportedMacOSVersionError,
         AudioCapturePermissionError,
         MacOSCaptureError,
     )
-    from scipy import signal
-    import sounddevice as sd
-    import queue
-    import threading
 
     if args.verbose:
         _print_header(args.model, args.language, args.chunk_duration, "Core Audio Process Tap (macOS)")
@@ -1256,188 +1119,28 @@ def transcribe_live_coreaudio_tap(engine: TranscriptionEngine, args) -> int:
     if args.verbose:
         print(f"Using: {device_info['name']}\n")
 
-    # Get microphone device if requested
-    mic_stream = None
-    mic_channels = 1
-    mic_name = None
+    mic = None
     if args.include_mic:
-        mic_device = _resolve_mic_device(args)
-        if mic_device is None:
+        mic = _resolve_mic_config(args)
+        if mic is None:
             return 1
 
-        try:
-            mic_info = sd.query_devices(mic_device)
-            max_input_channels = mic_info.get('max_input_channels', 0)
-            if max_input_channels == 0:
-                print(f"❌ Error: Device {mic_device} is not an input device (0 input channels)")
-                print(f"   Device name: {mic_info['name']}")
-                print("\nUse --list-devices to find your microphone device number")
-                return 1
-            mic_channels = min(max_input_channels, 2)
-            mic_name = mic_info['name']
-            if args.verbose:
-                print(f"Microphone capture enabled (device {mic_device})")
-                print(f"   Device: {mic_name}")
-                print(f"   Channels: {mic_channels}\n")
-        except Exception as e:
-            print(f"❌ Error querying microphone device {mic_device}: {e}")
-            return 1
-
-    # Compact default status -- mirrors transcribe_live_wasapi
-    # (openspec/changes/compact-live-cli-output).
-    print(f"Transcriber → {args.output}" if args.output else "Transcriber (not saving a transcript file)")
     mode_summary = "Core Audio tap"
-    if args.include_mic:
-        mode_summary += f" + mic ({mic_name})" if mic_name else " + mic"
-    print(f"{args.model} model ({engine.device}/{engine.compute_type}), {args.language or 'auto-detect'} language, {mode_summary}")
-    listen_line = "Listening... (Ctrl+C to stop"
-    if args.silence_timeout > 0:
-        listen_line += f", auto-stop after {args.silence_timeout/60:.1f}m silence"
-    print(listen_line + ")")
+    if mic:
+        mode_summary += f" + mic ({mic.name})"
 
-    # Storage
-    all_segments = []
-    last_speech_time = time.time()
-    silence_timeout_enabled = args.silence_timeout > 0
-
-    overlap_duration = 1.0
-    target_rate = 16000
-    chunk_duration_samples = int(target_rate * args.chunk_duration)
-    mic_chunk_samples = int(target_rate * 5.0)
-    overlap_samples = int(target_rate * overlap_duration)
-
-    sys_audio_queue = queue.Queue()
-    mic_audio_queue = queue.Queue()
-    stop_event = threading.Event()
-    write_lock = threading.Lock()
-
-    output_file = None
-    if args.output:
-        output_file = open(args.output, 'w', encoding='utf-8')
-        output_file.write(f"# Live Transcription (Core Audio Process Tap")
-        if args.include_mic:
-            output_file.write(f" + Microphone")
-        output_file.write(f")\n")
-        output_file.write(f"# Model: {args.model}\n")
-        output_file.write(f"# Language: {args.language or 'auto-detect'}\n\n")
-        output_file.flush()
-
-    def mic_callback(indata, frames, time_info, status):
-        if status and "overflow" not in str(status).lower():
-            print(f"Mic status: {status}")
-        mic_audio = indata[:, 0] if len(indata.shape) > 1 else indata
-        chunk = mic_audio.flatten().copy()
-        mic_audio_queue.put(chunk)
-
-    if args.include_mic:
-        mic_stream = sd.InputStream(
-            device=mic_device,
-            channels=mic_channels,
-            samplerate=16000,
-            callback=mic_callback
-        )
-        mic_stream.start()
-
-    def sys_callback(audio_chunk):
-        if silence_timeout_enabled:
-            elapsed_silence = time.time() - last_speech_time
-            if elapsed_silence > args.silence_timeout:
-                print(f"\nAuto-stop: {args.silence_timeout/60:.1f} minutes of silence detected")
-                raise KeyboardInterrupt("Silence timeout")
-        sys_audio_queue.put(audio_chunk)
-
-    def _emit(line):
-        print(line)
-        if output_file:
-            with write_lock:
-                output_file.write(line + "\n")
-                output_file.flush()
-
-    def _drain_and_transcribe(q, buffer, threshold, tag, gate, transform=None):
-        nonlocal last_speech_time
-        time_offset = 0.0
-
-        while not stop_event.is_set() or not q.empty():
-            while not q.empty():
-                item = q.get_nowait()
-                if transform:
-                    item = transform(item)
-                buffer.append(item)
-
-            total = sum(len(c) for c in buffer)
-            if total >= threshold:
-                data = np.concatenate(buffer)
-                if len(data) > overlap_samples:
-                    buffer[:] = [data[-overlap_samples:]]
-                else:
-                    buffer.clear()
-                if not gate or np.max(np.abs(data)) > 0.01:
-                    try:
-                        results, spoke, time_offset = _process_audio_chunk(
-                            engine, data, time_offset,
-                            language=args.language, sample_rate=target_rate
-                        )
-                        if spoke:
-                            last_speech_time = time.time()
-                        for ts, seg in results:
-                            stamp = _wall_clock_stamp() if args.actual_time else ts
-                            _emit(f"{stamp} [{tag}] {seg['text']}")
-                            all_segments.append(seg)
-                    except Exception as e:
-                        print(f"  ❌ Error transcribing {tag.lower()} audio: {e}")
-            else:
-                time.sleep(0.05)
-
-    def transform_sys(raw):
-        """Resample from the tap's native rate (known only once capture starts) to
-        16kHz away from the capture callback."""
-        native_rate = capture.sample_rate or target_rate
-        if native_rate != target_rate:
-            raw = signal.resample(raw, int(len(raw) * target_rate / native_rate))
-        return raw
-
-    # Start dedicated worker threads (sys and mic run in parallel, never blocking each other)
-    sys_thread = threading.Thread(
-        target=_drain_and_transcribe,
-        args=(sys_audio_queue, [], chunk_duration_samples, "SYS", False, transform_sys),
-        daemon=True
+    return _run_dual_capture(
+        engine, args,
+        title="Core Audio Process Tap" + (" + Microphone" if mic else ""),
+        mode_summary=mode_summary,
+        # Known only once the helper's header arrives, i.e. after capture starts.
+        sys_rate=lambda: capture.sample_rate,
+        run_sys=lambda on_chunk, enqueue, check_silence: capture.capture_stream(
+            callback=on_chunk, device_index=device_info['index'], verbose=args.verbose),
+        mic=mic,
+        cleanup=capture.cleanup,
+        capture_errors=(UnsupportedMacOSVersionError, AudioCapturePermissionError, MacOSCaptureError),
     )
-    sys_thread.start()
-    mic_thread = None
-    if args.include_mic:
-        mic_thread = threading.Thread(
-            target=_drain_and_transcribe,
-            args=(mic_audio_queue, [], mic_chunk_samples, "MIC", True),
-            daemon=True
-        )
-        mic_thread.start()
-
-    exit_code = 0
-    try:
-        capture.capture_stream(callback=sys_callback, device_index=device_info['index'], verbose=args.verbose)
-    except KeyboardInterrupt:
-        print("\n\nStopping transcription...")
-    except (UnsupportedMacOSVersionError, AudioCapturePermissionError, MacOSCaptureError) as e:
-        print(f"❌ {e}")
-        exit_code = 1
-    finally:
-        stop_event.set()
-        sys_thread.join(timeout=60)
-        if mic_thread:
-            mic_thread.join(timeout=60)
-        if mic_stream:
-            mic_stream.stop()
-            mic_stream.close()
-        if output_file:
-            output_file.close()
-        capture.cleanup()
-
-    # Print summary
-    if args.verbose:
-        _print_summary(all_segments, args, output_path=args.output)
-    _print_compact_stop(all_segments, args.output)
-
-    return exit_code
 
 
 if __name__ == "__main__":

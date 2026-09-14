@@ -51,7 +51,7 @@ def _run_dual_capture(engine, args, *, title, mode_summary, sys_rate, run_sys, m
 ```
 
 - **`sys_rate`** is a zero-argument callable that returns the system source's rate. It is read lazily on the first system block, which is what Core Audio needs (`lambda: capture.sample_rate`). WASAPI passes `lambda: capture.sample_rate` too (Decision 3). Linux passes a constant.
-- **`run_sys(on_chunk, silence_expired)`** blocks until capture ends. The runner provides `on_chunk(block)`, which checks the silence timeout, raises `KeyboardInterrupt` when it expires, and enqueues the block, just as the callbacks do today. It also provides `silence_expired()` for Linux's poll loop.
+- **`run_sys(on_chunk, enqueue, check_silence)`** blocks until capture ends. *(Refined during implementation from `run_sys(on_chunk, silence_expired)`: PortAudio-thread callbacks need a plain `enqueue` that never raises, and `check_silence()` raises `KeyboardInterrupt` with the auto-stop message itself, so the message exists once. See tasks.md 1.3.)* The runner provides `on_chunk(block)`, which checks the silence timeout, raises `KeyboardInterrupt` when it expires, and enqueues the block, just as the callbacks do today. It also provides `silence_expired()` for Linux's poll loop.
   - WASAPI and Core Audio: `lambda on_chunk, _: capture.capture_stream(callback=on_chunk, device_index=…, verbose=args.verbose)`.
   - Linux parec: the same shape.
   - Linux `--audio-device`: opens its `sd.InputStream` with a callback feeding `on_chunk`'s enqueue, and polls `silence_expired()`.
