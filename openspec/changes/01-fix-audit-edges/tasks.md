@@ -1,0 +1,51 @@
+## 1. Tests first
+
+- [ ] 1.1 In `test_dual_capture.py`, add a no-mic scenario that calls `transcriber.transcribe_live_simple` with `include_mic=False`, `audio_device=3`, `silence_timeout=0.5`, on Linux or with `platform.system` faked. Use a fake `sounddevice` whose `InputStream` feeds 16 kHz blocks to its callback from its own thread and records that thread, and a fake engine that records the thread each `transcribe_chunk` runs on and returns a line only for the first chunk. Assert:
+  - the run returns 0 within 5 s, with "minutes of silence detected" in the output;
+  - no `transcribe_chunk` call ran on the stream's callback thread;
+  - the transcript lines are `[SYS]`-tagged.
+
+  Verify it **fails** against today's code, recording how: expected a hang caught by the time limit, a transcription on the callback thread, and untagged lines.
+
+- [ ] 1.2 Add a root `test_launchers.py` that runs `linux-start-transcription.sh` and `mac-start-transcription.sh` from a temporary copy of the checkout layout. The copy has the script, a stub `transcriber.py`, and a stub `.venv/bin/python` that writes its argv to a file. It runs from a different current folder, with `--model-path /models/small`. Assert:
+  - the stub received the absolute path of the copied `transcriber.py`;
+  - `--model` is absent, and `--model-path /models/small` and `--actual-time` are present;
+  - the output file argument is relative (so it lands in the current folder).
+
+  Verify it fails against today's scripts.
+
+- [ ] 1.3 In `tests/test_gui.py`, add `dotted output folder`: type `/home/a.b/transcript` into the output field, start a live session, and assert the `start_live_session` call's `outputPath` matches `^/home/a\.b/transcript_\d{8}_\d{6}$`. Also check `/home/a.b/notes.txt` gives `/home/a.b/notes_<stamp>.txt`.
+
+  Verify it fails against today's `src/main.js`.
+
+## 2. Fixes
+
+- [ ] 2.1 `transcriber.py`, per design.md Decisions 1–2: merge `_transcribe_live_linux_dual` into `transcribe_live_simple` with an optional mic, and delete the old single-source loop and `_transcribe_live_linux_dual`. Point `tests/test_gui.py`'s `LIVE_FUNCTIONS` at the function that prints "Listening...", and update `test_transcript_line_format.py`'s comment naming `transcribe_live_simple`.
+
+  Verify 1.1 passes, and `test_dual_capture.py`, `test_transcript_line_format.py`, `test_mic_fallback.py`, `test_live_default_output.py` and the GUI "listening wording" check all pass.
+
+- [ ] 2.2 Bash launchers, per Decision 3: script-relative `transcriber.py`, and no `--model base`. Verify 1.2 passes.
+
+- [ ] 2.3 `src/main.js` `withFreshTimestamp`, per Decision 4. Verify with `node --check`, then that 1.3 and all GUI scenarios pass.
+
+## 3. Docs, backlog and verification
+
+- [ ] 3.1 README:
+  - system-audio-only live output is `[SYS]`-tagged, with the same compact status lines;
+  - the Linux and macOS launchers work from any folder and take `--model` or `--model-path`.
+
+  Verify both are described.
+
+- [ ] 3.2 `openspec/backlog.md`, "Logic audit follow-ups":
+  - remove D1, D5 and D7;
+  - reword D4 to its Windows half (`win-start-transcription.bat` and `transcribe_file.bat` run `transcriber.py` by relative path, and the `.bat` passes `--model base`), noting that `03-fix-audit-edges-windows` covers it;
+  - leave D2, D3 and D6 unchanged.
+
+  Verify by reading the section.
+
+- [ ] 3.3 Run `.venv/bin/python run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set and a network that reaches GitHub, and verify it exits 0.
+
+- [ ] 3.4 **Manual check, by the user, on a rebuilt sidecar:** first rebuild and stage the sidecar (`build_sidecar.py`, copied to `src-tauri/binaries/`), then build the app. In the app, untick the microphone and start a short live session over a playing video, keeping nothing afterwards. Verify:
+  - lines appear on the chart;
+  - they stay visible under Show = SYS;
+  - with Stop after silence set to 1 minute, the session stops by itself after a minute of silence.
