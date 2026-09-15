@@ -24,8 +24,16 @@
 - [x] 3.2 Build the Linux AppImage and `.rpm` locally with the change, then **user check in the real app:** switch the theme (including a restart with a non-system theme, to confirm the first-paint script still runs), start and stop a live session, and transcribe a dropped file. Everything must work as before.
 
   **User-verified on Fedora, 2026-09-14** with local builds of `67c252e` (`~/Downloads/transcriber-test/csp-local/`), whose `transcriber-gui` binary embeds `default-src 'self'; connect-src ipc: http://ipc.localhost`: "3.2 passed". The theme, live session and file transcription all work under the policy.
-- [ ] 3.3 **Enforcement check in a dev window:** run `npx @tauri-apps/cli@2.11.4 dev` from `src-tauri/`, which applies `csp` because no `devCsp` is set. Open devtools with right-click → Inspect, then check that:
+- [x] 3.3 **Enforcement check in a dev window:** run `npx @tauri-apps/cli@2.11.4 dev` from `src-tauri/`, which applies `csp` because no `devCsp` is set. Open devtools with right-click → Inspect, then check that:
   - the console shows no "Content Security Policy" violation during normal use (theme, start/stop);
   - running `document.body.insertAdjacentHTML('beforeend', '<img src=x onerror="document.title=\'injected\'">')` in the console leaves the window title unchanged and logs a CSP violation for the inline handler.
   Record what the console showed.
+
+  **Done 2026-09-14, through automated tests instead of the manual probes, as the user directed** ("use the newly implemented automated tests when possible"). Running the manual step showed its flaws: the window title is drawn natively by Tauri and ignores `document.title`, so the planned signal proved nothing, and pasting probes into the console broke the page layout. So it was automated by the change `test-gui-under-app-csp` (archived 2026-09-14). `tests/test_gui.py` now serves the page under the policy Tauri enforces: the configured CSP plus a `script-src 'self' 'sha256-…'` hash for the inline theme script. All 10 scenarios pass (run again for this task):
+  - **"no CSP violation during normal use":** every scenario (page load, live start/stop, exit before listening, file queue, unsupported file, refusal) fails on any `securitypolicyviolation`, and none occur;
+  - **"an injected inline handler doesn't run and is reported":** the `injected script refused` scenario checks page state (`__probe` stays 0) and a `script-src-attr` violation, and fails when the policy header is removed;
+  - **string `eval` is also refused and reported**, and adding `'unsafe-inline' 'unsafe-eval'` makes the scenario fail.
+
+  **The user's own dev-window session on Fedora (WebKitGTK), 2026-09-14,** covered the part automation can't: the real webview ran the app under the policy with **no CSP errors in the console** during normal use. Their injection attempt left the window usable once reloaded, but its title-based signal was inconclusive, as noted above.
+  **Still not covered by any automated test:** enforcement inside WebKitGTK and WebView2 themselves (the tests use Chromium's implementation of the same standard), and IPC reachability under `connect-src`. That was proven on Linux by 3.2 and is covered on Windows by 3.4.
 - [ ] 3.4 Manual CI run on `dev` (only when the user asks for it), then **user check on Windows** with the `windows` artifact: the GUI starts and stops a live session and transcribes a file. That confirms IPC works through `http://ipc.localhost` under the policy.
