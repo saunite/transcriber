@@ -36,12 +36,26 @@
 
 ## 2. Shell
 
-- [ ] 2.1 In `src-tauri/src/sidecar.rs`, add to `SidecarManager`: `live_generation`, `file_generation`, `file_running` and `last_line` (Decision 3). Add a pure `engine_busy(...)` used by both start commands for their refusal messages. It replaces the per-OS `pid_alive` file check. Pass each run's generation into `spawn_sidecar_events`, and ignore `Terminated` from an older generation. Unit tests:
+- [x] 2.1 In `src-tauri/src/sidecar.rs`, add to `SidecarManager`: `live_generation`, `file_generation`, `file_running` and `last_line` (Decision 3). Add a pure `engine_busy(...)` used by both start commands for their refusal messages. It replaces the per-OS `pid_alive` file check. Pass each run's generation into `spawn_sidecar_events`, and ignore `Terminated` from an older generation. Unit tests:
   - `engine_busy` refuses a file run during live, a live run during a file run, and a live run during live, and allows each when idle;
   - a pure `on_terminated(state, generation, is_live, code)` helper, driving the event handler, returns "ignored" for a stale generation, "ended" (with code) for an unrequested exit of the current live run with code 0 or non-zero, "stopped" after a user stop, and "file done/failed" for file runs.
 
   Verify `cargo test` passes.
-- [ ] 2.2 Emit `live-session-ended { code, lastLine }` for an unrequested exit of the current live run (any code), replacing `sidecar-crashed`. Emit `sidecar-heartbeat { tag }` for `HEARTBEAT` lines instead of `sidecar-log`, and exclude them from `last_line`. `build_live_session_args` gains `silence_timeout_secs` and always adds `--heartbeat --silence-timeout <n>`, and `start_live_session` takes `silence_timeout_minutes: u32`. Unit tests: the args carry `--heartbeat` and the converted seconds (10 → 600, 0 → 0), and a `HEARTBEAT MIC` line classifies as a heartbeat, not a transcript or log line. Verify `cargo test` passes, and that `grep -n sidecar-crashed src-tauri src` finds nothing.
+
+  **Done 2026-09-15.**
+  - **`SidecarManager`** gains `file_running`, `live_generation`, `file_generation` and `last_line`.
+  - **`engine_busy(sidecar, starting_live)`** gives the refusal for both start commands: live during live, live during a file run, a file run during live, and a file run during a file run. It replaces the per-OS `pid_alive` file check; the Windows branch used to refuse nothing.
+  - **`on_terminated(sidecar, generation, is_live, code)`** returns `Ignored` for a stale generation, `LiveEnded(code)` when the current live run exits with `session_active` still set (any code), `LiveStopped` after a user stop, and `FileDone(ok)` for file runs, clearing the matching state.
+  - **`spawn_sidecar_events`** now takes `(generation, is_live)`, and both commands bump their generation on spawn.
+  - **Tests:** `one_engine_at_a_time_in_both_directions`, `a_live_exit_is_reported_whatever_the_code_unless_the_user_stopped_it` (codes 0, 1 and a signal), and `a_late_exit_from_an_older_run_changes_nothing` (live and file). `cargo test` passes.
+
+- [x] 2.2 Emit `live-session-ended { code, lastLine }` for an unrequested exit of the current live run (any code), replacing `sidecar-crashed`. Emit `sidecar-heartbeat { tag }` for `HEARTBEAT` lines instead of `sidecar-log`, and exclude them from `last_line`. `build_live_session_args` gains `silence_timeout_secs` and always adds `--heartbeat --silence-timeout <n>`, and `start_live_session` takes `silence_timeout_minutes: u32`. Unit tests: the args carry `--heartbeat` and the converted seconds (10 → 600, 0 → 0), and a `HEARTBEAT MIC` line classifies as a heartbeat, not a transcript or log line. Verify `cargo test` passes, and that `grep -n sidecar-crashed src-tauri src` finds nothing.
+
+  **Done 2026-09-15.**
+  - **Events:** `live-session-ended { code, lastLine }` (camelCase) is emitted for `LiveEnded`, replacing `sidecar-crashed` in the shell. `HEARTBEAT <TAG>` lines emit `sidecar-heartbeat { tag }`, and `last_line` records transcript and log lines of the current live generation but never heartbeats.
+  - **Arguments:** `build_live_session_args` takes `silence_timeout_minutes`, converts with `saturating_mul(60)`, and always adds `--heartbeat --silence-timeout <secs>`. `start_live_session` takes `silence_timeout_minutes: u32`.
+  - **Tests:** `heartbeats_are_neither_transcript_nor_log_lines`, and `live_args_carry_the_heartbeat_and_the_silence_limit_in_seconds_from_minutes` (10 → 600, 0 → 0). The existing builder tests pass the new argument.
+  - **Verified:** `cargo test` passes 29, and `cargo build` has no warnings. `grep sidecar-crashed` over `src-tauri/src` finds nothing; the page's listener in `src/main.js` is replaced in 3.2.
 
 ## 3. Frontend
 

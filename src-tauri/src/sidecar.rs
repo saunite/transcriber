@@ -152,7 +152,10 @@ mod tests {
         assert!(!pid_alive(pid), "a reaped process must not read as alive");
     }
 
-    use super::{build_file_args, build_live_session_args, select_model_dir, strip_extended_length_prefix};
+    use super::{
+        build_file_args, build_live_session_args, engine_busy, heartbeat_tag, on_terminated, select_model_dir,
+        strip_extended_length_prefix, RunEnded, SidecarManager,
+    };
     // cfg-gated to match the helpers themselves, which only exist off Windows.
     #[cfg(not(windows))]
     use super::{descendant_pids, pid_alive, stop_result_line, terminate_process_tree};
@@ -199,6 +202,7 @@ mod tests {
             None,
             None,
             None,
+            10,
         );
         assert_eq!(args[0], "--live");
         assert_eq!(args.contains(&"--wasapi".to_string()), cfg!(windows), "{args:?}");
@@ -215,6 +219,7 @@ mod tests {
             None,
             None,
             None,
+            10,
         );
         assert!(
             !args.contains(&"--audio-device".to_string()),
@@ -232,6 +237,7 @@ mod tests {
             None,
             None,
             Some(7),
+            10,
         );
         let idx = args
             .iter()
@@ -250,6 +256,7 @@ mod tests {
             None,
             None,
             None,
+            10,
         );
         assert!(
             !args.contains(&"--language".to_string()),
@@ -267,6 +274,7 @@ mod tests {
             None,
             None,
             None,
+            10,
         );
         let idx = args
             .iter()
@@ -291,6 +299,7 @@ mod tests {
             None,
             Some(stamped.to_string()),
             None,
+            10,
         );
         let idx = args
             .iter()
@@ -338,7 +347,7 @@ mod tests {
 
     #[test]
     fn model_size_is_passed_only_for_the_bundled_model() {
-        let live = |bundled| build_live_session_args("/m".to_string(), bundled, None, false, None, None, None);
+        let live = |bundled| build_live_session_args("/m".to_string(), bundled, None, false, None, None, None, 10);
         let file = |bundled| {
             build_file_args("a.wav".into(), "txt".into(), "transcribe".into(), "/m".into(), bundled, None)
         };
@@ -354,6 +363,69 @@ mod tests {
     }
 
     #[test]
+    fn one_engine_at_a_time_in_both_directions() {
+        let idle = SidecarManager::new();
+        assert_eq!(engine_busy(&idle, true), None);
+        assert_eq!(engine_busy(&idle, false), None);
+
+        let mut live = SidecarManager::new();
+        live.session_active = true;
+        assert!(engine_busy(&live, true).unwrap().contains("live session is already running"));
+        assert!(engine_busy(&live, false).unwrap().contains("Stop it before transcribing a file"));
+
+        let mut file = SidecarManager::new();
+        file.file_running = true;
+        assert!(engine_busy(&file, true).unwrap().contains("file transcription is still running"));
+        assert!(engine_busy(&file, false).unwrap().contains("file transcription is already running"));
+    }
+
+    #[test]
+    fn a_live_exit_is_reported_whatever_the_code_unless_the_user_stopped_it() {
+        for code in [Some(0), Some(1), None] {
+            let mut state = SidecarManager::new();
+            state.live_generation = 3;
+            state.session_active = true;
+            assert_eq!(on_terminated(&mut state, 3, true, code), RunEnded::LiveEnded(code));
+            assert!(!state.session_active);
+        }
+        let mut stopped = SidecarManager::new();
+        stopped.live_generation = 3; // stop_live_session already cleared session_active
+        assert_eq!(on_terminated(&mut stopped, 3, true, Some(0)), RunEnded::LiveStopped);
+    }
+
+    #[test]
+    fn a_late_exit_from_an_older_run_changes_nothing() {
+        let mut state = SidecarManager::new();
+        state.live_generation = 4; // a new session started after run 3 was stopped
+        state.session_active = true;
+        assert_eq!(on_terminated(&mut state, 3, true, None), RunEnded::Ignored);
+        assert!(state.session_active, "the new session must stay active");
+
+        state.file_generation = 2;
+        state.file_running = true;
+        assert_eq!(on_terminated(&mut state, 1, false, Some(0)), RunEnded::Ignored);
+        assert!(state.file_running);
+        assert_eq!(on_terminated(&mut state, 2, false, Some(1)), RunEnded::FileDone(false));
+        assert!(!state.file_running);
+    }
+
+    #[test]
+    fn heartbeats_are_neither_transcript_nor_log_lines() {
+        assert_eq!(heartbeat_tag("HEARTBEAT MIC"), Some("MIC"));
+        assert_eq!(heartbeat_tag("[2026-09-15 10:00:00] [SYS] HEARTBEAT SYS"), None);
+        assert!(!super::TRANSCRIPT_LINE_RE.is_match("HEARTBEAT SYS"));
+    }
+
+    #[test]
+    fn live_args_carry_the_heartbeat_and_the_silence_limit_in_seconds_from_minutes() {
+        for (minutes, expected) in [(10, "600"), (0, "0")] {
+            let args = build_live_session_args("/m".to_string(), true, None, false, None, None, None, minutes);
+            assert!(args.contains(&"--heartbeat".to_string()), "{args:?}");
+            assert!(args.windows(2).any(|w| w == ["--silence-timeout", expected]), "{args:?}");
+        }
+    }
+
+    #[test]
     fn omits_output_when_empty_rather_than_passing_a_blank_path() {
         let args = build_live_session_args(
             "/model/dir".to_string(),
@@ -363,6 +435,7 @@ mod tests {
             None,
             Some(String::new()),
             None,
+            10,
         );
         assert!(
             !args.contains(&"--output".to_string()),
@@ -380,6 +453,17 @@ pub struct SidecarManager {
     /// run unstoppable by design
     /// (openspec/changes/fix-live-stop-orphans-engine).
     file_child: Option<CommandChild>,
+    /// Whether a file run's engine has not exited yet. Set on spawn, cleared
+    /// by that run's own exit -- works the same on every OS, unlike a pid
+    /// probe (openspec/changes/fix-engine-liveness).
+    file_running: bool,
+    /// Bumped on every spawn, so an older run's exit -- reported late, after
+    /// a quick stop and restart -- can never touch the newer run's state.
+    live_generation: u64,
+    file_generation: u64,
+    /// The current live run's last engine output line (heartbeats excluded),
+    /// shown to the user when the session ends by itself.
+    last_line: String,
 }
 
 impl SidecarManager {
@@ -388,8 +472,70 @@ impl SidecarManager {
             child: None,
             session_active: false,
             file_child: None,
+            file_running: false,
+            live_generation: 0,
+            file_generation: 0,
+            last_line: String::new(),
         }
     }
+}
+
+/// Why a new engine may not start, if another one still runs: one engine at a
+/// time, in both directions (specs/desktop-gui "On-demand sidecar lifecycle").
+fn engine_busy(sidecar: &SidecarManager, starting_live: bool) -> Option<&'static str> {
+    let live_running = sidecar.session_active || sidecar.child.is_some();
+    match (starting_live, live_running, sidecar.file_running) {
+        (true, true, _) => Some("A live session is already running."),
+        (true, false, true) => {
+            Some("A file transcription is still running. Wait for it to finish before starting a live session.")
+        }
+        (false, true, _) => Some("A live session is still running. Stop it before transcribing a file."),
+        (false, false, true) => Some("A file transcription is already running."),
+        (_, false, false) => None,
+    }
+}
+
+/// What a run's exit means, applied to the shared state. Pure apart from the
+/// state it is handed, so every branch is unit-tested.
+#[derive(Debug, PartialEq)]
+enum RunEnded {
+    /// An older run's exit, after a newer run started: nothing changes.
+    Ignored,
+    /// The live run the user stopped.
+    LiveStopped,
+    /// The live run ended without the user stopping it, whatever the code.
+    LiveEnded(Option<i32>),
+    /// A file run finished; true on success.
+    FileDone(bool),
+}
+
+fn on_terminated(sidecar: &mut SidecarManager, generation: u64, is_live: bool, code: Option<i32>) -> RunEnded {
+    if is_live {
+        if sidecar.live_generation != generation {
+            return RunEnded::Ignored;
+        }
+        let was_active = sidecar.session_active;
+        sidecar.session_active = false;
+        sidecar.child = None;
+        if was_active {
+            RunEnded::LiveEnded(code)
+        } else {
+            RunEnded::LiveStopped
+        }
+    } else {
+        if sidecar.file_generation != generation {
+            return RunEnded::Ignored;
+        }
+        sidecar.file_running = false;
+        sidecar.file_child = None;
+        RunEnded::FileDone(code == Some(0))
+    }
+}
+
+/// `HEARTBEAT <TAG>` lines from `--heartbeat`: a chunk went through the
+/// engine, speech or not. Never a transcript line (no brackets).
+fn heartbeat_tag(line: &str) -> Option<&str> {
+    line.strip_prefix("HEARTBEAT ").map(str::trim)
 }
 
 #[derive(Clone, Serialize)]
@@ -405,8 +551,15 @@ struct SidecarLogPayload {
 }
 
 #[derive(Clone, Serialize)]
-struct SidecarCrashedPayload {
-    message: String,
+#[serde(rename_all = "camelCase")]
+struct LiveSessionEndedPayload {
+    code: Option<i32>,
+    last_line: String,
+}
+
+#[derive(Clone, Serialize)]
+struct HeartbeatPayload {
+    tag: String,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -418,22 +571,36 @@ pub struct DeviceInfo {
 }
 
 /// Reads sidecar stdout/stderr on a background task and turns each line
-/// into a `transcript-line` or `sidecar-log` event -- never blocks the UI
-/// thread (specs/desktop-gui "UI remains responsive during sidecar
-/// activity"). `mark_inactive_on_exit` distinguishes a live session
-/// (tracked in SidecarManager, eligible for crash detection) from a
-/// one-shot file transcription (not tracked as an active session).
+/// into a `transcript-line`, `sidecar-heartbeat` or `sidecar-log` event --
+/// never blocks the UI thread (specs/desktop-gui "UI remains responsive
+/// during sidecar activity"). `generation` ties the run's exit to the run it
+/// belongs to, so a late exit cannot touch a newer run
+/// (openspec/changes/fix-engine-liveness).
 fn spawn_sidecar_events(
     app: AppHandle,
     mut rx: tauri::async_runtime::Receiver<CommandEvent>,
-    mark_inactive_on_exit: bool,
+    generation: u64,
+    is_live: bool,
 ) {
     tauri::async_runtime::spawn(async move {
+        let remember = |app: &AppHandle, line: &str| {
+            if !is_live {
+                return;
+            }
+            if let Some(state) = app.try_state::<AppState>() {
+                let mut sidecar = state.sidecar.lock().unwrap();
+                if sidecar.live_generation == generation {
+                    sidecar.last_line = line.to_string();
+                }
+            }
+        };
         while let Some(event) = rx.recv().await {
             match event {
                 CommandEvent::Stdout(bytes) => {
                     let line = String::from_utf8_lossy(&bytes).trim_end().to_string();
-                    if let Some(captures) = TRANSCRIPT_LINE_RE.captures(&line) {
+                    if let Some(tag) = heartbeat_tag(&line) {
+                        let _ = app.emit("sidecar-heartbeat", HeartbeatPayload { tag: tag.to_string() });
+                    } else if let Some(captures) = TRANSCRIPT_LINE_RE.captures(&line) {
                         let payload = TranscriptLinePayload {
                             ts: captures
                                 .name("ts")
@@ -445,45 +612,44 @@ fn spawn_sidecar_events(
                                 .map(|m| m.as_str().to_string())
                                 .unwrap_or_default(),
                         };
+                        remember(&app, &line);
                         let _ = app.emit("transcript-line", payload);
                     } else if !line.trim().is_empty() {
+                        remember(&app, &line);
                         let _ = app.emit("sidecar-log", SidecarLogPayload { line });
                     }
                 }
                 CommandEvent::Stderr(bytes) => {
                     let line = String::from_utf8_lossy(&bytes).trim_end().to_string();
                     if !line.is_empty() {
+                        remember(&app, &line);
                         let _ = app.emit("sidecar-log", SidecarLogPayload { line });
                     }
                 }
                 CommandEvent::Terminated(payload) => {
-                    if mark_inactive_on_exit {
-                        if let Some(state) = app.try_state::<AppState>() {
+                    if let Some(state) = app.try_state::<AppState>() {
+                        let (ended, last_line) = {
                             let mut sidecar = state.sidecar.lock().unwrap();
-                            let was_active = sidecar.session_active;
-                            sidecar.session_active = false;
-                            sidecar.child = None;
-                            if was_active && payload.code != Some(0) {
-                                // Crash detection: an active session's sidecar
-                                // exited without being asked to (specs/desktop-gui
-                                // "Sidecar crashes mid-session").
+                            let ended = on_terminated(&mut sidecar, generation, is_live, payload.code);
+                            (ended, std::mem::take(&mut sidecar.last_line))
+                        };
+                        match ended {
+                            // Any exit the user did not ask for is reported,
+                            // a success code included: the engine ends by
+                            // itself on the silence limit or a lost audio
+                            // source (specs/desktop-gui "On-demand sidecar
+                            // lifecycle with crash recovery").
+                            RunEnded::LiveEnded(code) => {
                                 let _ = app.emit(
-                                    "sidecar-crashed",
-                                    SidecarCrashedPayload {
-                                        message: format!(
-                                            "Capture engine exited unexpectedly (code {:?}).",
-                                            payload.code
-                                        ),
-                                    },
+                                    "live-session-ended",
+                                    LiveSessionEndedPayload { code, last_line },
                                 );
                             }
+                            RunEnded::FileDone(ok) => {
+                                let _ = app.emit("file-transcription-complete", ok);
+                            }
+                            RunEnded::LiveStopped | RunEnded::Ignored => {}
                         }
-                    } else {
-                        // One-shot file transcription: tell the UI the run
-                        // finished so it can clear the progress indicator
-                        // (specs/desktop-gui "File transcription via
-                        // drag-and-drop ... showing progress").
-                        let _ = app.emit("file-transcription-complete", payload.code == Some(0));
                     }
                     break;
                 }
@@ -560,6 +726,7 @@ fn build_live_session_args(
     mic_device: Option<i32>,
     output_path: Option<String>,
     audio_device: Option<i32>,
+    silence_timeout_minutes: u32,
 ) -> Vec<String> {
     let mut args = vec!["--live".to_string()];
     if cfg!(windows) {
@@ -577,6 +744,11 @@ fn build_live_session_args(
         "--chunk-duration".to_string(),
         "10".to_string(),
         "--actual-time".to_string(),
+        // The app's own liveness signal and the user's silence setting
+        // (openspec/changes/fix-engine-liveness); 0 turns the auto-stop off.
+        "--heartbeat".to_string(),
+        "--silence-timeout".to_string(),
+        silence_timeout_minutes.saturating_mul(60).to_string(),
     ]);
     if let Some(lang) = language {
         args.push("--language".to_string());
@@ -614,8 +786,12 @@ pub async fn start_live_session(
     mic_device: Option<i32>,
     output_path: Option<String>,
     audio_device: Option<i32>,
+    silence_timeout_minutes: u32,
 ) -> Result<(), String> {
     let (model_dir, bundled) = select_model_dir(model_dir, resolve_model_dir(&app)?)?;
+    if let Some(reason) = engine_busy(&state.sidecar.lock().unwrap(), true) {
+        return Err(reason.to_string());
+    }
     let args = build_live_session_args(
         model_dir,
         bundled,
@@ -624,6 +800,7 @@ pub async fn start_live_session(
         mic_device,
         output_path,
         audio_device,
+        silence_timeout_minutes,
     );
 
     let sidecar_command = app
@@ -633,13 +810,16 @@ pub async fn start_live_session(
         .args(args);
     let (rx, child) = sidecar_command.spawn().map_err(|e| e.to_string())?;
 
-    {
+    let generation = {
         let mut sidecar = state.sidecar.lock().unwrap();
         sidecar.child = Some(child);
         sidecar.session_active = true;
-    }
+        sidecar.live_generation += 1;
+        sidecar.last_line.clear();
+        sidecar.live_generation
+    };
 
-    spawn_sidecar_events(app, rx, true);
+    spawn_sidecar_events(app, rx, generation, true);
     Ok(())
 }
 
@@ -891,21 +1071,8 @@ pub async fn start_file_transcription(
     // engines writing into one stream -- live [MIC]/[SYS] lines landed in the
     // file transcript (openspec/changes/fix-live-stop-orphans-engine
     // design.md Decision 4). Refuse rather than silently ending a recording.
-    {
-        let sidecar = state.sidecar.lock().unwrap();
-        if sidecar.session_active || sidecar.child.is_some() {
-            return Err(
-                "A live session is still running. Stop it before transcribing a file.".to_string(),
-            );
-        }
-        if let Some(existing) = sidecar.file_child.as_ref() {
-            #[cfg(not(windows))]
-            if pid_alive(existing.pid()) {
-                return Err("A file transcription is already running.".to_string());
-            }
-            #[cfg(windows)]
-            let _ = existing;
-        }
+    if let Some(reason) = engine_busy(&state.sidecar.lock().unwrap(), false) {
+        return Err(reason.to_string());
     }
 
     // The engine writes its auto-named <stem>_transcript_<stamp>.<format>
@@ -926,14 +1093,16 @@ pub async fn start_file_transcription(
         sidecar_command = sidecar_command.current_dir(dir);
     }
     let (rx, child) = sidecar_command.spawn().map_err(|e| e.to_string())?;
-    {
-        // Tracked so it can be terminated on quit and so the guard above can
-        // see it; still not eligible for crash detection, which belongs to
-        // long-lived live sessions.
+    let generation = {
+        // Tracked so the guard above can see it; its exit is reported as
+        // file-transcription-complete, not as a live session ending.
         let mut sidecar = state.sidecar.lock().unwrap();
         sidecar.file_child = Some(child);
-    }
-    spawn_sidecar_events(app, rx, false);
+        sidecar.file_running = true;
+        sidecar.file_generation += 1;
+        sidecar.file_generation
+    };
+    spawn_sidecar_events(app, rx, generation, false);
     Ok(())
 }
 
