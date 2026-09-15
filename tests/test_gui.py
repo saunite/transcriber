@@ -10,15 +10,27 @@ Run:   python tests/test_gui.py
 """
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import re
 import sys
+from html.parser import HTMLParser
 from pathlib import Path
 
 from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
 FAKE_BRIDGE = (Path(__file__).resolve().parent / "fake_tauri.js").read_text(encoding="utf-8")
+SRC_DIR = ROOT / "src"
+APP_ORIGIN = "http://tauri.localhost"  # the origin Tauri serves the app from on Windows
+CONTENT_TYPES = {".html": "text/html", ".js": "application/javascript", ".css": "text/css"}
+# Record every policy violation so a scenario can fail on it like a script error.
+RECORD_CSP_VIOLATIONS = """
+window.__cspViolations = [];
+document.addEventListener('securitypolicyviolation', (e) =>
+  window.__cspViolations.push(`${e.violatedDirective} ${e.blockedURI}`));
+"""
 REFUSAL = "A live session is still running. Stop it before transcribing a file."
 LIVE_FUNCTIONS = ("transcribe_live_simple", "_run_dual_capture")
 MODEL_LOADING = ("Loading base model from /m on cpu with int8...", "✓ Model loaded successfully")
@@ -59,6 +71,56 @@ def csp_problems(tauri_conf: Path) -> list[str]:
     return problems
 
 
+class _InlineScripts(HTMLParser):
+    """Collects the text of every inline <script> element."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=False)
+        self.scripts, self._current = [], None
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "script":
+            self._current = []
+
+    def handle_data(self, data):
+        if self._current is not None:
+            self._current.append(data)
+
+    def handle_endtag(self, tag):
+        if tag == "script" and self._current is not None:
+            self.scripts.append("".join(self._current))
+            self._current = None
+
+
+def effective_csp(tauri_conf: Path, html: Path) -> str:
+    """The policy the app window actually enforces for `html`, built the way
+    Tauri 2 builds it (openspec/changes/test-gui-under-app-csp):
+    tauri-codegen 2.6.3 inject_script_hashes hashes each non-empty inline
+    <script> after normalize_script_for_csp (CR/CRLF -> LF), and tauri 2.11.5
+    replace_csp_nonce adds 'self' plus those hashes to script-src."""
+    csp = json.loads(tauri_conf.read_text(encoding="utf-8"))["app"]["security"]["csp"]
+    parser = _InlineScripts()
+    parser.feed(html.read_text(encoding="utf-8"))
+    hashes = []
+    for script in parser.scripts:
+        if script:  # `script:not(:empty)`
+            normalized = script.replace("\r\n", "\n").replace("\r", "\n")
+            digest = hashlib.sha256(normalized.encode("utf-8")).digest()
+            hashes.append(f"'sha256-{base64.b64encode(digest).decode()}'")
+    if not hashes:
+        return csp
+    directives = [d.strip() for d in csp.split(";") if d.strip()]
+    for i, directive in enumerate(directives):
+        if directive.split()[0] == "script-src":
+            sources = directive.split()[1:]
+            sources = ["'self'"] * ("'self'" not in sources) + sources
+            directives[i] = " ".join(["script-src", *sources, *hashes])
+            break
+    else:
+        directives.append(" ".join(["script-src", "'self'", *hashes]))
+    return "; ".join(directives)
+
+
 def calls(page, cmd):
     return page.evaluate("cmd => __fake.calls.filter(c => c.cmd === cmd)", cmd)
 
@@ -69,14 +131,30 @@ def wait_for_calls(page, cmd, count):
     )
 
 
+def serve_app(route):
+    """Serve src/ as the app window sees it: from its own origin, under the
+    policy Tauri enforces (openspec/changes/test-gui-under-app-csp)."""
+    path = route.request.url.split("?", 1)[0][len(APP_ORIGIN):].lstrip("/") or "index.html"
+    file = (SRC_DIR / path).resolve()
+    if not file.is_relative_to(SRC_DIR.resolve()) or not file.is_file() or file.suffix not in CONTENT_TYPES:
+        route.fulfill(status=404, body="")
+        return
+    headers = {"Content-Type": CONTENT_TYPES[file.suffix]}
+    if file.suffix == ".html":
+        headers["Content-Security-Policy"] = effective_csp(ROOT / "src-tauri" / "tauri.conf.json", file)
+    route.fulfill(status=200, body=file.read_bytes(), headers=headers)
+
+
 def open_page(browser, responses=None):
     page = browser.new_page()
     errors = []
     page.on("pageerror", lambda exc: errors.append(str(exc)))
+    page.add_init_script(RECORD_CSP_VIOLATIONS)
     page.add_init_script(FAKE_BRIDGE)
     if responses:
         page.add_init_script(f"Object.assign(window.__fake.responses, {json.dumps(responses)});")
-    page.goto((ROOT / "src" / "index.html").as_uri())
+    page.route(f"{APP_ORIGIN}/**", serve_app)
+    page.goto(f"{APP_ORIGIN}/index.html")
     wait_for_calls(page, "list_devices", 1)
     return page, errors
 
@@ -196,6 +274,28 @@ def test_unsupported_file(browser):
     return page, errors
 
 
+def test_injected_script_refused(browser):
+    """Script that isn't the app's own must not run in the window: an inline
+    handler added after load, and a string handed to setTimeout. Checked through
+    page state, because without the policy both do run
+    (openspec/changes/test-gui-under-app-csp)."""
+    page, errors = open_page(browser)
+    page.evaluate("""() => {
+        window.__probe = 0;
+        document.body.insertAdjacentHTML('beforeend', '<img id="csp-probe" src="/no-such-file" onerror="window.__probe = 1">');
+        window.__evalran = 0;
+        setTimeout("window.__evalran = 1", 0);
+    }""")
+    page.wait_for_timeout(300)
+    state = page.evaluate("({probe: window.__probe, evalran: window.__evalran, violations: window.__cspViolations})")
+    assert state["probe"] == 0, "an injected inline event handler ran"
+    assert state["evalran"] == 0, "string-evaluated code ran"
+    violations = " | ".join(state["violations"])
+    assert "script-src-attr" in violations and "eval" in violations, f"expected inline-handler and eval violations, got {state['violations']}"
+    page.evaluate("window.__cspViolations = []; document.getElementById('csp-probe').remove()")  # expected, not a failure
+    return page, errors
+
+
 def test_refusal_shown(browser):
     page, errors = open_page(browser, {"start_file_transcription": {"reject": REFUSAL}})
     drop(page, "/media/one.mp4")
@@ -213,8 +313,10 @@ def main() -> int:
             result = fn(*args)
             if result:
                 page, errors = result
+                violations = page.evaluate("window.__cspViolations")
                 page.close()
                 assert not errors, f"script error on the page: {errors}"
+                assert not violations, f"content security policy violation: {violations}"
             print(f"PASS  {name}")
         except Exception as exc:  # report every scenario, not just the first failure
             failures += 1
@@ -231,6 +333,7 @@ def main() -> int:
         report("file queue", test_file_queue, browser)
         report("unsupported file", test_unsupported_file, browser)
         report("refusal shown", test_refusal_shown, browser)
+        report("injected script refused", test_injected_script_refused, browser)
         browser.close()
     return 1 if failures else 0
 
