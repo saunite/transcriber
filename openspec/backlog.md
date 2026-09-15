@@ -13,6 +13,24 @@ Verified since this list was written, so removed: `02-add-release-pipeline-windo
 - **Consistent window decorations on Linux.** The `.rpm`/`.deb` run as native Wayland clients and GTK draws its own title bar. The AppImage's `AppRun` hook forces `GDK_BACKEND=x11`, so KWin draws the Breeze title bar instead. Measured under X11: `_NET_FRAME_EXTENTS = 0, 0, 30, 0`, no `_GTK_FRAME_EXTENTS`; the button layout comes from `kwinrc`'s `ButtonsOnLeft=HXIA`. The user prefers the AppImage look. Likely approach: set `GDK_BACKEND=x11` at the top of `main()` in `src-tauri/src/main.rs`, before `tauri::Builder` (edition 2021, so no `unsafe`). Tauri 2.9.3 exposes no deb/rpm `desktopTemplate`. Trade-offs: XWayland scaling and HiDPI, screen-share and clipboard behaviour. It would also sidestep the Wayland crash the hook exists for (tauri-apps/tauri#8541).
 - **An hour's gap between GUI and engine timestamps.** In one session the GUI marked the start as `08:43:28` and named the file `transcript_20260913_084328.txt`, while the engine's own transcript lines were stamped `07:43`/`07:44`. Not investigated. Suspect the JS and Python sides disagree on timezone or DST handling.
 - **The File view never shows a file run's transcript.** `desktop-gui`'s "Drop a video file" scenario promises "the resulting transcript" in the GUI, but file mode writes segments only to the output file and prints none to stdout, so `sidecar.rs` emits no `transcript-line` events and the File view stays empty. Found while planning `add-automated-local-tests`. Its GUI tests deliberately do not assert on this in either direction, so neither the gap nor a fix is enshrined.
+- **Logic audit follow-ups (2026-09-15).** A read-through of every product module against its specs, comments and UI promises. Cluster A (engine liveness) is the open change `fix-engine-liveness`. The rest were read in the code but not reproduced. Each cluster should become one change that starts with a test failing today.
+  - **B. Lines and charts routed to the wrong place** (frontend only; test with the fake bridge):
+    - **B1:** `startNextFile` sets `currentFlow = "file"` and clears the File chart *before* the shell refuses a drop during a live session, and nothing resets it. All later live lines land on the File chart, and Live shows "stalled".
+    - **B2:** `startLiveSession` clears the previous live chart before a start that can be refused.
+  - **C. The time axis is not true scale** (needs a design decision: stamp lines at speech time, i.e. base plus offset):
+    - **C1:** `--actual-time` stamps are the moment a line is *printed*, after inference. All segments of a chunk share one stamp, and SYS (10 s) and MIC (5 s) chunks lag differently.
+    - **C2:** the 1 s chunk overlap is transcribed twice, repeating words, and `time_offset` advances by the full chunk including the overlap. Relative stamps drift +1 s per chunk, or +20 % on MIC.
+    - **C3:** `relayout()` measures gaps from hidden lines under Show/Find, and an out-of-order line moves `previous` backwards, inflating the next gap.
+    - **C4:** `formatDuration` rounds to "59 min 60 s" and "1 h 60 min".
+  - **D. CLI, launchers and edges:**
+    - **D1:** `transcribe_live_simple` with an explicit `--audio-device` runs inference inside PortAudio's callback (overflow, dropped audio), and its silence `KeyboardInterrupt` is raised on the callback thread, so auto-stop never stops.
+    - **D2:** `win-start-transcription.bat`'s `"%~1:~0,1%"` isn't valid cmd syntax, so a flags-only call takes the first flag as the name prefix.
+    - **D3:** `transcribe_file.bat` hard-codes `--language en`.
+    - **D4:** the launchers run `transcriber.py` by relative path, and pass `--model base`, so `--model-path` gets labelled base.
+    - **D5:** `withFreshTimestamp` splits on the last `.` of the whole path (`/home/a.b/transcript` goes to the wrong folder).
+    - **D6:** the WASAPI default-loopback match is a substring test, and Linux keeps recording the old sink's monitor after the default output changes.
+    - **D7:** the stall hint's copy says "raising and lowering the pens", but no such control exists.
+  - **Only skimmed** (not audited in depth): `macos_capture.py` and its Swift helper (no hardware), and `build_portable.py`.
 - **The real release, and the checks that can only run after it.** Nothing is published yet: the only release and tag are the draft `v0.1.0` (checked 2026-09-15). Grouped here on 2026-09-15.
   1. **Decide the version and re-tag.** The draft `v0.1.0` and its tag point at `3d17f94`, which predates the PyAV pin (`av==18.1.0`) and the re-derived `SOURCE-PROVENANCE.txt` (archived `refresh-source-provenance-for-pyav`). Its artifacts and its notes' provenance link are stale, so don't publish that draft.
      - Delete it with `gh release delete v0.1.0 --cleanup-tag`.
