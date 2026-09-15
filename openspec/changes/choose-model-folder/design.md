@@ -65,6 +65,17 @@ Replacing a select in the title block with a folder display, **Browse…** and a
 
 The pass records any placement change and its reason in tasks.
 
+### 6. The Linux end-to-end suite covers the real app; the user checks only the native dialog
+`tests/test_e2e_linux.py` (archived `add-e2e-gui-tests-linux`) drives the built app. Three scenarios replace most of the manual check.
+
+- **Remembered choice:** the real WebKit storage persists across two launches that share one data directory.
+- **Refusal:** a stored folder without `model.bin` produces the refusal note, and no sidecar process starts.
+- **Folder used:** a stored folder, symlinked to the bundled model, is what the engine log says it loads. Switching back shows the bundled folder.
+
+The scenarios set the stored choice through the page's `localStorage` key, not the folder dialog: WebDriver can't drive native dialogs, and on WebKitGTK it can't even click natively. The dialog itself and a genuinely different model remain the user's check. Each scenario's app gets its own `XDG_DATA_HOME`, so the suite never touches the user's real app data in `~/.local/share/com.transcriber.app`. That's a fix the existing suite needed anyway.
+
+- *Alternative:* a test-only command that sets the folder. It adds product surface just for tests. Rejected.
+
 ## Risks / Trade-offs
 
 - **English-only or distil models** (such as `*.en`) with a non-English language chosen: faster-whisper forces or warns about English for non-multilingual models, and the language dropdown still lists every language. → Documented in README. A per-model language list is a non-goal.

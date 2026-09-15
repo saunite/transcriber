@@ -54,11 +54,26 @@
 
   Also fix the stale sentence saying the GUI always passes the bundled `--model-path`. Verify these lines exist and none still says the GUI only uses the bundled model.
 
-## 5. Verification
+## 5. End-to-end scenarios (design.md Decision 6)
 
-- [ ] 5.1 Run `.venv/bin/python run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set, and verify it exits 0.
-- [ ] 5.2 **User check on Linux** (a local build or `tauri dev`), with a second model folder downloaded beforehand:
-  - choosing it makes the engine log load from that folder, and the transcript header names it;
-  - after restarting the app the choice is still in effect;
-  - renaming the folder, then starting a session, shows the refusal note and starts no engine;
-  - returning to the bundled model transcribes offline as before.
+- [ ] 5.1 In `tests/test_e2e_linux.py`, give each scenario's app its own data directory (`XDG_DATA_HOME` under the scenario's temp directory), so no scenario reads or writes the real `~/.local/share/com.transcriber.app`. Verify the existing six scenarios still pass, and that the real directory's modification time is unchanged by a run.
+- [ ] 5.2 Add `model folder remembered`. Set the stored choice through the page's storage key to a temp folder holding a `model.bin`, then close the app. A second app, started with the same data directory, must show that folder in the Model field. Verify it passes, and fails if the page stops reading the stored value on load (temporarily), then revert.
+- [ ] 5.3 Add `model folder refused`. Store a temp folder without `model.bin`, click **Start transcribing** from script, and assert:
+  - the note names the folder and says it has no usable model;
+  - no `transcriber-sidecar` process was started (`pgrep -f` on the sidecar path, before and after).
+
+  Verify it passes, and fails with `select_model_dir`'s `model.bin` check temporarily removed, then revert.
+- [ ] 5.4 Add `model folder used`:
+  - make a temp folder `faster-whisper-e2e` whose files are symlinks to the bundled model's, store it, and start a file run on a 1-second silent WAV written with the stdlib `wave` module;
+  - assert the engine log (`#debug-log`) shows the model loading from that folder;
+  - return to the bundled model and repeat, asserting the log shows the bundled folder.
+
+  Before writing the scenario, check whether a `tauri://drag-drop` event emitted from script reaches the page's listener. If it doesn't, start the run by calling `start_file_transcription` with the page's own `modelDir` value through execute-script. Record which was used. Verify it passes.
+
+## 6. Verification
+
+- [ ] 6.1 Run `.venv/bin/python run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set, and a network that reaches GitHub. Verify it exits 0, and that every end-to-end scenario prints `PASS`.
+- [ ] 6.2 **User check on Linux** (a local build or `tauri dev`), with a second real model folder downloaded beforehand (e.g. `Systran/faster-whisper-small`). This covers what the end-to-end suite can't drive: the native folder dialog, and a real different model.
+  - **Browse…** opens the system folder picker, and choosing the folder shows it in the Model field;
+  - a transcription uses it: the engine log loads from that folder, and the CLI transcript header names it by folder;
+  - cancelling the picker changes nothing.
