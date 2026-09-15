@@ -79,8 +79,13 @@
 - [x] 4.1 Run `.venv/bin/python run_tests.py` with the recording set, and verify it exits 0.
 
   **Done 2026-09-14.** `run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set: 12/12 passed, exit 0, including `cargo test` and the new `update check` GUI scenario.
-- [ ] 4.2 Build locally (the AppImage/`.rpm`, or `tauri dev`) and **user check on Linux:**
-  - clicking **Check for updates** with a network connection shows "No releases published yet" (the real state while `v0.1.0` is a draft);
-  - with networking off, it shows "Couldn't check for updates" and transcription still works;
-  - the app makes no request on startup (the check never fires by itself).
+- [x] 4.2 **Linux check of the built app, automated by `tests/test_e2e_linux.py`** (openspec/changes/add-e2e-gui-tests-linux; originally a manual user check). Its scenarios cover:
+  - `update check online`: clicking **Check for updates** in the real debug app with a network gives a real verdict, "No releases published yet" while `v0.1.0` is a draft, and never "Couldn't check";
+  - `update check offline` and `engine offline`: inside `unshare -rn` it shows "Couldn't check for updates", and transcription still works;
+  - `no request at startup`: the app makes no request on startup, since strace sees no IPv4/IPv6 connect before the page has loaded;
+  - `download page`: **Open download page** hands exactly the releases URL to the OS opener.
+
+  **Done 2026-09-15.** The suite ran on this machine with the VPN off. It had been printing `SKIP` for the online check, because the VPN tunnel dropped GitHub's 140.82.112.0/22 range.
+  - All six scenarios printed `PASS`: `update check online: No releases published yet.`, `download page`, `no request at startup`, `update check offline: Couldn't check for updates. Check your connection and try again.`, `download page offline`, and `engine offline` (speech sample transcribes, undecodable input fails cleanly).
+  - Exit 0.
 - [ ] 4.3 **The "update available" path against the real API:** once any release is published, or with a temporary debug build whose `tauri.conf.json` version is lower than the published one, clicking the button shows the newer version, and **Open download page** opens `https://github.com/saunite/transcriber/releases/latest` in the browser. Record which method was used. If no release exists yet, this stays open.

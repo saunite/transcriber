@@ -30,7 +30,7 @@
 
 ## 2. Scenarios
 
-- [ ] 2.1 **Update check online** (Decision 6): skip when `api.github.com:443` is unreachable. Otherwise click `#update-check-btn` and wait for `#update-result` to be filled. Pass on up to date, available or no release, and fail on "Couldn't check". Verify it passes here. Also verify it fails when `fetch_latest` temporarily points at an unroutable host, then revert.
+- [x] 2.1 **Update check online** (Decision 6): skip when `api.github.com:443` is unreachable. Otherwise click `#update-check-btn` and wait for `#update-result` to be filled. Pass on up to date, available or no release, and fail on "Couldn't check". Verify it passes here. Also verify it fails when `fetch_latest` temporarily points at an unroutable host, then revert.
 - [x] 2.2 **Offline pass** (Decision 3): re-exec inside `unshare -rn` with `lo` up. Assert the update check shows "Couldn't check for updates". Run `tests/test_engine.py --engine <staged sidecar>` there, with `TRANSCRIBER_TEST_SPEECH` passed through. Fold both results into the outer report. Verify both pass here with the recording set, and that the engine result reads `SKIP` for speech when the variable is unset.
 
   **Done 2026-09-15.** The suite re-runs itself as `unshare -rn sh -c 'ip link set lo up && exec "$@"' … --inside-netns`, which runs three scenarios:
@@ -48,6 +48,8 @@
 
   **Done 2026-09-15.** `test_download_page` calls `open_releases_page` through execute-script, in both passes. `test_update_check_online` clicks **Open download page** when a newer version is shown. Both assert the shim log is exactly `[RELEASES_URL]`, and pass. With `.plugin(tauri_plugin_opener::init())` commented out and the app rebuilt, the command never answers, and the scenario fails with "page script never finished within …s (a command that never answers?)". `run_async` now turns that socket timeout into this message. Reverted and rebuilt.
 
+  **Done 2026-09-15.** With the VPN on, the tunnel dropped GitHub's 140.82.112.0/22 range (other GitHub addresses, and the same address over Wi-Fi, answered), and the scenario correctly printed `SKIP  update check online: no route to api.github.com:443`. With the VPN off it passed: "No releases published yet.". With `fetch_latest`'s host temporarily changed to `api.github.invalid` and the app rebuilt, it failed: "the real check failed online: \"Couldn't check for updates. Check your connection and try again.\"". Reverted and rebuilt.
+
 ## 3. Docs and hand-off
 
 - [x] 3.1 README Tests section:
@@ -59,8 +61,12 @@
 
   **Done 2026-09-15.** README "Running the tests" gains a `tests/test_e2e_linux.py` row in the suites table, and a paragraph covering: Linux and a graphical session only, windows opening during the run, the staged sidecar, one-time installs (`cargo install tauri-driver --locked`, plus Fedora `webkitgtk6.0 strace` or Debian/Ubuntu `webkit2gtk-driver strace`), how it skips (including the online check behind a VPN), and the script-click limitation.
 
-- [ ] 3.2 In `openspec/changes/add-manual-update-check/tasks.md`, re-word 4.2 so it is satisfied by `tests/test_e2e_linux.py` (online verdict, offline verdict and transcription, no startup connection). Record the passing run there. Leave 4.3 open and unchanged. Verify 4.2 names the suite and its scenarios.
+- [x] 3.2 In `openspec/changes/add-manual-update-check/tasks.md`, re-word 4.2 so it is satisfied by `tests/test_e2e_linux.py` (online verdict, offline verdict and transcription, no startup connection). Record the passing run there. Leave 4.3 open and unchanged. Verify 4.2 names the suite and its scenarios.
+
+  **Done 2026-09-15.** `add-manual-update-check` 4.2 is re-worded to be satisfied by this suite, naming its four scenarios. It is marked done there with the passing run: all six scenarios `PASS`, exit 0. Its 4.3 is left open and unchanged.
 
 ## 4. Verification
 
-- [ ] 4.1 Run `.venv/bin/python run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set. Verify it exits 0 and the summary lists `tests/test_e2e_linux.py` as passed, with every scenario printed as `PASS`, not `SKIP`.
+- [x] 4.1 Run `.venv/bin/python run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set. Verify it exits 0 and the summary lists `tests/test_e2e_linux.py` as passed, with every scenario printed as `PASS`, not `SKIP`.
+
+  **Done 2026-09-15.** With the VPN off and `TRANSCRIBER_TEST_SPEECH` set: 13/13 suites passed, exit 0. `tests/test_e2e_linux.py` took 15.8 s, and all six scenarios printed `PASS`, none `SKIP`.
