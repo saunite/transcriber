@@ -91,3 +91,9 @@
   **Done 2026-09-15.** With `TRANSCRIBER_TEST_SPEECH` set and GitHub reachable: 13/13 suites passed, exit 0. `cargo test` took 24.9 s, including the 15 s grace in the process-tree test. `find /tmp -maxdepth 1 -name '_MEI*'` found 0 before and 0 after; the equivalent run before this change leaked 7.
 
 - [ ] 5.2 **User check on Linux** (`cargo tauri dev`): start a live session, speak for a bit, press Stop, and wait for "Not transcribing". Verify `find /tmp -maxdepth 1 -name '_MEI*'` finds nothing. Then quit the app during a session, reopen it, and verify the leftover copy is gone a few seconds after the window opens.
+
+  **User check, first run (2026-09-15), failed:**
+  1. **After Stop, `/tmp/_MEI000be019T89Jhh` was left.** The next app start removed it, so the startup cleanup works. The Stop itself didn't let the engine clean up. A CLI repro of a quiet live session stopped cleanly in under 1 s both ways (SIGINT to the launcher only, and to the whole tree with the app's flags). The remaining suspect is speech: after Stop the engine finishes transcribing queued audio, which may exceed the 15 s grace on CPU. Not confirmed.
+  2. **After closing the window mid-session,** `_MEI000be84dR2hLrw` belonged to a **still-running, orphaned live engine** (parent `systemd --user`), still capturing. It was stopped with SIGINT (clean in 0.5 s). The root cause and its fixes are tasks 2.4 and 2.5.
+
+  **Full suite after 2.4 and 2.5:** 13/13 passed. One earlier full run had `tests/test_engine.py` fail once, with its output not captured; it passed 5 times alone and in the next full run. Recorded as an unexplained intermittent failure.
