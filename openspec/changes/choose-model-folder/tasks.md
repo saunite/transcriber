@@ -172,7 +172,9 @@
   - **`test_dual_capture.py`:** its hand-built `args` namespace had no `model_label`, which 1.1's output sites now read. Added `model_label="base"`.
   - **`model folder remembered` (flaky):** it passed alone but failed in the full run. WebKit writes `localStorage` to its `.localstorage-wal` file about 0.5 s after `setItem`, and the test killed the app's process group sooner. The scenario now waits until the choice is in the app's storage file before closing. It then passed 3 times in a row on its own, and in the full run. A user quitting the app normally isn't affected.
 
-- [ ] 6.2 **User check on Linux** (a local build or `tauri dev`), with a second real model folder downloaded beforehand (e.g. `Systran/faster-whisper-small`). This covers what the end-to-end suite can't drive: the native folder dialog, and a real different model.
+- [x] 6.2 **User check on Linux** (a local build or `tauri dev`), with a second real model folder downloaded beforehand (e.g. `Systran/faster-whisper-small`). This covers what the end-to-end suite can't drive: the native folder dialog, and a real different model.
   - **Browse…** opens the system folder picker, and choosing the folder shows it in the Model field;
   - a transcription uses it: the engine log loads from that folder, and the CLI transcript header names it by folder;
   - cancelling the picker changes nothing.
+
+  **Done 2026-09-15.** The user reported all three checks passed on Linux with a real build: the folder picker, a transcription using the chosen model, and cancel keeping the previous choice.
