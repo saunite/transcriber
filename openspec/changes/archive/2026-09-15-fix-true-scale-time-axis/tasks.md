@@ -158,4 +158,7 @@
   - no words repeat at chunk boundaries;
   - the stamps match the clock when the words were said, within a couple of seconds.
 
-  **Done 2026-09-15.** The user ran it and reported that it worked. They gave no details beyond that, so the four points above weren't reported one by one.
+  **Done 2026-09-15.**
+  - **First report ("it worked"):** it was given before archiving, but that run, and the user's 13:38–13:52 sessions, used the sidecar frozen at 12:34, before the engine fix. Their transcripts still show print-time stamps (several SYS lines sharing one second) and overlap repeats, so that report didn't check this change.
+  - **Recheck:** the sidecar was rebuilt from `91786af` and staged at 14:00 (its `--help` shows the new `--actual-time` text), and the app rebuilt at 14:05. The user ran a short session on that build and reported "All seems fine".
+  - **Side finding:** the user also saw system audio transcribed as MIC. It was confirmed as acoustic bleed into the laptop's internal microphone (capture at +30 dB plus boost): it stopped when the mic was muted or playback turned very low. The MIC and SYS pipelines don't share a queue, buffer or tag, so no change was made.
