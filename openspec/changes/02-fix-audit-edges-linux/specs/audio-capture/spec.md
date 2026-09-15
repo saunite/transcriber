@@ -1,14 +1,14 @@
 ## MODIFIED Requirements
 
 ### Requirement: Capture live system audio
-The system SHALL capture system audio output in real time from a loopback source (Stereo Mix / Wave Out / loopback on Windows, the real PulseAudio/PipeWire monitor source on Linux) and deliver audio chunks to a callback for processing. On Linux, a session that captures the default output's monitor SHALL keep capturing the current default output device when the default changes during the session.
+The system SHALL capture system audio output in real time from a loopback source (Stereo Mix / Wave Out / loopback on Windows, the real PulseAudio/PipeWire monitor source on Linux) and deliver audio chunks to a callback for processing. On Linux, the system SHALL capture the monitor of the sink that is the default when the session starts, so that on a PipeWire audio server with its default session policy the capture keeps following the current default output device when the default changes during the session.
 
 #### Scenario: Auto-detect loopback device
 - **WHEN** a user starts live capture without specifying a device index
 - **THEN** on Windows, the system auto-detects a loopback device by scanning available devices for loopback/monitor-named devices; on Linux, the system queries `pactl` for the real monitor source of the default (or specified) sink and captures it via a native `parec` subprocess, not through generic `sounddevice`/PortAudio device enumeration
 
 #### Scenario: Default output changes during a Linux session
-- **WHEN** a live session on Linux is capturing the auto-detected monitor source and the user's default output device changes (for example, Bluetooth headphones connect and become the default)
+- **WHEN** a live session on Linux with a PipeWire audio server is capturing the auto-detected monitor source and the user's default output device changes (for example, Bluetooth headphones connect and become the default)
 - **THEN** audio played on the new default output device is captured and transcribed from then on, without restarting the session
 
 #### Scenario: No loopback device found

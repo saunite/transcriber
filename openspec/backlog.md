@@ -18,7 +18,7 @@ Verified since this list was written, so removed: `02-add-release-pipeline-windo
     - **D2:** `win-start-transcription.bat`'s `"%~1:~0,1%"` isn't valid cmd syntax, so a flags-only call takes the first flag as the name prefix.
     - **D3:** `transcribe_file.bat` hard-codes `--language en`.
     - **D4 (Windows half):** `win-start-transcription.bat` and `transcribe_file.bat` run `transcriber.py` (and the venv) by relative path, and the `.bat` passes `--model base`, so `--model-path` gets labelled base. The Linux and macOS launchers were fixed in `01-fix-audit-edges`; this half is `03-fix-audit-edges-windows`.
-    - **D6:** the WASAPI default-loopback match is a substring test, and Linux keeps recording the old sink's monitor after the default output changes.
+    - **D6 (Windows half):** the WASAPI default-loopback match is a substring test. The Linux half didn't reproduce on PipeWire (WirePlumber moves the recording to the new default), verified in `02-fix-audit-edges-linux`. This half is `03-fix-audit-edges-windows`.
   - **Only skimmed** (not audited in depth): `macos_capture.py` and its Swift helper (no hardware), and `build_portable.py`.
 - **The real release, and the checks that can only run after it.** Nothing is published yet: the only release and tag are the draft `v0.1.0` (checked 2026-09-15). Grouped here on 2026-09-15.
   1. **Decide the version and re-tag.** The draft `v0.1.0` and its tag point at `3d17f94`, which predates the PyAV pin (`av==18.1.0`) and the re-derived `SOURCE-PROVENANCE.txt` (archived `refresh-source-provenance-for-pyav`). Its artifacts and its notes' provenance link are stale, so don't publish that draft.
@@ -32,6 +32,7 @@ Verified since this list was written, so removed: `02-add-release-pipeline-windo
 
 ## Known limits, accepted for now
 
+- **Linux system audio follows a default-output change only on PipeWire.** The engine records the monitor of the sink that is default when a session starts; WirePlumber's `linking.follow-default-target` (on by default) moves that recording to the new default's monitor. Verified on PipeWire 1.6.8 and WirePlumber 0.5.14 (`02-fix-audit-edges-linux`, 2026-09-15). Untested on PulseAudio proper or with that setting off, where the session would keep recording the old output.
 - **WASAPI capture only mixes 2-channel output to mono.** `WASAPICapture.capture_stream` opens the loopback at the device's `maxInputChannels` and reshapes only when that is 2 (`wasapi_capture.py`). A 5.1 or 7.1 output device would feed interleaved samples straight to transcription as if they were mono. Found during the ponytail audit on 2026-09-14 and deliberately left out of `01-merge-dual-capture-paths`. The likely fix is `reshape(-1, CHANNELS).mean(axis=1)` for any channel count.
 - **`.deb` live capture is not tested on real Debian/Ubuntu hardware.** It passes CI install checks in containers, which have no audio. Low risk (those distributions share the build host's ALSA layout), but unproven.
 - **macOS artifacts are untested on real hardware.** `03-add-release-pipeline-macos` is complete in CI (runs 34856241319 and 34859698393), but there is no Mac. The README's call for testers covers opening the app, file transcription, `--coreaudio-tap`, and a downloaded copy's Gatekeeper behaviour.

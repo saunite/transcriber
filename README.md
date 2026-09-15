@@ -460,7 +460,7 @@ Uses PulseAudio/PipeWire monitor, auto-detected via `pactl`/`parec` (part of `pu
 pactl list sources | grep -i monitor
 ```
 
-The transcriber auto-detects and captures the real monitor source automatically — no manual device selection needed. You can also start live transcription with the bundled launcher:
+The transcriber auto-detects and captures the real monitor source automatically — no manual device selection needed. It records the monitor of your default output device, and on PipeWire the recording follows the default when it changes mid-session (for example, when Bluetooth headphones connect), so the meeting audio keeps being transcribed. On PulseAudio itself this is untested. You can also start live transcription with the bundled launcher:
 
 ```bash
 # Auto-detect the monitor device (default)

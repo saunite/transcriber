@@ -2,6 +2,16 @@
 
 Logic audit cluster D, item D6, the Linux half (2026-09-15, `openspec/backlog.md`). Linux system-audio capture resolves the default sink's monitor once, when the session starts, and runs `parec --device=<that sink>.monitor`. If the default output changes mid-session, for example Bluetooth headphones connecting or the user switching output in the desktop's sound menu, the meeting's audio moves to the new sink. The session keeps recording the old sink's monitor, and everything the other side says after that is lost, with no error. The shared and Windows halves of cluster D are `01-fix-audit-edges` and `03-fix-audit-edges-windows`.
 
+## Outcome of verification (2026-09-15)
+
+Task 1.1 showed the bug doesn't reproduce on PipeWire. WirePlumber (0.5.14, `linking.follow-default-target = true`, its default) moves a recording connected to the monitor of the sink that is the current default when the default changes, including the explicit `<sink>.monitor` name the code passes today. The user chose to **change no code**, and instead:
+- pin the behaviour that makes this work (auto-detect picks the *default* sink's monitor, not the first monitor) with a unit test;
+- scope the spec to PipeWire, which was verified;
+- document it;
+- park PulseAudio proper, and WirePlumber with that setting off, in the backlog as untested.
+
+The original plan follows, for the record.
+
 ## What Changes
 
 - **System audio follows the default output on Linux:** a live session captures whatever the current default output device plays, including after the default changes mid-session.

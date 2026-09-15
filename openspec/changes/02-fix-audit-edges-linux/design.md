@@ -1,3 +1,5 @@
+> **Superseded by task 1.1 (2026-09-15):** neither decision below was needed. On PipeWire with WirePlumber's default policy, today's explicit `<default sink>.monitor` recording already follows a default-output change, and the user chose no code change (see proposal.md, "Outcome of verification"). What keeps it working is that auto-detection picks the monitor of the sink that is the default at start; `test_linux_loopback_capture.py` pins that.
+
 ## Context
 
 `LinuxLoopbackCapture.get_default_loopback_device()` lists sources with `pactl list sources short`, reads `pactl get-default-sink`, and returns `<default sink>.monitor`, or the first monitor. `capture_stream` then runs `parec --device=<that name>`. A stream with an explicit device is not moved when the default changes. This machine runs PulseAudio on PipeWire 1.6.8 (`pactl info`), and `pactl`'s man page documents `@DEFAULT_MONITOR@` as a special name.
