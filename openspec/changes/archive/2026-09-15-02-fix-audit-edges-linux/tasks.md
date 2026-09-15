@@ -57,3 +57,5 @@
   **Done 2026-09-15.** With `TRANSCRIBER_TEST_SPEECH` set and GitHub reachable: 16/16 suites passed, exit 0, with nothing skipped. That's one more suite than before (`test_linux_loopback_capture.py`).
 
 - [ ] 3.4 **Manual check, by the user:** in the current app build, start a live session while audio plays on the laptop speakers, then switch output mid-session (for example connect the Bluetooth headphones), keeping nothing afterwards. Verify system-audio lines keep arriving after the switch.
+
+  **Not done (archived open, 2026-09-15).** The user chose to archive without this check. Following the default output is verified only by the null-sink script in task 1.1, not in the app itself, and no code changed in this change.
