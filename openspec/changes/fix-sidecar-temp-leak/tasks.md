@@ -55,6 +55,20 @@
   - **New test 3b''** in `test_dual_capture.py`: a stdout whose writes raise `BrokenPipeError` on heartbeats, and a capture loop that swallows `KeyboardInterrupt` like the real ones. The run ends in under 10 s with exit 0, and the transcript keeps `[SYS] hello`. With the heartbeat print reverted to plain `print`, it fails with "the session kept running 20s with nobody reading stdout".
   - **Checks:** all nine root test scripts pass. Rebuilt and staged the sidecar; the same repro now ends about 6 s after the reader leaves, with no process, no `parec` and 0 copies left.
 
+- [x] 2.6 **Ignore a repeat SIGINT during a stop** (Decision 8, added during apply): the engine's SIGINT handler returns once a stop is requested, and `_print_or_stop` leaves the marking to that handler. Verify unit tests, and an app-like repro with the rebuilt engine.
+
+  **Done 2026-09-15.**
+  - **Second user check:** the engine stopped correctly on both Stop and quit, but `_MEI000c53019jdD6g` (358 MB, marked, launcher dead) stayed in `/tmp`.
+  - **Repro, a Python "app" giving the frozen engine piped stdin, stdout and stderr:**
+    - Stop, the old engine: "⚠️ Interrupted by user", then "free(): invalid size", worker and launcher still alive at 16 s, 1 copy left.
+    - Stop, with the handler fix: exit 0 in 1.9 s and 2.0 s, 0 copies.
+    - Quit, with the first version of the fix: hung for minutes with `parec` still reading. `interrupt_main()` hit the new ignore check because `_print_or_stop` had pre-set the flag.
+    - Quit, after fixing that: 3.2 s twice, 0 copies.
+  - **Tests** in `test_dual_capture.py`:
+    - 3e: a second handler call returns instead of raising (fails without the guard);
+    - 3b'' now runs under the engine's real SIGINT handler, and fails with the pre-marking put back ("the session kept running 20s").
+  - **Full suite:** 13/13 passed.
+
 ## 3. End-to-end
 
 - [x] 3.1 In `tests/test_e2e_linux.py`, give each app its own `TMPDIR` under the scenario directory (in `app_env`). Add `stale extraction cleaned` (Decision 5):

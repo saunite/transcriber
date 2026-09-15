@@ -216,10 +216,17 @@ def main() -> None:
 
         start = time.time()
         gone = os.path.join(tmp, "gone.txt")
-        with contextlib.redirect_stdout(_GoneReader()):
-            code = transcriber._run_dual_capture(
-                _FakeEngine(), _args(gone, heartbeat=True), title="T", mode_summary="T",
-                sys_rate=lambda: 16000, run_sys=capture_until_interrupted, mic=None)
+        # The engine's real SIGINT handler, which ignores repeats once a stop
+        # is under way: the broken-pipe stop must still get through it.
+        import signal
+        previous = signal.signal(signal.SIGINT, transcriber._make_signal_handler(verbose=False))
+        try:
+            with contextlib.redirect_stdout(_GoneReader()):
+                code = transcriber._run_dual_capture(
+                    _FakeEngine(), _args(gone, heartbeat=True), title="T", mode_summary="T",
+                    sys_rate=lambda: 16000, run_sys=capture_until_interrupted, mic=None)
+        finally:
+            signal.signal(signal.SIGINT, previous)
         assert time.time() - start < 10, f"the session kept running {time.time() - start:.0f}s with nobody reading stdout"
         assert code == 0, f"a vanished reader is a stop, not a lost source: exit {code}"
         assert "[SYS] hello" in open(gone, encoding="utf-8").read(), "the transcript lost its lines"
@@ -258,6 +265,20 @@ def main() -> None:
         sys.argv = ["transcriber.py", "--help"]
         transcriber.main()
     assert "--heartbeat" not in help_text.getvalue(), "--heartbeat must stay hidden from --help"
+
+    # 3e. A repeat SIGINT while a stop is under way is ignored: the app's stop
+    #     plus the PyInstaller launcher's forwarded copy reach the engine
+    #     twice, and the second one used to wreck the cleanup
+    #     (openspec/changes/fix-sidecar-temp-leak).
+    handler = transcriber._make_signal_handler(verbose=False)
+    transcriber._stop_requested = False
+    try:
+        handler(2, None)
+        raise AssertionError("the first SIGINT must stop the session")
+    except KeyboardInterrupt:
+        pass
+    handler(2, None)  # must return, not raise, now that a stop is under way
+    transcriber._stop_requested = False
 
     # 4. The platform functions hand the runner the right pieces. The runner is
     #    replaced by a recorder, so no capture loop runs; the capture classes

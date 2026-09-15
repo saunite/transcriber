@@ -76,12 +76,13 @@ def _print_or_stop(line: str) -> None:
     and killed only that thread, while the main capture loop kept recording,
     orphaned, with its unpacked copy in use (openspec/changes/fix-sidecar-temp-leak).
     Raising KeyboardInterrupt in the main thread takes the normal stop path."""
-    global _stop_requested
     try:
         print(line)
     except (BrokenPipeError, ValueError):  # ValueError: stdout already closed
         if not _stop_requested:
-            _stop_requested = True
+            # interrupt_main() runs the SIGINT handler, which marks the stop
+            # itself; marking it here first would make the handler ignore it
+            # as a repeat.
             import _thread
             _thread.interrupt_main()
 
@@ -123,6 +124,15 @@ def _make_signal_handler(verbose: bool):
     own one-line stop summary once cleanup finishes (see _print_summary),
     so this immediate acknowledgement is only needed as extra detail."""
     def signal_handler(signum, frame):
+        # Once a stop is under way, a repeat interrupt is ignored. The desktop
+        # app signals the engine and its PyInstaller launcher, which forwards
+        # the signal again: that second KeyboardInterrupt landed mid-cleanup,
+        # abandoned the worker joins, and the interpreter crashed on exit
+        # ("free(): invalid size"), too slowly to beat the stop grace -- so
+        # the engine was killed and its unpacked copy left in /tmp
+        # (openspec/changes/fix-sidecar-temp-leak).
+        if _stop_requested:
+            return
         if verbose:
             print("\n\n⏹️  Shutdown requested, stopping transcription...")
         _request_stop()

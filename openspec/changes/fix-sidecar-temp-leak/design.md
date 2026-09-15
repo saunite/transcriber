@@ -53,6 +53,14 @@ Found while verifying Decision 6. The app reads the engine's stdout; when the ap
 
 `transcriber.py` gains `_print_or_stop(line)`, used for transcript lines (written to the file **before** printing) and heartbeats. On `BrokenPipeError` or a closed stdout, it marks a requested stop and raises `KeyboardInterrupt` in the main thread (`_thread.interrupt_main()`), which takes the normal graceful stop: the transcript is kept, exit 0, and the bootloader removes the copy. With `--heartbeat` the engine notices within about one chunk. This covers the crash and kill cases where `RunEvent::Exit` never runs; Decision 6 stays for an immediate stop on a normal quit.
 
+### 8. A repeat SIGINT during a stop is ignored (added during apply)
+The second user check found the copy still left after both Stop and quit, even though the engine now stopped. Reproduced with a Python stand-in for the app that gives the engine piped stdin, stdout and stderr like `tauri-plugin-shell`, then signals it like Stop.
+- **Why it leaked:** Stop sends SIGINT to the worker, `parec` and the launcher, and the launcher forwards its SIGINT to the worker, so the worker gets it twice. The second `KeyboardInterrupt` landed mid-cleanup ("⚠️ Interrupted by user"), abandoned the worker joins, and the interpreter crashed on exit with native threads still running ("free(): invalid size"). The abort outlasted the 15 s grace, SIGKILL followed, and the launcher never deleted the copy.
+- **Fix:** the engine's SIGINT handler returns immediately once `_stop_requested` is set, so the forwarded duplicate, or a double Ctrl+C, is harmless.
+- **Consequence for Decision 7:** `_thread.interrupt_main()` runs that same handler, so the broken-pipe guard must not pre-set the flag, or its own interrupt is ignored as a repeat. That was found in the same repro, when a quit hung. The handler now marks the stop itself.
+
+The shell's signalling is unchanged.
+
 ### 5. Tests
 - **`cargo test`:**
   - `stale_extraction_dirs` against a temp directory holding a dead marked folder (selected), a live marked folder (kept), a dead unmarked folder (kept), a non-`_MEI` folder (kept), and a file named `_MEI…` (kept);
