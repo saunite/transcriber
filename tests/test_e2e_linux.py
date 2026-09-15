@@ -14,6 +14,8 @@ are all real:
   a restart, a folder without model.bin is refused before any live engine
   starts, and a chosen folder is what the engine loads (the folder dialog
   itself can't be driven, so the choice is stored the way the page stores it);
+- stale extraction cleaned (openspec/changes/fix-sidecar-temp-leak): a started app
+  removes its engine's dead unpacked copies and nothing else;
 - offline (re-run inside `unshare -rn`): the update check says it couldn't
   check, the download page still opens, and the engine transcribes the speech
   sample with the staged sidecar.
@@ -49,7 +51,7 @@ COULD_NOT_CHECK = "Couldn't check for updates"
 PORT = 4444
 TIMEOUT = 60
 SCENARIOS = ["update check online", "download page", "no request at startup",
-             "model folder remembered", "model folder refused", "model folder used",
+             "model folder remembered", "model folder refused", "model folder used", "stale extraction cleaned",
              "update check offline", "download page offline", "engine offline"]
 
 
@@ -186,8 +188,12 @@ def app_env(workdir):
     # Its own data directory too, so the app's WebKit storage (the theme, the
     # chosen model folder) never touches the user's real app data
     # (openspec/changes/choose-model-folder).
+    # And its own temp directory: the engine unpacks ~350 MB there per run, and
+    # a test that ends an app with a signal must not leave copies in the real
+    # /tmp (openspec/changes/fix-sidecar-temp-leak).
+    (workdir / "tmp").mkdir(exist_ok=True)
     env = {**os.environ, "PATH": f"{shim_dir}{os.pathsep}{os.environ.get('PATH', '')}",
-           "XDG_DATA_HOME": str(workdir / "data")}
+           "XDG_DATA_HOME": str(workdir / "data"), "TMPDIR": str(workdir / "tmp")}
     return env, log
 
 
@@ -372,6 +378,36 @@ def test_model_folder_used(workdir):
         app.close()
 
 
+def test_stale_extraction_cleaned(workdir):
+    """At start, the app removes only its own engine's unpacked copies whose
+    process is gone (openspec/changes/fix-sidecar-temp-leak)."""
+    env = app_env(workdir)[0]
+    tmp = Path(env["TMPDIR"])
+    dead = subprocess.Popen(["true"])  # finished, so its pid stands in for a dead bootloader
+    dead.wait()
+
+    def copy(pid, suffix, marker=True):
+        folder = tmp / f"_MEI{pid:08x}{suffix}"
+        folder.mkdir()
+        if marker:
+            (folder / "transcriber-sidecar.marker").write_text("x")
+        return folder
+
+    stale = copy(dead.pid, "stale")
+    live = copy(os.getpid(), "live")
+    foreign = copy(dead.pid, "foreign", marker=False)
+    other = tmp / "not-an-extraction"
+    other.mkdir()
+    app = App(env)
+    try:
+        App._wait(lambda: not stale.exists(), "the dead copy to be removed")
+        time.sleep(1)
+        kept = [p.name for p in (live, foreign, other) if not p.exists()]
+        assert not kept, f"removed folders that must be kept: {kept}"
+    finally:
+        app.close()
+
+
 def test_engine_offline():
     result = subprocess.run([sys.executable, str(ROOT / "tests" / "test_engine.py"), "--engine", str(SIDECAR)],
                             capture_output=True, text=True, encoding="utf-8", errors="replace")
@@ -410,7 +446,7 @@ def main() -> int:
             return 1
 
     with tempfile.TemporaryDirectory(prefix="transcriber-e2e-") as tmp:
-        dirs = [Path(tmp) / str(i) for i in range(6)]
+        dirs = [Path(tmp) / str(i) for i in range(7)]
         for d in dirs:
             d.mkdir()
         if inside_netns:
@@ -426,6 +462,7 @@ def main() -> int:
             ("model folder remembered", test_model_folder_remembered, dirs[3]),
             ("model folder refused", test_model_folder_refused, dirs[4]),
             ("model folder used", test_model_folder_used, dirs[5]),
+            ("stale extraction cleaned", test_stale_extraction_cleaned, dirs[6]),
         ])
 
     # No network at all, by construction: a fresh network namespace with only

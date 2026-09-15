@@ -44,12 +44,22 @@
 
 ## 3. End-to-end
 
-- [ ] 3.1 In `tests/test_e2e_linux.py`, give each app its own `TMPDIR` under the scenario directory (in `app_env`). Add `stale extraction cleaned` (Decision 5):
+- [x] 3.1 In `tests/test_e2e_linux.py`, give each app its own `TMPDIR` under the scenario directory (in `app_env`). Add `stale extraction cleaned` (Decision 5):
   - pre-create a dead marked, a live marked, a dead unmarked and a non-`_MEI` folder;
   - start the app;
   - wait for only the dead marked folder to disappear.
 
   Verify it passes, all other scenarios still pass, and it fails with the cleanup call removed from `main.rs`.
+
+  **Done 2026-09-15.** `app_env` gives every app its own `TMPDIR` (`<scenario>/tmp`). `test_stale_extraction_cleaned` pre-creates four entries, starts the app, waits for the stale folder to disappear, then checks the other three one second later:
+  - `_MEI<dead pid>stale` with the marker (the dead PID is from a finished `true` process);
+  - `_MEI<test's own pid>live` with the marker;
+  - `_MEI<dead pid>foreign` without it;
+  - `not-an-extraction`.
+
+  Passes, and all 10 end-to-end scenarios pass (exit 0). The real `/tmp` held 0 `_MEI*` folders before and after the suite; the previous run had leaked 7. With the cleanup call replaced in `main.rs` and the app rebuilt, it failed with "timed out waiting for the dead copy to be removed". Reverted and rebuilt.
+
+  A first mutation attempt with `sed` didn't apply (the `||` clashed with its delimiter) and gave a meaningless pass; it was redone with a Python edit.
 
 ## 4. Docs
 
