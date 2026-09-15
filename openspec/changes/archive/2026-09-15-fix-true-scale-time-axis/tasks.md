@@ -152,8 +152,10 @@
 
   **Done 2026-09-15.** With `TRANSCRIBER_TEST_SPEECH` set and GitHub reachable ("No releases published yet"): 14/14 suites passed, exit 0. There's one more suite than before (`test_chunk_words.py`), and it includes "live chunks do not repeat words" and the "time axis" GUI scenario. It ran after the code, README and help-text edits; only `DESIGN.md` and task notes changed afterwards.
 
-- [ ] 4.4 **Manual check, by the user:** a short live session in the app with system audio and microphone, talking over a playing video, with nothing kept afterwards unless the user wants it. Verify that:
+- [x] 4.4 **Manual check, by the user:** a short live session in the app with system audio and microphone, talking over a playing video, with nothing kept afterwards unless the user wants it. Verify that:
   - lines from one chunk are spaced apart on the chart;
   - SYS and MIC lines for the same moment sit together;
   - no words repeat at chunk boundaries;
   - the stamps match the clock when the words were said, within a couple of seconds.
+
+  **Done 2026-09-15.** The user ran it and reported that it worked. They gave no details beyond that, so the four points above weren't reported one by one.
