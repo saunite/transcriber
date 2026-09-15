@@ -684,9 +684,13 @@ defaultOutputPath().then((path) => {
 // never silently truncate the previous run's transcript. Strips a prior
 // auto-stamp first so repeated starts append one fresh stamp, not several.
 function withFreshTimestamp(pathStr) {
+  // Only the file name's own extension: a dot in a folder name, or a leading
+  // dot in the name, is not one (openspec/changes/01-fix-audit-edges).
+  const nameStart = Math.max(pathStr.lastIndexOf("/"), pathStr.lastIndexOf("\\")) + 1;
   const dot = pathStr.lastIndexOf(".");
-  const base = dot === -1 ? pathStr : pathStr.slice(0, dot);
-  const ext = dot === -1 ? "" : pathStr.slice(dot);
+  const hasExt = dot > nameStart;
+  const base = hasExt ? pathStr.slice(0, dot) : pathStr;
+  const ext = hasExt ? pathStr.slice(dot) : "";
   return `${base.replace(/_\d{8}_\d{6}$/, "")}_${timestampSuffix()}${ext}`;
 }
 

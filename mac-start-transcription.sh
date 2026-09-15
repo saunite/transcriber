@@ -26,15 +26,18 @@ fi
 
 # Prefer the standalone CLI next to this script (a release's CLI archive, no
 # Python needed), then the project venv (expected to be Python 3.11+), then
-# system python.
+# system python. transcriber.py is found next to this script, so it runs from any
+# folder; the transcript still lands in the current one. No --model here: base is
+# the default, and a passed-through --model-path is then named after its folder
+# (openspec/changes/01-fix-audit-edges).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_PY="${SCRIPT_DIR}/.venv/bin/python"
 if [[ -x "${SCRIPT_DIR}/transcriber" ]]; then
     RUN=("${SCRIPT_DIR}/transcriber")
 elif [[ -x "${VENV_PY}" ]]; then
-    RUN=("${VENV_PY}" transcriber.py)
+    RUN=("${VENV_PY}" "${SCRIPT_DIR}/transcriber.py")
 else
-    RUN=(python3 transcriber.py)
+    RUN=(python3 "${SCRIPT_DIR}/transcriber.py")
 fi
 
 # Generate timestamp for output filename
@@ -45,7 +48,7 @@ output_file="${NAME_PREFIX}_${timestamp}.txt"
 # microphone, tagged [SYS]/[MIC]). Built into one array and both echoed and
 # executed from it, so the printed line can never drift from what actually
 # runs (same pattern as win-start-transcription.bat/linux-start-transcription.sh).
-CMD=("${RUN[@]}" --live --coreaudio-tap --include-mic --model base --output "${output_file}" --chunk-duration 10 --actual-time "$@")
+CMD=("${RUN[@]}" --live --coreaudio-tap --include-mic --output "${output_file}" --chunk-duration 10 --actual-time "$@")
 printf '%q ' "${CMD[@]}"
 echo
 "${CMD[@]}"

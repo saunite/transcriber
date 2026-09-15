@@ -121,6 +121,68 @@ def _lines(out, tag):
     return [line for line in out.splitlines() if f"[{tag}]" in line]
 
 
+def _check_no_mic_device():
+    """A no-mic session on an explicit --audio-device runs through the shared
+    runner: nothing is transcribed on PortAudio's callback thread, the silence
+    timeout stops it, and lines are tagged [SYS] (openspec/changes/01-fix-audit-edges)."""
+    import audio_capture
+
+    stop = threading.Event()
+    callback_threads, engine_threads = set(), []
+
+    class Stream(_FakeInputStream):
+        def _feed(self):
+            callback_threads.add(threading.get_ident())
+            while not stop.is_set():
+                try:  # like PortAudio: an exception in the callback doesn't reach the main thread
+                    self.callback(np.full((1600, 1), 0.2, dtype=np.float32), 1600, None, None)
+                except BaseException:
+                    pass
+                time.sleep(0.01)
+
+        def start(self):
+            threading.Thread(target=self._feed, daemon=True).start()
+
+        def __enter__(self):
+            self.start()
+            return self
+
+        def __exit__(self, *exc):
+            stop.set()
+
+    class Engine(_FakeEngine):
+        def transcribe_chunk(self, audio, language=None):
+            engine_threads.append(threading.get_ident())
+            return super().transcribe_chunk(audio, language) if len(engine_threads) == 1 else []
+
+    fake_sd = types.ModuleType("sounddevice")
+    fake_sd.InputStream = Stream
+    fake_sd.query_devices = lambda device=None, kind=None: {"name": "Fake Monitor", "index": 3,
+                                                            "default_samplerate": 16000, "max_input_channels": 1}
+    real_sd, real_capture_sd = sys.modules.get("sounddevice"), audio_capture.sd
+    sys.modules["sounddevice"], audio_capture.sd = fake_sd, fake_sd
+    out, result = io.StringIO(), {}
+
+    def run():
+        with contextlib.redirect_stdout(out):
+            result["code"] = transcriber.transcribe_live_simple(
+                Engine(), _args(None, include_mic=False, audio_device=3, silence_timeout=0.5))
+
+    try:
+        worker = threading.Thread(target=run, daemon=True)
+        worker.start()
+        worker.join(timeout=5)
+    finally:
+        stop.set()
+        sys.modules["sounddevice"], audio_capture.sd = real_sd, real_capture_sd
+    text = out.getvalue()
+    assert not worker.is_alive(), f"the silence timeout never stopped the session:\n{text[-600:]}"
+    assert result.get("code") == 0 and "minutes of silence detected" in text, text
+    assert engine_threads and not callback_threads & set(engine_threads), "transcribed on the audio callback thread"
+    assert any("[SYS] hello" in line for line in text.splitlines()), text
+    print("OK: no-mic explicit device -- worker-thread inference, silence stop, [SYS] lines")
+
+
 def _check_time_axis(mic):
     """Stamps are positions in the audio stream (openspec/changes/fix-true-scale-time-axis)."""
     one_second = [np.zeros(16000, np.float32)] * 4  # 2 s chunks, so starts at 0, 1 and 2 s
@@ -359,6 +421,7 @@ def main() -> None:
     transcriber._stop_requested = False
 
     _check_time_axis(mic)
+    _check_no_mic_device()
 
     # 4. The platform functions hand the runner the right pieces. The runner is
     #    replaced by a recorder, so no capture loop runs; the capture classes

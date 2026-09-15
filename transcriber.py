@@ -720,23 +720,6 @@ def _print_header(model: str, language: Optional[str], chunk_duration: float, mo
     print("="*60 + "\n")
 
 
-def _setup_output_files(args):
-    """
-    Open and initialize the output transcript file.
-
-    Returns: output_file
-    """
-    output_file = None
-    if args.output:
-        output_file = open(args.output, 'w', encoding='utf-8')
-        output_file.write(f"# Live Transcription Started\n")
-        output_file.write(f"# Model: {args.model_label}\n")
-        output_file.write(f"# Language: {args.language or 'auto-detect'}\n\n")
-        output_file.flush()
-
-    return output_file
-
-
 def _print_compact_stop(all_segments: list, output_path: Optional[str]) -> None:
     """One-line stop summary, printed regardless of --verbose -- the compact
     counterpart to _print_summary's full banner
@@ -965,178 +948,16 @@ def _run_dual_capture(engine, args, *, title, mode_summary, sys_rate, run_sys, m
 
 
 def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
-    """Simple live transcription for non-WASAPI/non-Core-Audio-tap mode (the
-    Linux default). Dual-source (system audio + mic) is split into its own
-    function since it needs the WASAPI-style queue/worker-thread structure;
-    this single-source path is left completely unchanged
-    (openspec/changes/add-linux-dual-source-live-capture)."""
-    if args.include_mic:
-        return _transcribe_live_linux_dual(engine, args)
-
-    global _stop_requested, _source_lost
-    _stop_requested = False
-    _source_lost = False
-
-    import numpy as np
-    import sounddevice as sd
-
-    # Get device info to use its native sample rate
-    device_id = args.audio_device if args.audio_device >= 0 else None
-    # sounddevice/PortAudio's ALSA-only device list can't see the real
-    # PipeWire/PulseAudio monitor source (openspec/changes/fix-linux-loopback-detection)
-    # -- auto-detect (no explicit --audio-device) on Linux goes through the
-    # real pactl/parec monitor instead. An explicit device index keeps
-    # today's sounddevice behavior unchanged.
-    use_linux_loopback = platform.system() == "Linux" and device_id is None
-    loopback_name = None
-    if device_id is not None:
-        device_info = sd.query_devices(device_id)
-        native_rate = int(device_info['default_samplerate'])
-        print(f"Using device native sample rate: {native_rate} Hz")
-    elif use_linux_loopback:
-        native_rate = 16000  # parec resamples server-side; nothing to do here
-    else:
-        native_rate = 48000
-
-    # Print header
-    if args.verbose:
-        _print_header(args.model_label, args.language, args.chunk_duration)
-
-    # Initialize audio capture with native sample rate
-    if use_linux_loopback:
-        from linux_loopback_capture import LinuxLoopbackCapture
-        capture = LinuxLoopbackCapture()
-        device_info = capture.get_default_loopback_device()
-        if not device_info:
-            print("\n⚠️  Warning: Could not auto-detect loopback device.")
-            print("Please specify a device manually or set up audio loopback:")
-            print("  - Use PulseAudio/PipeWire monitor source")
-            print("  - Run: pactl list sources | grep -i monitor")
-            return 1
-        loopback_name = device_info['name']
-        print(f"Using loopback device: {loopback_name}")
-    else:
-        capture = AudioCapture(sample_rate=native_rate, channels=1)
-
-    # Storage
-    all_segments = []
-    audio_buffer = []
-    chunk_duration_samples = int(native_rate * args.chunk_duration)
-    position = 0.0  # seconds of new audio before the next chunk
-    carried = 0  # overlap samples the next chunk begins with
-    stream_start = None
-    last_speech_time = time.time()  # Track time of last detected speech
-    silence_timeout_enabled = args.silence_timeout > 0
-
-    # Overlap settings to prevent speech loss at chunk boundaries
-    overlap_duration = 1.0  # 1 second overlap
-    overlap_samples = int(native_rate * overlap_duration)  # In native rate
-
-    # Setup output file
-    output_file = _setup_output_files(args)
-
-    print("🎙️  Listening... (Press Ctrl+C to stop)\n")
-    if silence_timeout_enabled:
-        print(f"⏱️  Auto-stop after {args.silence_timeout/60:.1f} minutes of silence\n")
-    
-    def audio_callback(audio_chunk):
-        """Process incoming audio chunks."""
-        nonlocal position, carried, stream_start, last_speech_time
-        if stream_start is None:
-            stream_start = datetime.now() - timedelta(seconds=len(audio_chunk) / native_rate)
-
-        # Check for silence timeout
-        if silence_timeout_enabled:
-            elapsed_silence = time.time() - last_speech_time
-            if elapsed_silence > args.silence_timeout:
-                print(f"\n⏱️  Stopping: {args.silence_timeout/60:.1f} minutes of silence detected")
-                _request_stop("Silence timeout")
-
-        audio_buffer.append(audio_chunk.flatten())
-        
-        # Check if we have enough audio for transcription
-        total_samples = sum(len(chunk) for chunk in audio_buffer)
-        
-        if total_samples >= chunk_duration_samples:
-            # Concatenate all buffered audio
-            audio_data = np.concatenate(audio_buffer)
-            audio_buffer.clear()
-            
-            # Keep overlap for next chunk to prevent speech cutoff
-            kept = overlap_samples if len(audio_data) > overlap_samples else 0
-            if kept:
-                audio_buffer.append(audio_data[-kept:])
-            chunk_start, lead = position - carried / native_rate, carried / 2 / native_rate
-            position += (len(audio_data) - carried) / native_rate  # even if transcription fails
-            carried = kept
-
-            # Transcribe
-            try:
-                results, spoke = _process_audio_chunk(
-                    engine, audio_data, chunk_start,
-                    language=args.language, sample_rate=native_rate,
-                    lead=lead, trail=kept / 2 / native_rate,
-                    stream_start=stream_start if args.actual_time else None
-                )
-
-                # Reset silence timer if speech was detected
-                if spoke:
-                    last_speech_time = time.time()
-
-                # Print and save results
-                for stamp, seg in results:
-                    line = f"{stamp} {seg['text']}"
-                    print(line)
-                    all_segments.append(seg)
-                    
-                    # Write immediately to file
-                    if output_file:
-                        output_file.write(line + "\n")
-                        output_file.flush()
-                
-                if not results:
-                    print("  (no speech detected)")
-            
-            except Exception as e:
-                print(f"  ❌ Error transcribing: {e}")
-            if args.heartbeat:
-                _print_or_stop("HEARTBEAT SYS")
-
-    
-    exit_code = 0
-    try:
-        # Start capturing
-        if use_linux_loopback:
-            capture.capture_stream(callback=audio_callback, device_index=loopback_name, verbose=args.verbose)
-        else:
-            capture.capture_stream(callback=audio_callback, device=args.audio_device)
-        if _source_ended_unexpectedly():
-            exit_code = 1
-    except KeyboardInterrupt:
-        print("\n\n⏹️  Stopping transcription...")
-    finally:
-        if output_file:
-            output_file.close()
-
-    # Print summary
-    if args.verbose:
-        _print_summary(all_segments, args, output_path=args.output)
-    _print_compact_stop(all_segments, args.output)
-    if exit_code == 1:
-        print(LOST_SOURCE_MESSAGE)
-
-    return exit_code
-
-
-def _transcribe_live_linux_dual(engine: TranscriptionEngine, args) -> int:
-    """Linux dual-source live transcription: system audio (auto-detected
-    PulseAudio/PipeWire monitor) + microphone, tagged [SYS]/[MIC]
-    (openspec/changes/add-linux-dual-source-live-capture). The capture loop
-    itself is shared with WASAPI and Core Audio in _run_dual_capture."""
+    """The default live path (no --wasapi/--coreaudio-tap): system audio from
+    the auto-detected PulseAudio/PipeWire monitor or an explicit --audio-device,
+    plus the microphone with --include-mic, tagged [SYS]/[MIC]. With or without
+    a mic it runs through _run_dual_capture, shared with WASAPI and Core Audio:
+    a separate single-source loop once transcribed inside PortAudio's callback,
+    dropping audio and never stopping on silence (openspec/changes/01-fix-audit-edges)."""
     import sounddevice as sd
 
     if args.verbose:
-        _print_header(args.model_label, args.language, args.chunk_duration, "System audio + microphone (Linux)")
+        _print_header(args.model_label, args.language, args.chunk_duration, "System audio" + (" + microphone" if args.include_mic else ""))
 
     # Resolve system-audio (loopback/monitor) device. sounddevice/PortAudio
     # can't see the real PipeWire/PulseAudio monitor source
@@ -1202,14 +1023,16 @@ def _transcribe_live_linux_dual(engine: TranscriptionEngine, args) -> int:
                     check_silence()
                     time.sleep(0.1)
 
-    mic = _resolve_mic_config(args)
-    if mic is None:
-        return 1
+    mic = None
+    if args.include_mic:
+        mic = _resolve_mic_config(args)
+        if mic is None:
+            return 1
 
     return _run_dual_capture(
         engine, args,
-        title="System Audio + Microphone",
-        mode_summary=f"System audio ({sys_name}) + mic ({mic.name})",
+        title="System Audio + Microphone" if mic else "System Audio",
+        mode_summary=f"System audio ({sys_name})" + (f" + mic ({mic.name})" if mic else ""),
         sys_rate=lambda: native_rate,
         run_sys=run_sys,
         mic=mic,

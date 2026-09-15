@@ -32,7 +32,7 @@ document.addEventListener('securitypolicyviolation', (e) =>
   window.__cspViolations.push(`${e.violatedDirective} ${e.blockedURI}`));
 """
 REFUSAL = "A live session is still running. Stop it before transcribing a file."
-LIVE_FUNCTIONS = ("transcribe_live_simple", "_run_dual_capture")
+LIVE_FUNCTIONS = ("_run_dual_capture",)  # every live path prints "Listening..." there
 MODEL_LOADING = ("Loading base model from /m on cpu with int8...", "✓ Model loaded successfully")
 
 
@@ -376,6 +376,22 @@ def test_time_axis(browser):
     return page, errors
 
 
+def test_dotted_output_folder(browser):
+    """A dot in a folder name doesn't move the transcript
+    (openspec/changes/01-fix-audit-edges)."""
+    page, errors = open_page(browser)
+    page.fill("#output-path-input", "/home/a.b/transcript")
+    page.click("#start-live-btn")
+    wait_for_calls(page, "start_live_session", 1)
+    path = calls(page, "start_live_session")[0]["args"]["outputPath"]
+    assert re.fullmatch(r"/home/a\.b/transcript_\d{8}_\d{6}", path), path
+
+    stamped = page.evaluate("['/home/a.b/notes.txt', 'C:\\\\Users\\\\a.b\\\\notes'].map(withFreshTimestamp)")
+    assert re.fullmatch(r"/home/a\.b/notes_\d{8}_\d{6}\.txt", stamped[0]), stamped
+    assert re.fullmatch(r"C:\\Users\\a\.b\\notes_\d{8}_\d{6}", stamped[1]), stamped
+    return page, errors
+
+
 def test_model_folder(browser):
     """The Model field: bundled by default, a chosen folder sent to both
     commands and remembered, reset, cancel, and the shell's refusal shown
@@ -683,6 +699,7 @@ def main() -> int:
         report("engine liveness", test_engine_liveness, browser)
         report("refused starts", test_refused_starts, browser)
         report("time axis", test_time_axis, browser)
+        report("dotted output folder", test_dotted_output_folder, browser)
         browser.close()
     return 1 if failures else 0
 

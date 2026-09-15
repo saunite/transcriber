@@ -29,8 +29,9 @@ TRANSCRIPT_LINE_REGEX = re.compile(r"^\[(?P<ts>[^\]]+)\](?:\s\[(?P<tag>SYS|MIC)\
 
 def _relative_timestamp_line(text: str, tag: str = None) -> str:
     """Build a line exactly as the relative-timestamp emit call sites do
-    (transcribe_live_simple / _wasapi / _coreaudio_tap all use
-    engine.format_timestamp(...) + optional [TAG] + text)."""
+    (_process_audio_chunk's engine.format_timestamp(...), emitted by
+    _run_dual_capture for every live path as stamp + [TAG] + text; the
+    untagged form is a file transcript's line)."""
     engine = TranscriptionEngine.__new__(TranscriptionEngine)  # skip __init__, no model load needed
     stamp = engine.format_timestamp(1.5, 3.25)
     return f"{stamp} [{tag}] {text}" if tag else f"{stamp} {text}"
