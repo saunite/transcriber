@@ -304,6 +304,36 @@ def test_refusal_shown(browser):
     return page, errors
 
 
+def test_update_check(browser):
+    """Each answer of check_for_update shows its result next to the button, and
+    nothing checks by itself (openspec/changes/add-manual-update-check)."""
+    cases = [
+        ({"state": "available", "version": "0.2.0"}, "0.2.0 is available"),
+        ({"state": "up_to_date", "version": "0.1.0"}, "You're up to date (0.1.0)"),
+        ({"state": "no_release"}, "No releases published yet"),
+        ({"state": "unavailable"}, "Couldn't check for updates"),
+        ({"reject": "boom"}, "Couldn't check for updates"),
+    ]
+    for response, text in cases:
+        page, errors = open_page(browser, {"check_for_update": response})
+        page.wait_for_timeout(200)
+        assert calls(page, "check_for_update") == [], "the page checked for updates without a click"
+        page.click("#update-check-btn")
+        expect(page.locator("#update-result")).to_contain_text(text)
+        expect(page.locator("#update-check-btn")).to_be_enabled()
+        open_btn = page.locator("#update-open-btn")
+        if response.get("state") == "available":
+            open_btn.click()
+            wait_for_calls(page, "open_releases_page", 1)
+        else:
+            expect(open_btn).to_be_hidden()
+        if response is not cases[-1][0]:  # the last page goes back to report()
+            violations = page.evaluate("window.__cspViolations")
+            page.close()
+            assert not errors and not violations, f"{response}: errors {errors}, CSP {violations}"
+    return page, errors
+
+
 def main() -> int:
     failures = 0
 
@@ -334,6 +364,7 @@ def main() -> int:
         report("unsupported file", test_unsupported_file, browser)
         report("refusal shown", test_refusal_shown, browser)
         report("injected script refused", test_injected_script_refused, browser)
+        report("update check", test_update_check, browser)
         browser.close()
     return 1 if failures else 0
 

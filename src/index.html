@@ -193,6 +193,18 @@
             <option value="dark">Dark</option>
           </select>
         </label>
+
+        <!-- The instrument's nameplate: its version, and the one network request
+             the app makes, only on click (openspec/changes/add-manual-update-check). -->
+        <div class="nameplate">
+          <div class="nameplate-id">
+            <span class="rail-label">Version</span>
+            <span id="app-version" class="rail-readout mono"></span>
+          </div>
+          <button id="update-check-btn" class="btn-quiet" type="button">Check for updates</button>
+          <p id="update-result" class="update-result" role="status" hidden></p>
+          <button id="update-open-btn" class="btn-quiet" type="button" hidden>Open download page</button>
+        </div>
       </aside>
 
       <main class="chart-area">

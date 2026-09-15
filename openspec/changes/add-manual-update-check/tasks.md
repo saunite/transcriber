@@ -12,7 +12,7 @@
 
 ## 2. Frontend
 
-- [ ] 2.1 **Design the control and the result notes with the `impeccable` skill** (design.md Decision 4), operating on the `src-index-html` surface and following `.impeccable/surfaces/src-index-html.md` and `DESIGN.md`. The pass must settle:
+- [x] 2.1 **Design the control and the result notes with the `impeccable` skill** (design.md Decision 4), operating on the `src-index-html` surface and following `.impeccable/surfaces/src-index-html.md` and `DESIGN.md`. The pass must settle:
   - placement in the rail at both rail widths;
   - the quiet-button treatment and its checking state;
   - the note-with-action variant, resolving the click-to-dismiss conflict and keyboard access;
@@ -21,24 +21,56 @@
   - light and dark themes, at a normal window and at the 640×480 minimum, captured the way `.impeccable/review/*.png` were;
   - "Start transcribing" is still the only filled control;
   - no MIC red is used for the failure state.
-- [ ] 2.2 Implement the design from 2.1 in `src/index.html`, `src/style.css` and `src/main.js`: the button handler (disabled while checking, then a note for each of the four states) and `showNote`'s optional action invoking `open_releases_page`, with existing callers unchanged. Verify `node --check src/main.js`, and that the existing GUI tests still pass, including command drift and the content-security-policy scenarios, since no inline handlers or styles may be introduced.
-- [ ] 2.3 Add GUI scenarios to `tests/test_gui.py`, where the fake bridge answers `check_for_update` with each state:
+
+  **Done 2026-09-14.** The user chose the placement.
+  - **Placement change: no note is used.** The result stays inline in a *nameplate* at the rail's foot, under Theme. Notes were rejected for three reasons: they appear top-right, far from a button at the bottom of a scrolling rail; a click on a note dismisses it, which conflicts with an action inside it; and the 8-second timeout would take the download action away. The note-with-action variant is therefore not needed, and notes stay action-free (recorded in DESIGN.md).
+  - **Layout:** a `1px panel-edge` hairline, then a `Version` label with the running version as a mono readout (from `window.__TAURI__.app.getVersion()`, allowed by `core:default`), then the quiet **Check for updates** button.
+  - **Checking state:** the button disables and reads "Checking…". No badge, no spinner.
+  - **Result:** one `role="status"` line under the button.
+    - `ink-soft` for "You're up to date (0.1.0).", "No releases published yet." and "Couldn't check for updates. Check your connection and try again."
+    - A newer version reads "Transcriber 0.2.0 is available." in `ink` at weight 600, and shows a second quiet button, **Open download page**.
+    - Failure is neutral, never MIC red, and uses no new colour.
+  - **Verified** with Playwright under the app CSP, in light and dark, at 900×640 and 640×480, in the available and couldn't-check states (the longest):
+    - no overflow (nameplate scrollWidth = clientWidth: 231px and 183px);
+    - no CSP violations or script errors;
+    - Start transcribing keeps its SYS fill as the only filled control;
+    - result text contrast: 4.79:1 light and 9.76:1 dark for `ink-soft` on the panel, 11.7:1 for `ink`.
+  - **Detector:** `detect.mjs` ran once over the three files. It ran in degraded regex mode, because its parser modules aren't installed. It reported 16 advisories, all on lines that predate this change (type-ramp and radius values), and none in the new nameplate block.
+- [x] 2.2 Implement the design from 2.1 in `src/index.html`, `src/style.css` and `src/main.js`: the button handler (disabled while checking, then a note for each of the four states) and `showNote`'s optional action invoking `open_releases_page`, with existing callers unchanged. Verify `node --check src/main.js`, and that the existing GUI tests still pass, including command drift and the content-security-policy scenarios, since no inline handlers or styles may be introduced.
+
+  **Done 2026-09-14.** Implemented as 2.1 settled, so `showNote` is untouched: there's no note action, and existing callers are unchanged. `index.html` adds the `.nameplate` block. `style.css` adds `.nameplate`, `.nameplate-id` and `.update-result` (the `available` state uses weight, not colour). `main.js` adds `checkForUpdate()`, which disables the button while it waits and maps each state to its message, with anything unexpected or a rejected invoke treated as `unavailable`. **Open download page** invokes `open_releases_page`; if that fails, a note says so. Text is set with `textContent`, and there are no inline handlers or styles. `node --check src/main.js` passes. All 11 GUI scenarios pass, including command drift, which now sees `check_for_update` and `open_releases_page`, and the CSP scenarios.
+- [x] 2.3 Add GUI scenarios to `tests/test_gui.py`, where the fake bridge answers `check_for_update` with each state:
   - **available:** the note shows "0.2.0 is available", and clicking its action invokes `open_releases_page`;
   - **up to date:** shows "You're up to date (0.1.0)";
   - **no release:** shows "No releases published yet";
   - **unavailable:** shows "Couldn't check for updates", and the button is enabled again afterwards.
   Also check that loading the page never invokes `check_for_update` by itself. Verify they pass, and that the no-automatic-check assertion fails if a check is temporarily triggered on page load.
 
-- [ ] 2.4 Finish the Impeccable pass: run its finish review of the built UI against the direction contract, and record the verdict and any fixes applied. Then update `DESIGN.md` (and `.impeccable/design.json` where a component or token changed) with the new rail control and the note-with-action variant. Verify `DESIGN.md` documents both, and the review verdict is recorded under this task.
+  **Done 2026-09-14.** `test_update_check` runs the fake bridge through `available`, `up_to_date`, `no_release`, `unavailable`, and a rejected invoke. For each, it asserts the result line's text, that the button is enabled again, and that **Open download page** is shown only for `available`, where clicking it invokes `open_releases_page`. Each page also checks that `check_for_update` was not called in the 200 ms after load. The wording is "the result line", not "the note" (see 2.1). The fake bridge gained `app.getVersion`. Passes. With `checkForUpdate();` temporarily appended to `main.js`, the scenario fails with "the page checked for updates without a click". The mutation was then reverted.
+- [x] 2.4 Finish the Impeccable pass: run its finish review of the built UI against the direction contract, and record the verdict and any fixes applied. Then update `DESIGN.md` (and `.impeccable/design.json` where a component or token changed) with the new rail control and the note-with-action variant. Verify `DESIGN.md` documents both, and the review verdict is recorded under this task.
+
+  **Done 2026-09-14.** The finish review was done inline against the direction contract, not by a separate reviewer agent. **Verdict: passes, no fixes needed.**
+  - Controls stay down the rail's edge, and quiet treatment is used throughout. State is shown by the control itself (disabled, "Checking…"), never a badge.
+  - No third accent, and MIC red is kept for instrument faults. The mono readout is used for data (the version), not as a costume.
+  - Native buttons give keyboard access and the themed `:focus-visible` ring. The result is announced through `role="status"`.
+  - Copy names the action and, on failure, the recovery.
+
+  `DESIGN.md` gains a **Nameplate** component, adds both buttons to the Quiet button list, adds the rail foot to Layout, and notes under Notes (toast) that notes carry no actions. `.impeccable/design.json` gains a `Nameplate` component. Tokens are unchanged. Both files already ended with a stray `</content>` line, which makes `design.json` invalid JSON. That drift predates this change and was left alone.
 
 ## 3. Docs and licences
 
-- [ ] 3.1 Update README: the "100% offline and local" feature line, and the "There's no auto-update" sentence, now say the only network request is the manual **Check for updates** button, which only reports and opens the releases page. Verify both lines are changed and README mentions the button.
-- [ ] 3.2 List the new dependency tree's licences from `cargo metadata` (for the packages brought in by `ureq` and `tauri-plugin-opener`), and add any that aren't MIT or Apache-2.0 to `THIRD-PARTY-LICENSES.txt`'s desktop-shell section (Decision 5). Verify every non-MIT/Apache licence from that list is named.
+- [x] 3.1 Update README: the "100% offline and local" feature line, and the "There's no auto-update" sentence, now say the only network request is the manual **Check for updates** button, which only reports and opens the releases page. Verify both lines are changed and README mentions the button.
+
+  **Done 2026-09-14.** The feature line now says the only network request is the desktop app's **Check for updates** button, and only on click. The "no auto-update" sentence now says where the button is and that it only reports and can open the releases page, with nothing downloaded or installed.
+- [x] 3.2 List the new dependency tree's licences from `cargo metadata` (for the packages brought in by `ureq` and `tauri-plugin-opener`), and add any that aren't MIT or Apache-2.0 to `THIRD-PARTY-LICENSES.txt`'s desktop-shell section (Decision 5). Verify every non-MIT/Apache licence from that list is named.
+
+  **Done 2026-09-14.** Compared `Cargo.lock` before f742a17 with now: 61 new crates, licences from `cargo metadata`. Crates that aren't MIT or Apache-2.0 (an OR that includes either counts as MIT/Apache): `ring` (Apache-2.0 AND ISC), `rustls-webpki` and `untrusted` (ISC), `subtle` (BSD-3-Clause), and `webpki-roots` and `webpki-root-certs` (CDLA-Permissive-2.0). All are named in the desktop-shell section under "Update check", and ISC and CDLA-Permissive-2.0 links were added to the full-texts list.
 
 ## 4. Verification
 
-- [ ] 4.1 Run `.venv/bin/python run_tests.py` with the recording set, and verify it exits 0.
+- [x] 4.1 Run `.venv/bin/python run_tests.py` with the recording set, and verify it exits 0.
+
+  **Done 2026-09-14.** `run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set: 12/12 passed, exit 0, including `cargo test` and the new `update check` GUI scenario.
 - [ ] 4.2 Build locally (the AppImage/`.rpm`, or `tauri dev`) and **user check on Linux:**
   - clicking **Check for updates** with a network connection shows "No releases published yet" (the real state while `v0.1.0` is a draft);
   - with networking off, it shows "Couldn't check for updates" and transcription still works;

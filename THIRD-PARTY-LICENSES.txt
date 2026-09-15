@@ -156,6 +156,17 @@ DESKTOP SHELL
     Copyright (c) Tauri Programme within The Commons Conservancy
     https://tauri.app
 
+  Update check: ureq and rustls (MIT OR Apache-2.0), with these crates
+  under other permissive licences:
+    ring                   Apache-2.0 AND ISC
+                           https://github.com/briansmith/ring
+    rustls-webpki          ISC      https://github.com/rustls/webpki
+    untrusted              ISC      https://github.com/briansmith/untrusted
+    subtle                 BSD-3-Clause
+                           https://github.com/dalek-cryptography/subtle
+    webpki-roots,          CDLA-Permissive-2.0
+    webpki-root-certs      https://github.com/rustls/webpki-roots
+
   WebView2Loader.dll
     PROPRIETARY -- Microsoft Corporation, redistributed under the Microsoft
     WebView2 SDK distributable-code terms.  This is not open-source software.
@@ -177,6 +188,9 @@ The GNU General Public License, version 2:   https://www.gnu.org/licenses/old-li
 The GNU LGPL, version 2.1:                   https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
 Apache License 2.0:                          https://www.apache.org/licenses/LICENSE-2.0
 Mozilla Public License 2.0:                  https://www.mozilla.org/MPL/2.0/
+ISC License:                                 https://spdx.org/licenses/ISC.html
+Community Data License Agreement, Permissive 2.0:
+                                             https://cdla.dev/permissive-2-0/
 
 The MIT and BSD licenses above carry the standard permission notice and the
 warranty disclaimer, reproduced here once for all components listed as MIT,

@@ -472,6 +472,41 @@ select:focus-visible {
   padding: 0.5rem 0.6rem;
 }
 
+/* ---- Nameplate: version and the manual update check, at the rail's foot ---
+   The result stays here, next to the button that asked, rather than in a
+   note: a note would appear across the window, dismiss itself on click (and
+   so fight its own action) and time out before a download page is opened
+   (openspec/changes/add-manual-update-check). */
+
+.nameplate {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: auto;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--panel-edge);
+}
+
+.nameplate-id {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.update-result {
+  margin: 0;
+  font-size: 0.6875rem;
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+
+/* A newer version is the one result worth acting on: weight, not a colour. */
+.update-result[data-state="available"] {
+  color: var(--ink);
+  font-weight: 600;
+}
+
 /* ---- Run state: the instrument itself changing, never a badge on top ----- */
 
 .run-state {

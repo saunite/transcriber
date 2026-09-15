@@ -37,6 +37,7 @@
         });
       },
     },
+    app: { getVersion: () => Promise.resolve("0.1.0") },
     dialog: { open: () => Promise.resolve(null), save: () => Promise.resolve(null) },
     // Every window method is an async no-op, so new chrome calls need no listing.
     window: { getCurrentWindow: () => new Proxy({}, { get: () => asyncNoop }) },

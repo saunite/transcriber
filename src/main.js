@@ -54,6 +54,10 @@ const els = {
   penSys: document.querySelector(".pen-sys"),
   penMic: document.querySelector(".pen-mic"),
   themeSelect: document.getElementById("theme-select"),
+  appVersion: document.getElementById("app-version"),
+  updateCheckBtn: document.getElementById("update-check-btn"),
+  updateResult: document.getElementById("update-result"),
+  updateOpenBtn: document.getElementById("update-open-btn"),
 };
 
 // The GUI always passes --chunk-duration 10, so "output is overdue" is a
@@ -130,6 +134,49 @@ function showNote(message) {
   els.noteRoot.appendChild(note);
   setTimeout(() => note.remove(), 8000);
 }
+
+// ---- Update check (manual only) -------------------------------------------
+
+// The one network request the app makes, and only from this click
+// (openspec/changes/add-manual-update-check). Nothing calls it on load.
+const UPDATE_MESSAGES = {
+  up_to_date: (v) => `You're up to date (${v}).`,
+  available: (v) => `Transcriber ${v} is available.`,
+  no_release: () => "No releases published yet.",
+  unavailable: () => "Couldn't check for updates. Check your connection and try again.",
+};
+
+async function checkForUpdate() {
+  els.updateCheckBtn.disabled = true;
+  els.updateCheckBtn.textContent = "Checking…";
+  els.updateOpenBtn.hidden = true;
+  let result;
+  try {
+    result = await invoke("check_for_update");
+  } catch (err) {
+    result = { state: "unavailable" };
+  }
+  const state = Object.hasOwn(UPDATE_MESSAGES, result?.state) ? result.state : "unavailable";
+  els.updateResult.dataset.state = state;
+  els.updateResult.hidden = false;
+  els.updateResult.textContent = UPDATE_MESSAGES[state](result?.version);
+  els.updateOpenBtn.hidden = state !== "available";
+  els.updateCheckBtn.textContent = "Check for updates";
+  els.updateCheckBtn.disabled = false;
+}
+
+els.updateCheckBtn.addEventListener("click", checkForUpdate);
+els.updateOpenBtn.addEventListener("click", async () => {
+  try {
+    await invoke("open_releases_page");
+  } catch (err) {
+    showNote(`Could not open the download page: ${err}`);
+  }
+});
+window.__TAURI__.app
+  .getVersion()
+  .then((v) => (els.appVersion.textContent = v))
+  .catch(() => {});
 
 // ---- Timestamps -----------------------------------------------------------
 

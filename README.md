@@ -9,7 +9,7 @@ A cross-platform CLI tool for transcribing audio from video files and live audio
 - 🎥 Transcribe audio from local video files (MP4, AVI, MKV, etc.)
 - 🎙️ **Real-time transcription** from system audio (live meetings, streaming videos)
 - 💻 Cross-platform: Works on Windows, Linux, and macOS (live capture on macOS requires 14.4+ or a virtual audio driver — see [macOS](#macos) below)
-- 🔒 100% offline and local - all data stays on your machine
+- 🔒 100% offline and local - all data stays on your machine. The only network request is the desktop app's **Check for updates** button, and only when you click it.
 - ⚡ Fast transcription with faster-whisper (MIT license)
 - 🎯 Multiple output formats (TXT, SRT, VTT)
 
@@ -19,7 +19,7 @@ A native desktop app (Tauri shell + this CLI as a bundled sidecar) is in progres
 
 ### Download and run
 
-Every [release](https://github.com/saunite/transcriber/releases) offers each platform in up to three forms. They're all the same version and all include the `base` Whisper model, so the first transcription works offline. There's no auto-update; to upgrade, download the new version.
+Every [release](https://github.com/saunite/transcriber/releases) offers each platform in up to three forms. They're all the same version and all include the `base` Whisper model, so the first transcription works offline. There's no auto-update. The app's **Check for updates** button (at the bottom of the settings rail) asks GitHub for the latest release when you click it; it only reports what it finds and can open the releases page, and nothing is downloaded or installed for you. To upgrade, download the new version.
 
 - **Portable**: nothing to install, no admin rights. Deleting it is the uninstall.
 - **Installer or package**: installs like any other app, with a menu entry and an uninstaller.
