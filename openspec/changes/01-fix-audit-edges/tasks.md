@@ -52,20 +52,28 @@
 
 ## 3. Docs, backlog and verification
 
-- [ ] 3.1 README:
+- [x] 3.1 README:
   - system-audio-only live output is `[SYS]`-tagged, with the same compact status lines;
   - the Linux and macOS launchers work from any folder and take `--model` or `--model-path`.
 
   Verify both are described.
 
-- [ ] 3.2 `openspec/backlog.md`, "Logic audit follow-ups":
+  **Done 2026-09-15.** README "Real-time Audio Capture" gains two notes:
+  - the Linux and macOS launchers run from any folder, choose no model, and pass `--model`/`--model-path` through;
+  - under "Understanding the Labels", every live session labels its lines, including system-audio-only sessions, which print `[SYS]` and the compact status lines.
+
+- [x] 3.2 `openspec/backlog.md`, "Logic audit follow-ups":
   - remove D1, D5 and D7;
   - reword D4 to its Windows half (`win-start-transcription.bat` and `transcribe_file.bat` run `transcriber.py` by relative path, and the `.bat` passes `--model base`), noting that `03-fix-audit-edges-windows` covers it;
   - leave D2, D3 and D6 unchanged.
 
   Verify by reading the section.
 
-- [ ] 3.3 Run `.venv/bin/python run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set and a network that reaches GitHub, and verify it exits 0.
+  **Done 2026-09-15.** D1, D5 and D7 are removed. D4 now reads "D4 (Windows half)" and points at `03-fix-audit-edges-windows`. The intro records what `01-fix-audit-edges` did. D2, D3 and D6 are unchanged.
+
+- [x] 3.3 Run `.venv/bin/python run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set and a network that reaches GitHub, and verify it exits 0.
+
+  **Done 2026-09-15.** With `TRANSCRIBER_TEST_SPEECH` set and GitHub reachable: 15/15 suites passed, exit 0. That's one more suite than before (`test_launchers.py`), and it includes the no-mic scenario, "dotted output folder", and the e2e Linux suite. It ran after the README and backlog edits.
 
 - [ ] 3.4 **Manual check, by the user, on a rebuilt sidecar:** first rebuild and stage the sidecar (`build_sidecar.py`, copied to `src-tauri/binaries/`), then build the app. In the app, untick the microphone and start a short live session over a playing video, keeping nothing afterwards. Verify:
   - lines appear on the chart;

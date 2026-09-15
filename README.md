@@ -317,6 +317,8 @@ win-start-transcription.bat sprint-review    REM filename prefix
 win-start-transcription.bat --silence-timeout 0
 ```
 
+On Linux and macOS the launcher finds `transcriber.py` next to itself, so you can run it from any folder (the transcript is saved in the folder you run it from). It doesn't choose a model size, so `--model small` or `--model-path <folder>` pass straight through, and output names the model you actually loaded.
+
 **Manual Command:**
 
 ```bash
@@ -341,6 +343,8 @@ Live capture saves the transcript as it goes, to `transcript_<timestamp>.txt` in
 **Understanding the Labels:**
 - `[SYS]` - System audio (other meeting participants, videos, etc.)
 - `[MIC]` - Your microphone (your voice)
+
+Every live session labels its lines this way, including system-audio-only sessions (no `--include-mic`), which print `[SYS]` lines and the same compact status lines as a session with a microphone.
 
 **Find Your Microphone Device:**
 ```bash
