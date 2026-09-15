@@ -21,7 +21,9 @@
 - [x] 3.1 Run `.venv/bin/python run_tests.py` with the recording set, and verify it exits 0.
 
   **Done 2026-09-14.** With the recording set, 12/12 suites passed in 23.3s.
-- [ ] 3.2 Build the Linux AppImage and `.rpm` locally with the change, then **user check in the real app:** switch the theme (including a restart with a non-system theme, to confirm the first-paint script still runs), start and stop a live session, and transcribe a dropped file. Everything must work as before.
+- [x] 3.2 Build the Linux AppImage and `.rpm` locally with the change, then **user check in the real app:** switch the theme (including a restart with a non-system theme, to confirm the first-paint script still runs), start and stop a live session, and transcribe a dropped file. Everything must work as before.
+
+  **User-verified on Fedora, 2026-09-14** with local builds of `67c252e` (`~/Downloads/transcriber-test/csp-local/`), whose `transcriber-gui` binary embeds `default-src 'self'; connect-src ipc: http://ipc.localhost`: "3.2 passed". The theme, live session and file transcription all work under the policy.
 - [ ] 3.3 **Enforcement check in a dev window:** run `npx @tauri-apps/cli@2.11.4 dev` from `src-tauri/`, which applies `csp` because no `devCsp` is set. Open devtools with right-click → Inspect, then check that:
   - the console shows no "Content Security Policy" violation during normal use (theme, start/stop);
   - running `document.body.insertAdjacentHTML('beforeend', '<img src=x onerror="document.title=\'injected\'">')` in the console leaves the window title unchanged and logs a CSP violation for the inline handler.
