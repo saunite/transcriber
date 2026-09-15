@@ -13,6 +13,7 @@ import io
 import os
 import sys
 import tempfile
+import threading
 import time
 import types
 
@@ -175,6 +176,25 @@ def main() -> None:
                          run_sys=_feed([np.zeros(16000, np.float32)] * 2, then=None, gap=0.12), mic=None)
         assert code == 1 and out.rstrip().splitlines()[-1] == transcriber.LOST_SOURCE_MESSAGE, out
         assert "[SYS] hello" in open(lost, encoding="utf-8").read(), "the transcript lost its lines"
+
+        # 3b'. After the audio server restarts, the mic stream's stop() never
+        #      returns; the lost source must still end the run, promptly, with
+        #      the lost-source line last (openspec/changes/fix-engine-liveness).
+        class _HangingStream(_FakeInputStream):
+            def stop(self):
+                threading.Event().wait()
+
+        real_stream = _FakeInputStream
+        globals()["_FakeInputStream"] = _HangingStream
+        try:
+            start = time.time()
+            code, out = _run(_FakeEngine(), _args(os.path.join(tmp, "hang.txt")), title="T", mode_summary="T",
+                             sys_rate=lambda: 16000, mic=mic,
+                             run_sys=_feed([np.zeros(16000, np.float32)], then=None, gap=0.12))
+        finally:
+            globals()["_FakeInputStream"] = real_stream
+        assert code == 1 and out.rstrip().splitlines()[-1] == transcriber.LOST_SOURCE_MESSAGE, out
+        assert time.time() - start < 15, f"shutdown hung for {time.time() - start:.0f}s on a stuck mic stream"
 
         # 3c. Every real capture_stream swallows KeyboardInterrupt and returns
         #     normally, so a silence stop raised inside it must still exit 0

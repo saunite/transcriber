@@ -54,9 +54,45 @@ def _request_stop(reason=""):
     raise KeyboardInterrupt(reason)
 
 
+# Set once a lost audio source has been detected: the process then exits
+# directly, since PortAudio's own shutdown can block on an audio server that
+# went away (see __main__).
+_source_lost = False
+
+
 def _source_ended_unexpectedly() -> bool:
     """Called after capture returned normally: True unless a stop was requested."""
-    return not _stop_requested
+    global _source_lost
+    lost = not _stop_requested
+    _source_lost = _source_lost or lost
+    return lost
+
+
+def _close_stream_bounded(stream, timeout: float = 5.0) -> bool:
+    """Stop and close a PortAudio stream without hanging the session's end.
+
+    After the audio server restarts (systemctl --user restart pipewire),
+    stream.stop() never returns -- it waits on a PipeWire connection that is
+    gone -- which kept the engine alive and silent instead of reporting the
+    lost source (openspec/changes/fix-engine-liveness). Returns False if it
+    was abandoned after `timeout`."""
+    import threading
+
+    done = threading.Event()
+
+    def close():
+        try:
+            stream.stop()
+            stream.close()
+        except Exception:
+            pass
+        done.set()
+
+    threading.Thread(target=close, daemon=True).start()
+    if done.wait(timeout):
+        return True
+    print("⚠️  The microphone stream did not close; continuing without it")
+    return False
 
 
 # Printed as the session's very last line, after the stop summary, so the GUI
@@ -714,8 +750,9 @@ def _run_dual_capture(engine, args, *, title, mode_summary, sys_rate, run_sys, m
     import sounddevice as sd
     import queue
     import threading
-    global _stop_requested
+    global _stop_requested, _source_lost
     _stop_requested = False
+    _source_lost = False
 
     # Compact default status: identity, model/language/mode/device summary,
     # and a listening confirmation (openspec/changes/compact-live-cli-output).
@@ -864,8 +901,7 @@ def _run_dual_capture(engine, args, *, title, mode_summary, sys_rate, run_sys, m
     finally:
         # Stop feeding the queues before waiting for the workers to drain them.
         if mic_stream:
-            mic_stream.stop()
-            mic_stream.close()
+            _close_stream_bounded(mic_stream)
         stop_event.set()
         sys_thread.join(timeout=60)
         if mic_thread:
@@ -892,8 +928,9 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
     if args.include_mic:
         return _transcribe_live_linux_dual(engine, args)
 
-    global _stop_requested
+    global _stop_requested, _source_lost
     _stop_requested = False
+    _source_lost = False
 
     import numpy as np
     import sounddevice as sd
@@ -1240,4 +1277,12 @@ if __name__ == "__main__":
     # before the app's own imports run -- without it, the relaunch re-runs
     # this whole script from scratch and dies on a circular import.
     multiprocessing.freeze_support()
-    sys.exit(main())
+    code = main()
+    if _source_lost:
+        # ponytail: skips atexit on this one failure path, where sounddevice's
+        # PortAudio termination can block on the dead audio server just like
+        # stream.stop() did; the transcript is already closed by then.
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(code)
+    sys.exit(code)

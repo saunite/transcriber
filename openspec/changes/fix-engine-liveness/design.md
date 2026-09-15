@@ -34,6 +34,8 @@ In `_run_dual_capture`, reaching the line after `run_sys(...)` without an except
 
 **Corrected while applying (task 1.1):** "a normal return means the source ended" is not enough on its own. Every `capture_stream` (Linux, WASAPI, macOS, generic) catches `KeyboardInterrupt` and returns normally, so a user stop or a silence stop also returns. `transcriber.py` therefore records a requested stop: the SIGINT handler and both silence checks call `_request_stop()`, which sets `_stop_requested` and raises. A normal return counts as a lost source only when no stop was requested. The flag is reset at the start of each live session.
 
+**Found in the user's Linux check (task 5.2):** after `systemctl --user restart pipewire pipewire-pulse`, `parec` exited as expected, but `_run_dual_capture`'s cleanup blocked forever in `mic_stream.stop()`, which waits on the PipeWire connection that went away. The engine stayed alive and silent, so the app only showed "stalled". Two fixes: the mic stream is closed on a helper thread and abandoned after 5 s (`_close_stream_bounded`); and when a lost source was detected, `__main__` flushes output and exits with `os._exit(code)`, because `sounddevice`'s PortAudio termination at interpreter exit can block the same way. Both flags reset at each session start.
+
 - *Alternative:* have each `capture_stream` raise on EOF or read error. That touches three platform modules, one of them (macOS) untestable here, for the same observable result. Rejected.
 
 ### 2. `--heartbeat`: one line per chunk, per source, hidden from help
