@@ -132,7 +132,7 @@ A muted chart-stock green-white field with a warm-red printed grid, mounted in a
 
 A two-region instrument under a title block. The title block (save-to path, model, language) spans the full width as one row. Below it, `.instrument` is a CSS grid: a fixed-width rail (`16.5rem`, narrowing to `13.5rem` under `52rem`) carrying transport, pen arming, chart speed, filters and theme, and ending with the nameplate (version and update check), beside a flexible chart area that fills the remainder. A collapsible engine-log panel (`<details>`) sits full-width at the bottom, closed by default, capped at `40vh` (`30vh` under short windows).
 
-The chart itself is a scrolling roll (`<ol class="roll">`) with a fixed gutter width (`6.75rem`, `5.75rem` narrow) holding the time ruling; each transcript line's vertical position is set inline by `main.js` from elapsed time × chart scale, not by document flow order alone — literalizing the "advancing roll" metaphor. Minimum window is 640×480; the single breakpoint at `52rem` narrows the rail and gutter rather than reflowing the structure.
+The chart itself is a scrolling roll (`<ol class="roll">`) with a fixed gutter width (`6.75rem`, `5.75rem` narrow) holding the time ruling; each transcript line's vertical position is set inline by `main.js` from elapsed time × chart scale, not by document flow order alone — literalizing the "advancing roll" metaphor. Lines sit in the order their speech happened: the two pens finish transcribing at different times, so a late mark lands mid-roll where its time falls rather than at the bottom, and the earliest line is the elapsed-time origin. Minimum window is 640×480; the single breakpoint at `52rem` narrows the rail and gutter rather than reflowing the structure.
 
 ## Elevation & Depth
 
@@ -176,7 +176,7 @@ Small, near-uniform radii (1–3px) throughout, closer to a physical instrument'
 - **Roll:** the scrolling chart surface; grid ruling confined to the gutter (see Named Rules, Colors).
 - **Trace line:** two-column grid (time column + text), a `1px` left rule with a small drawn pen-mark tick colored per source, text colored per pen. New lines animate in with `mark-lands` (260ms, slide + fade — "a mark landing on the paper"), the system's one authored line-arrival motion.
 - **Marks scale mode:** at compressed chart speeds, trace text and source labels hide and each line collapses to a colored mark only — the session's shape becomes readable at a glance, per the signature "chart speed" interaction.
-- **Gap note:** a small mono label naming a silence's duration, placed inline on the axis where the silence occurred.
+- **Gap note:** a small mono label naming a silence's duration, placed inline on the axis where the silence occurred. Gaps are measured between the lines currently visible, so under Show or Find the note names the silence the reader can see; durations are rounded whole ("1 h", never "59 min 60 s").
 - **Search-match highlight:** matched trace text gets a `trace-hit-bg` background box; its text color inherits `currentColor` (the speaking pen's own ink) in light mode, and switches to a dedicated dark ink in dark mode (see Named Rules, Colors).
 
 ### Notes (toast)

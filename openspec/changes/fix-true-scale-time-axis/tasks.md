@@ -102,26 +102,55 @@
   - **`formatDuration`:** rounds the total, and whole minutes for the hour form, before splitting.
   - **Verified:** `node --check` passes, and all 16 GUI scenarios pass, including "time axis".
 
-- [ ] 3.3 **Impeccable pass on the chart roll.** This is behaviour on an existing surface, with no new component. Using the `impeccable` skill on the `src-index-html` surface and following `DESIGN.md`, check a dual-source session with a late MIC line inserted mid-roll, and a Show = MIC filtered view with gap notes. Confirm the `mark-lands` arrival animation reads correctly on a line that lands above the bottom, and record any adjustment.
+- [x] 3.3 **Impeccable pass on the chart roll.** This is behaviour on an existing surface, with no new component. Using the `impeccable` skill on the `src-index-html` surface and following `DESIGN.md`, check a dual-source session with a late MIC line inserted mid-roll, and a Show = MIC filtered view with gap notes. Confirm the `mark-lands` arrival animation reads correctly on a line that lands above the bottom, and record any adjustment.
 
   Verify with light and dark screenshots at 900×640 and 640×480, with no overflow.
 
-- [ ] 3.4 Finish the Impeccable pass:
+  **Done 2026-09-15.** Impeccable, Operate mode, a verify-only pass on the incumbent roll (context loaded with `context.mjs --target src/index.html`). The fixture has seven lines: SYS 14:02:10, 14:02:18, 14:02:31, then a late MIC 14:02:24, a 6-minute silence, SYS 14:08:40, a late SYS 14:08:47 and MIC 14:08:52. It was captured in light and dark, at 900×640 and 640×480, in three states: mid-landing (90 ms after the late MIC line), settled, and Show = MIC.
+  - **Late line:** it lands between 14:02:18 and 14:02:31 with the same `mark-lands` slide and fade as a bottom arrival. A mark landing on the paper where it belongs reads right for a chart recorder, so there's no change to the motion.
+  - **Spacing:** proportional around the inserted lines; the 6- and 7-second gaps read as tighter than the silence.
+  - **Show = MIC:** the gap note above 14:08:52 reads "6 min 28 s", measured from the previous MIC line (14:02:24), not the hidden SYS line.
+  - **Checks:** no horizontal overflow, script errors or CSP violations in any of the 12 captures.
+  - **Adjustments:** none.
+
+- [x] 3.4 Finish the Impeccable pass:
   - the `impeccable-finish-reviewer` agent reviews the roll behaviour from 3.3 (not an inline self-review), material fixes are applied and re-screenshotted once, and its verdict is recorded;
   - run `detect.mjs` once on the changed files, noting if it ran degraded;
   - update `DESIGN.md`'s roll description (line order by speech time, gaps between visible lines), and `.impeccable/design.json` only if a component changed.
 
   Verify `DESIGN.md` describes both.
 
+  **Done 2026-09-15.**
+  - **Reviewer:** the `impeccable-finish-reviewer` agent returned **Verdict: ship**, with no material fixes.
+    - **Mid-roll insertion** matches "The Chart Recorder" and makes the calibrated-axis promise truer than arrival order did.
+    - **A late line can't land off-screen:** chunk lag puts it at most about 10 s before the newest line, which is inside the viewport while the roll follows the bottom, so no cue is needed.
+    - **The filtered gap note** ("6 min 28 s" under Show = MIC, "6 min 9 s" unfiltered) names the silence the reader can see.
+    - **Unchanged:** type, material and ground.
+
+    It kept the principle: always measure from what's visible, in true time order.
+  - **Its two non-material notes:**
+    - the insertion walk stops at a line without an offset (an unparseable stamp), which is harmless;
+    - the 90 ms still can't prove `mark-lands` played, but the element and class are unchanged.
+
+    No change was made, so there was no re-screenshot.
+  - **Detector:** `detect.mjs` ran once on `src/main.js`, the only changed UI file, with 0 findings (`--json` gives `[]`) and no degraded notice. `src/index.html` and `src/style.css` are unchanged and keep their 16 older advisories.
+  - **Docs:** `DESIGN.md`'s roll description now says lines sit in speech order, a late mark lands mid-roll, and the earliest line is the origin. The Gap note entry now says gaps are measured between visible lines and durations are rounded whole. The reviewer judged the old wording still accurate; this makes both points explicit. `.impeccable/design.json` is unchanged, since no component changed.
+
 ## 4. Docs, backlog and verification
 
-- [ ] 4.1 README: `--actual-time` on live capture stamps when the speech began, not when the line was printed. Update the `--actual-time` help text in `transcriber.py` to match.
+- [x] 4.1 README: `--actual-time` on live capture stamps when the speech began, not when the line was printed. Update the `--actual-time` help text in `transcriber.py` to match.
 
   Verify `python transcriber.py --help` shows it.
 
-- [ ] 4.2 Remove cluster C from `openspec/backlog.md`'s "Logic audit follow-ups", and update that item's intro. Verify C1–C4 no longer appear and cluster D is unchanged.
+  **Done 2026-09-15.** The README's `--actual-time` entry and the help text now say that live lines carry the time their speech began. `--help` shows it.
 
-- [ ] 4.3 Run `.venv/bin/python run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set and a network that reaches GitHub, and verify it exits 0.
+- [x] 4.2 Remove cluster C from `openspec/backlog.md`'s "Logic audit follow-ups", and update that item's intro. Verify C1–C4 no longer appear and cluster D is unchanged.
+
+  **Done 2026-09-15.** Cluster C is removed, and the intro names `fix-true-scale-time-axis`. C1–C4 no longer appear, and D1–D7 are unchanged.
+
+- [x] 4.3 Run `.venv/bin/python run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set and a network that reaches GitHub, and verify it exits 0.
+
+  **Done 2026-09-15.** With `TRANSCRIBER_TEST_SPEECH` set and GitHub reachable ("No releases published yet"): 14/14 suites passed, exit 0. There's one more suite than before (`test_chunk_words.py`), and it includes "live chunks do not repeat words" and the "time axis" GUI scenario. It ran after the code, README and help-text edits; only `DESIGN.md` and task notes changed afterwards.
 
 - [ ] 4.4 **Manual check, by the user:** a short live session in the app with system audio and microphone, talking over a playing video, with nothing kept afterwards unless the user wants it. Verify that:
   - lines from one chunk are spaced apart on the chart;

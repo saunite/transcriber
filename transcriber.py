@@ -279,7 +279,8 @@ Examples:
     parser.add_argument(
         '--actual-time',
         action='store_true',
-        help='Use wall-clock timestamps (local time) instead of relative offsets'
+        help='Use wall-clock timestamps (local time) instead of relative offsets; '
+             'live lines carry the time their speech began'
     )
 
     parser.add_argument(

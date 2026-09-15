@@ -412,7 +412,7 @@ python transcriber.py --live --wasapi --include-mic --mic-device 5
 - `--no-output` - Live capture only: print the transcript without saving it to a file (cannot be combined with `--output`)
 - `--format <type>` - Output format: txt, srt, vtt (default: txt)
 - `--no-timestamps` - Exclude timestamps from text output
-- `--actual-time` - Use wall-clock timestamps (local time) instead of relative offsets
+- `--actual-time` - Use wall-clock timestamps (local time) instead of relative offsets. In live capture, each line is stamped with the time its speech began, not when it was printed
 - `--chunk-duration <seconds>` - Duration of audio chunks for streaming (default: 30)
 - `--silence-timeout <seconds>` - Auto-stop after N seconds of silence (default: 600 = 10 min, 0 = never). A silence stop exits with code 0; if the system audio source itself ends (audio server restart, device disconnected), live capture prints `❌ System audio capture ended unexpectedly`, keeps the transcript so far and exits with code 1
 - `--audio-device <id>` - Audio device index for live capture (-1 = auto-detect)
