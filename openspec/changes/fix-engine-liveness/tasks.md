@@ -116,15 +116,35 @@
 
   Passes, and all 14 GUI scenarios pass. With heartbeats ignored, it failed with "a quiet room read as stalled". With code-0 ends ignored (the old behaviour), it failed at the silence notice.
 
-- [ ] 3.4 Finish the Impeccable pass: the `impeccable-finish-reviewer` agent reviews the built setting and status copy (not an inline self-review), material fixes are applied and re-screenshotted once, and the verdict is recorded. Run `detect.mjs` once on the changed files, noting if it ran degraded. Update `DESIGN.md`, and `.impeccable/design.json` if a component changed. Verify `DESIGN.md` describes the setting and the quiet and stall states.
+- [x] 3.4 Finish the Impeccable pass: the `impeccable-finish-reviewer` agent reviews the built setting and status copy (not an inline self-review), material fixes are applied and re-screenshotted once, and the verdict is recorded. Run `detect.mjs` once on the changed files, noting if it ran degraded. Update `DESIGN.md`, and `.impeccable/design.json` if a component changed. Verify `DESIGN.md` describes the setting and the quiet and stall states.
+
+  **Done 2026-09-15.**
+  - **Reviewer:** the `impeccable-finish-reviewer` agent returned **Verdict: fix**. The field matches the rail pattern and fits both sizes in both themes, quiet vs stalled read clearly apart, and the ceiling was reached. It said to keep a silence stop as neutral information and "no speech right now" distinct from "stalled". Its three material fixes were all applied:
+    1. **The silence-stop note cleared itself after 8 s**, while the user was likely away. `showNote(..., { persist: true })` now skips the timeout for session-ended notes, and the reason also stays in `#run-detail` (now `role="status"`) while idle, until the next Start.
+    2. **"Transcribing" showed before any speech** when a heartbeat came within 20 s of Start, because `lastLineAt` was seeded at start. The `advancing` branch is now gated on `sawFirstLine`.
+    3. **Hint wording:** it now reads "Stops transcribing after this many minutes without speech. Set 0 to keep going until you press Stop transcribing.", in the button's own words.
+  - **Found in the re-screenshot:** `.run-detail` is styled with the MIC-red fault colour, so the silence explanation showed red. `data-tone="info"` (neutral `ink-soft`) is now set for a clean end, and `"fault"` otherwise.
+  - **Tests** added to `test_engine_liveness`:
+    - a heartbeat 5 s after Start with no line reads "Listening — no speech yet";
+    - the silence note is still there 60 simulated seconds later;
+    - `#run-detail` shows the reason with `data-tone="info"`, and `"fault"` for unexpected ends.
+
+    With the persistence removed the scenario fails; with the `sawFirstLine` gate removed it fails at "Listening — no speech yet". All 14 GUI scenarios pass.
+  - **Re-screenshot:** captured once, light and dark, at 900 and 640, in the quiet, stalled and ended states with the field in view. The reason is neutral, with no overflow and no CSP or script errors.
+  - **Detector:** `detect.mjs` ran once, degraded (no parser modules). Its one new advisory (`.rail-unit` at 0.75rem, off the type ramp) was fixed to 0.6875rem, back to the 16 older advisories.
+  - **Docs:** `DESIGN.md` gains the Stop after silence field (Inputs), "Quiet room vs stall" and "Why a session ended" (Transport / Pens), and the persistent-note exception (Notes). `.impeccable/design.json` is unchanged: no new component or token, since the field reuses the rail field pattern and the tones reuse existing ink.
 
 ## 4. Docs
 
-- [ ] 4.1 README:
+- [x] 4.1 README:
   - GUI: the stop-after-silence setting (default 10 minutes, never), and what happens when a session stops by itself;
   - CLI: `--silence-timeout` unchanged, and a lost audio source now exits non-zero.
 
   Verify both are present.
+
+  **Done 2026-09-15.** README changes:
+  - **"Download and run":** a new **When a live session stops by itself** paragraph covering the setting (default 10, 0 = until Stop), the silence notice, the unexpected-end notice, and the quiet vs stalled statuses.
+  - **Complete Options, `--silence-timeout`:** a silence stop exits 0, and a lost system audio source prints `❌ System audio capture ended unexpectedly`, keeps the transcript and exits 1.
 
 ## 5. Verification
 

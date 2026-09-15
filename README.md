@@ -27,6 +27,8 @@ Every [release](https://github.com/saunite/transcriber/releases) offers each pla
 
 **Using a different model in the app.** The **Model** field in the title bar uses the bundled `base` model by default. To use a better one, download a faster-whisper model folder yourself (for example [Systran/faster-whisper-small](https://huggingface.co/Systran/faster-whisper-small); the folder must contain `model.bin`), then pick **Choose folder…** in the Model field and select it. The app remembers the choice. Pick **Bundled (base)** to go back. If the folder later moves or holds no `model.bin`, starting a transcription says so instead of starting. English-only models (names ending in `.en`) can only transcribe English.
 
+**When a live session stops by itself.** Under **Stop after silence** in the Live panel you set how many minutes without speech end a session (default 10; 0 keeps listening until you press **Stop**). When that happens the app tells you ("Stopped after 10 minutes of silence. The transcript so far is saved.") and returns to idle. If capture ends for any other reason, such as the audio server restarting or the output device disconnecting, the app says it ended unexpectedly and shows the engine's last message. While a session is running but nobody is talking, the status reads "Listening — no speech right now"; "Transcribing stalled" appears only when the engine itself has stopped reporting for 30 seconds.
+
 #### Linux
 
 The packages are install-tested on current Debian, Ubuntu LTS, Fedora, openSUSE Leap, and openSUSE Tumbleweed.
@@ -410,7 +412,7 @@ python transcriber.py --live --wasapi --include-mic --mic-device 5
 - `--no-timestamps` - Exclude timestamps from text output
 - `--actual-time` - Use wall-clock timestamps (local time) instead of relative offsets
 - `--chunk-duration <seconds>` - Duration of audio chunks for streaming (default: 30)
-- `--silence-timeout <seconds>` - Auto-stop after N seconds of silence (default: 600 = 10 min, 0 = never)
+- `--silence-timeout <seconds>` - Auto-stop after N seconds of silence (default: 600 = 10 min, 0 = never). A silence stop exits with code 0; if the system audio source itself ends (audio server restart, device disconnected), live capture prints `❌ System audio capture ended unexpectedly`, keeps the transcript so far and exits with code 1
 - `--audio-device <id>` - Audio device index for live capture (-1 = auto-detect)
 - `--setup-help` - Print audio loopback setup instructions and exit
 - `--device <type>` - Device to run on: auto, cpu, cuda (default: auto)

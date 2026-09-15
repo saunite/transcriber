@@ -407,7 +407,7 @@ select:focus-visible {
 }
 
 .rail-unit {
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   color: var(--ink-soft);
 }
 
@@ -607,6 +607,13 @@ select:focus-visible {
   font-size: 0.6875rem;
   line-height: 1.4;
   color: var(--pen-mic);
+}
+
+/* Why the last session ended when it ended cleanly (the silence limit):
+   information in neutral ink, never the fault red
+   (openspec/changes/fix-engine-liveness). */
+.run-detail[data-tone="info"] {
+  color: var(--ink-soft);
 }
 
 /* ---- Pens --------------------------------------------------------------- */

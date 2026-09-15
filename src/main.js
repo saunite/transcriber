@@ -159,13 +159,15 @@ function initTheme() {
 
 // ---- Notes (error/status) -------------------------------------------------
 
-function showNote(message) {
+// persist: stays until clicked -- for news the user was likely away for, such
+// as a session that ended while the window sat behind a meeting.
+function showNote(message, { persist = false } = {}) {
   const note = document.createElement("div");
   note.className = "note";
   note.textContent = message;
   note.addEventListener("click", () => note.remove());
   els.noteRoot.appendChild(note);
-  setTimeout(() => note.remove(), 8000);
+  if (!persist) setTimeout(() => note.remove(), 8000);
 }
 
 // ---- Update check (manual only) -------------------------------------------
@@ -753,6 +755,9 @@ let sawFirstLine = false;
 // The engine said it stopped on the silence limit, and with which setting the
 // session was started -- the notice names the user's own number.
 let silenceStopSeen = false;
+// How the last live session ended by itself, shown while idle until the next Start.
+let endedMessage = "";
+let endedClean = false;
 let sessionSilenceMinutes = DEFAULT_SILENCE_MINUTES;
 let stallTimer = null;
 // Whether a live session is *supposed* to be running right now. Distinct from
@@ -796,10 +801,16 @@ function renderRunState() {
     els.runDetail.textContent =
       `The engine has reported nothing for ${silent}s; it normally reports every ${CHUNK_SECONDS}s, speech or not. ` +
       `Check the engine log below, or stop and start again.`;
+  } else if (liveState === "idle" && endedMessage) {
+    // Why the last session ended, kept beside the status until the next Start.
+    els.runDetail.hidden = false;
+    els.runDetail.textContent = endedMessage;
   } else {
     els.runDetail.hidden = true;
     els.runDetail.textContent = "";
   }
+  // Only a clean end (the silence limit) reads as information.
+  els.runDetail.dataset.tone = liveState === "idle" && endedClean ? "info" : "fault";
 
   const running = liveState !== "idle";
   els.runElapsed.hidden = !running;
@@ -830,7 +841,7 @@ function tickInstrument() {
     const now = Date.now();
     let next = "listening";
     if (now - lastActivityAt > STALL_MS) next = "penlift";
-    else if (lastLineAt && now - lastLineAt <= QUIET_MS) next = "advancing";
+    else if (sawFirstLine && now - lastLineAt <= QUIET_MS) next = "advancing";
     if (next !== liveState) liveState = next;
   }
   renderRunState();
@@ -870,6 +881,8 @@ async function startLiveSession() {
   lastActivityAt = null;
   sawFirstLine = false;
   silenceStopSeen = false;
+  endedMessage = "";
+  endedClean = false;
   sessionSilenceMinutes = silenceMinutes();
   // A bare name (no folder) is saved in the default folder too, not in the
   // engine's working directory (openspec/changes/fix-gui-transcript-location).
@@ -1107,12 +1120,12 @@ listen("live-session-ended", (event) => {
   sessionRunning = false;
   appendLogMarker(silence ? "stopped after silence" : "engine ended the session");
   const minutes = sessionSilenceMinutes;
+  endedClean = silence;
+  endedMessage = silence
+    ? `Stopped after ${minutes} minute${minutes === 1 ? "" : "s"} of silence. The transcript so far is saved.`
+    : `Transcription ended unexpectedly: ${lastLine || `the engine exited with code ${code ?? "unknown"}`}`;
   setLiveState("idle");
-  showNote(
-    silence
-      ? `Stopped after ${minutes} minute${minutes === 1 ? "" : "s"} of silence. The transcript so far is saved.`
-      : `Transcription ended unexpectedly: ${lastLine || `the engine exited with code ${code ?? "unknown"}`}`,
-  );
+  showNote(endedMessage, { persist: true });
 });
 
 listen("file-transcription-complete", (event) => {

@@ -74,7 +74,7 @@
             <span id="run-state-label" class="run-state-label">Not transcribing</span>
             <span id="run-elapsed" class="run-elapsed mono" hidden>0:00</span>
           </div>
-          <p id="run-detail" class="run-detail" hidden></p>
+          <p id="run-detail" class="run-detail" role="status" hidden></p>
 
           <div class="pens">
             <div class="pen pen-sys" data-armed="true">
@@ -105,7 +105,7 @@
               <input id="silence-minutes-input" type="number" min="0" max="1440" step="1" value="10" />
               <span class="rail-unit">min</span>
             </span>
-            <span class="rail-hint">Ends the session after this long without speech. 0 keeps listening until you press Stop.</span>
+            <span class="rail-hint">Stops transcribing after this many minutes without speech. Set 0 to keep going until you press Stop transcribing.</span>
           </label>
 
           <label class="rail-field">

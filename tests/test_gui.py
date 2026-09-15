@@ -437,22 +437,41 @@ def test_engine_liveness(browser):
     page.close()
     assert not errors, errors
 
-    # Silence stop: a clean end, told as information.
+    # Before any speech, a heartbeat is not "Transcribing".
     page, errors = open_page(browser, clock=True)
-    start(page)
+    page.click("#start-live-btn")
+    wait_for_calls(page, "start_live_session", 1)
+    log(page, "Listening... (Ctrl+C to stop)")
+    page.clock.run_for(5_000)
+    page.evaluate("__fake.emit('sidecar-heartbeat', {tag: 'SYS'})")
+    page.clock.run_for(1_100)
+    expect(page.locator(status)).to_have_text("Listening — no speech yet")
+    page.click("#stop-btn")
+    wait_for_calls(page, "stop_live_session", 1)
+
+    # Silence stop: a clean end, told as information, still there when the user
+    # comes back long after, and beside the status until the next Start.
+    log(page, "Listening... (Ctrl+C to stop)")
+    start(page, 2)
     log(page, "Auto-stop: 10.0 minutes of silence detected")
     page.evaluate("__fake.emit('live-session-ended', {code: 0, lastLine: 'Stopped — 1 segment saved to /tmp/t.txt'})")
     note = page.locator("#note-root")
-    expect(note).to_contain_text("Stopped after 10 minutes of silence. The transcript so far is saved.")
+    silence_text = "Stopped after 10 minutes of silence. The transcript so far is saved."
+    expect(note).to_contain_text(silence_text)
     assert not re.search(r"unexpected|error|fail", note.text_content(), re.I), note.text_content()
     expect(page.locator(status)).to_have_text("Not transcribing")
+    page.clock.run_for(60_000)
+    expect(note).to_contain_text(silence_text)
+    expect(page.locator("#run-detail")).to_have_text(silence_text)
+    expect(page.locator("#run-detail")).to_have_attribute("data-tone", "info")  # not the fault red
 
     # Unexpected ends: a lost source (code 0 without a silence stop) and a crash.
     for n, (code, line) in enumerate([(0, "❌ System audio capture ended unexpectedly"), (1, "Traceback: boom")], start=2):
         page.evaluate("document.getElementById('note-root').replaceChildren()")
-        start(page, n)
+        start(page, n + 1)
         page.evaluate("([code, line]) => __fake.emit('live-session-ended', {code, lastLine: line})", [code, line])
         expect(note).to_contain_text(f"Transcription ended unexpectedly: {line}")
+        expect(page.locator("#run-detail")).to_have_attribute("data-tone", "fault")
         expect(page.locator(status)).to_have_text("Not transcribing")
     page.close()
     assert not errors, errors

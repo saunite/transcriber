@@ -159,6 +159,7 @@ Small, near-uniform radii (1–3px) throughout, closer to a physical instrument'
 ### Inputs / Fields
 - **Style:** `stock-raised` background, `1px solid panel-edge` border, `2px` radius, `0.8125rem` text. Uniform across text, number, search, and select inputs.
 - **Focus:** border shifts to `--focus` (`pen-sys` in light mode, the lightened `pen-sys` in dark mode); no glow or ring on inputs, though `:focus-visible` elsewhere uses a `2px` outline.
+- **Stop after silence (Live panel):** a number field with its unit (`.rail-input-unit`: input plus a `0.6875rem` `ink-soft` "min"), following the device override field's label, input and hint pattern. The default is 10; 0 keeps transcribing until Stop, which the hint says in the button's own words.
 - **Model field (title block):** a native select, like Language, not a path box with buttons: the title-block row has no room for three controls at 640px.
   - **Options:** "Bundled (base)" is always first, and is the way back. The chosen model folder follows, shown by folder name with its full path as the select's tooltip; a Hugging Face cache snapshot (`models--Org--name/snapshots/<hash>`) is named `Org--name`, not by its hash. "Choose folder…" opens the system folder picker, and cancelling restores the previous choice.
   - **Keyboard:** arrowing onto "Choose folder…" on the closed select snaps back and never opens a dialog. The picker opens only when that option is chosen outright.
@@ -167,6 +168,8 @@ Small, near-uniform radii (1–3px) throughout, closer to a physical instrument'
 
 ### Transport / Pens
 - **Run state:** a drawn pen-nib dot that changes color and vertical position per state — soft ink-soft raised for idle/loaded, SYS-navy lowered-flat for listening, MIC-red lowered for advancing, MIC-red raised for pen-lift (the fault). The instrument's mechanism changes; nothing is layered on top as a badge.
+- **Quiet room vs stall:** the engine reports every chunk it processes (a heartbeat, speech or not), so the run state tells a quiet room from a stall. "Listening — no speech right now" (neutral) means heartbeats keep coming with no speech. "Transcribing stalled — no output" (the MIC-red fault) appears only when the engine has reported nothing for 30 s, three chunks, which covers slow inference on one chunk.
+- **Why a session ended:** when the engine ends a live session by itself, the reason stays under the status, in `.run-detail`, until the next Start, and the note stays until clicked, because the user was likely away. A silence stop is a clean end: neutral `ink-soft` text (`data-tone="info"`), "Stopped after N minutes of silence. The transcript so far is saved." Anything else keeps the fault red: "Transcription ended unexpectedly: <engine's last line>".
 - **Pen row (SYS/MIC):** a `3px`-wide color swatch, mono pen name, description, and state text; unarmed pens desaturate to `panel-edge`/`ink-soft`.
 
 ### Chart / Trace
@@ -178,7 +181,7 @@ Small, near-uniform radii (1–3px) throughout, closer to a physical instrument'
 
 ### Notes (toast)
 - SYS-ink filled, stock text, `2px` radius, slides in from the right, dismissible by click.
-- Notes carry no actions. A click dismisses them and they time out after 8 seconds, so a result the user may act on stays next to the control that produced it (see Nameplate).
+- Notes carry no actions. A click dismisses them and they time out after 8 seconds, so a result the user may act on stays next to the control that produced it (see Nameplate). The exception is a live session that ended by itself: that note stays until clicked, since the user was probably away when it happened.
 
 ### Nameplate
 - The rail's last block, pushed to its foot (`margin-top: auto`) under a `1px panel-edge` hairline: a `Version` label with the running version as a mono `rail-readout` on the same row, then the quiet **Check for updates** button.
