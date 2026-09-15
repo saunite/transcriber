@@ -42,6 +42,8 @@
   - stderr printed "Removed 1 leftover sidecar copies from /tmp";
   - no other `_MEI*` folder remained afterwards.
 
+- [ ] 2.4 **Stop engines on app exit** (Decision 6, added during apply): move the terminate logic into `end_engine_tree(pid)`, used by `stop_live_session`; add `stop_all_engines(app)`, which takes and ends the live and file children; call it from `RunEvent::Exit` in `main.rs`. Verify `cargo test` and `cargo build` pass. Also verify by hand: start the debug app, begin a file run on a long file, close the window, and check that no `transcriber-sidecar` process remains and the run's `_MEI*` copy is gone.
+
 ## 3. End-to-end
 
 - [x] 3.1 In `tests/test_e2e_linux.py`, give each app its own `TMPDIR` under the scenario directory (in `app_env`). Add `stale extraction cleaned` (Decision 5):
@@ -50,6 +52,7 @@
   - wait for only the dead marked folder to disappear.
 
   Verify it passes, all other scenarios still pass, and it fails with the cleanup call removed from `main.rs`.
+- [ ] 3.2 Add `engine stopped on quit` (Decision 6): start a file run on a WAV long enough to still be running, close the app the way a user does, then assert that within `STOP_GRACE` plus margin no engine process started by that app remains and its `TMPDIR` holds no `_MEI*` copy. Verify it passes, and fails with the `RunEvent::Exit` call removed.
 
   **Done 2026-09-15.** `app_env` gives every app its own `TMPDIR` (`<scenario>/tmp`). `test_stale_extraction_cleaned` pre-creates four entries, starts the app, waits for the stale folder to disappear, then checks the other three one second later:
   - `_MEI<dead pid>stale` with the marker (the dead PID is from a finished `true` process);

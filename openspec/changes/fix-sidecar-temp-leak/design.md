@@ -15,7 +15,7 @@
 
 **Non-Goals:**
 - Replacing the one-file build with a folder build.
-- A graceful engine stop on app quit, or on Windows. Their leftovers are covered by the startup cleanup.
+- A graceful engine stop on Windows, where the stop is still `taskkill /F`. Its leftovers are covered by the startup cleanup.
 - Cleaning folders under a different temp directory than the app's own `std::env::temp_dir()`.
 
 ## Decisions
@@ -42,6 +42,11 @@ A reused PID (a dead bootloader's number now owned by an unrelated process) read
 
 ### 4. Cleanup runs once, off the UI path
 `main.rs` gains `.setup(|app| { spawn_blocking(|| sidecar::remove_stale_extractions(&std::env::temp_dir())); Ok(()) })`. Removal uses `std::fs::remove_dir_all`, and each failure is skipped. The count removed goes to stderr, which is visible in `tauri dev`. The window never waits for it (specs/desktop-gui "Fast, non-blocking app open").
+
+### 6. Stop running engines when the app exits (added during apply)
+The user's Linux check found a live engine still running under `systemd --user` after closing the window mid-session. `tauri-plugin-shell` doesn't end children on exit, so the engine kept capturing, and its copy stayed in use. `main.rs` switches from `.run(context)` to `.build(context)?.run(|app, event| …)`, and on `RunEvent::Exit` calls `sidecar::stop_all_engines(app)`. That takes the live and file children out of `SidecarManager` and ends each one the way Stop does: `terminate_process_tree` on Unix (SIGINT, `STOP_GRACE`, SIGKILL fallback), `taskkill /F /T` on Windows. The terminate/`taskkill` logic moves out of `stop_live_session` into a shared `end_engine_tree(pid) -> Vec<u32>`, used by both. Exit blocks for at most `STOP_GRACE` after the window has already closed.
+
+- *Alternative:* `RunEvent::ExitRequested` with `prevent_exit`, then exiting after the stop. It adds a second exit path for no visible benefit, since the window is gone either way. Rejected.
 
 ### 5. Tests
 - **`cargo test`:**
