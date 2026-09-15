@@ -341,7 +341,10 @@ def test_model_folder_refused(workdir):
         assert subprocess.run(live, capture_output=True).returncode == 1, "a live engine was already running"
         store_model_dir(app, folder)
         app.click("#start-live-btn")
-        note = App._wait(lambda: (lambda t: t if "model.bin" in t else None)(app.text("#note-root")), "the refusal note")
+        # textContent, not WebDriver's visible text: a note fades in, and WebKit
+        # pauses that animation in an unfocused window, leaving it "invisible".
+        note = App._wait(lambda: (lambda t: t if "model.bin" in t else None)(
+            app.run_async("done(document.getElementById('note-root').textContent);")), "the refusal note")
         assert str(folder) in note and "has no model.bin" in note, f"unexpected note: {note!r}"
         time.sleep(1)
         started = subprocess.run(live, capture_output=True, text=True)

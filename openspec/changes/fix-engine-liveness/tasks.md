@@ -152,7 +152,7 @@
 
   **Done 2026-09-15.** `build_sidecar.py` succeeded, and `dist/linux/transcriber-sidecar` was copied over the staged `src-tauri/binaries/transcriber-sidecar-x86_64-unknown-linux-gnu`, which is git-ignored. The new binary accepts `--heartbeat` (`--heartbeat --list-devices-json` exits 0), and `--help` doesn't list it. `run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set, GitHub reachable (404), and the sandbox off for network: 13/13 suites passed, exit 0. All nine end-to-end scenarios printed `PASS`, and no app, driver or sidecar processes were left behind.
 
-- [ ] 5.2 **User check on Linux** (a local build):
+- [x] 5.2 **User check on Linux** (a local build):
   - with the setting at 1 minute, a live session in a quiet room shows the quiet status, not "stalled", then stops after about a minute with the silence notice, and the transcript file is kept;
   - restarting PipeWire (`systemctl --user restart pipewire pipewire-pulse`) during a session shows the unexpected-end notice;
   - pressing Start on the Live tab while a file is transcribing is refused with the busy message.
@@ -160,3 +160,10 @@
   **First run, 2026-09-15:** checks 1 (1-minute silence stop with notice) and 3 (Start refused during a file run) passed. Check 2 failed: after restarting PipeWire the app showed "Listening — no speech right now", then "Transcribing stalled" after 72 s, but never the unexpected-end notice. Diagnosis from the live process: `parec` was gone, both worker threads were still polling their queues, and the main thread was blocked. The engine had detected the lost source but hung in `mic_stream.stop()` on the restarted PipeWire, before reaching `stop_event.set()` and the exit.
 
   **Fix:** `_close_stream_bounded()` stops and closes the mic stream on a daemon thread and gives up after 5 s. On a lost source, `__main__` flushes output and calls `os._exit(code)`, so `sounddevice`'s atexit PortAudio termination can't hang either. `_source_lost` is decided per call and reset with `_stop_requested` at session start. New `test_dual_capture.py` scenario 3b': a mic stream whose `stop()` never returns still gives exit 1, the lost-source line last, in under 15 s. With the old unbounded `stop()`, the test hangs (killed at 40 s). All nine root test scripts pass. The sidecar was rebuilt and staged for the re-check.
+
+  **Done 2026-09-15.** Re-check with the rebuilt sidecar: check 2 passed. After `systemctl --user restart pipewire pipewire-pulse`, the app showed "Transcription ended unexpectedly: ❌ System audio capture ended unexpectedly" as a note and under the status, and returned to "Not transcribing". The engine log shows "Stopped — 0 segments saved to …" followed by the ❌ line, and the session ended 13 s after it started. Checks 1 and 3 passed on the first run.
+
+  **Full suite re-run after the fix:** 13/13 passed, exit 0.
+  - **Environment problem:** the first re-run failed with `[Errno 122] Disk quota exceeded`. `/tmp` (a 12 GB tmpfs) held 79 leftover PyInstaller `_MEI*` extraction directories (9.3 GB), all from today's runs and used by no process. They were removed.
+  - **Flaky test:** `model folder refused` failed 2 of 3 times alone. The app was right (the note appeared within 0.5 s), but the test read it through WebDriver's visible text, which is empty while the note's fade-in animation is paused in an unfocused window. It now reads `textContent`, and passed 4 of 4.
+  - **Finding outside this change:** a sidecar ended by SIGKILL leaves its ~350 MB `/tmp/_MEI*` copy behind (normal exit, SIGINT and SIGTERM clean up; measured with a signalled file run). The app's Stop escalates to SIGKILL after 3 s, and one run of the end-to-end suite leaked 7 copies. This is reported to the user, not fixed here.
