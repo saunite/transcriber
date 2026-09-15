@@ -339,6 +339,43 @@ def test_chart_search_count(browser):
     return page, errors
 
 
+def test_time_axis(browser):
+    """Lines sit in time order, gaps are measured between visible lines, and
+    durations never read "60 s" (openspec/changes/fix-true-scale-time-axis)."""
+    page, errors = open_page(browser)
+    page.select_option("#time-mode", "elapsed")
+    rows = page.locator("#transcript-live .trace")
+
+    def emit(ts, tag, text):
+        page.evaluate("line => __fake.emit('transcript-line', line)", {"ts": f"2026-09-03 {ts}", "tag": tag, "text": text})
+
+    def labels():
+        return page.eval_on_selector_all("#transcript-live .trace-time", "els => els.map(e => e.textContent)")
+
+    # A MIC line that finished transcribing after a later SYS line.
+    emit("14:22:10", "SYS", "one")
+    emit("14:22:30", "SYS", "three")
+    emit("14:22:20", "MIC", "two")
+    expect(rows.locator(".trace-text")).to_have_text(["one", "two", "three"])
+    assert labels() == ["0:00", "0:10", "0:20"], labels()
+
+    # Earlier than every line shown: it becomes the origin.
+    emit("14:22:05", "MIC", "zero")
+    expect(rows.locator(".trace-text")).to_have_text(["zero", "one", "two", "three"])
+    assert labels() == ["0:00", "0:05", "0:15", "0:25"], labels()
+
+    # With Show = SYS, the last line's gap runs from the previous SYS line.
+    emit("15:00:00", "SYS", "four")
+    emit("15:00:50", "MIC", "five")
+    emit("15:01:40", "SYS", "six")
+    page.select_option("#pen-filter", "SYS")
+    expect(rows.last.locator(".gap-note")).to_have_text("1 min 40 s")
+
+    durations = page.evaluate("[59.6, 3599.6, 7199.5].map(formatDuration)")
+    assert durations == ["1 min", "1 h", "2 h"], durations
+    return page, errors
+
+
 def test_model_folder(browser):
     """The Model field: bundled by default, a chosen folder sent to both
     commands and remembered, reset, cancel, and the shell's refusal shown
@@ -645,6 +682,7 @@ def main() -> int:
         report("model folder", test_model_folder, browser)
         report("engine liveness", test_engine_liveness, browser)
         report("refused starts", test_refused_starts, browser)
+        report("time axis", test_time_axis, browser)
         browser.close()
     return 1 if failures else 0
 

@@ -333,18 +333,22 @@ function formatClock(seconds) {
   return h > 0 ? `${h}:${mm}:${String(s).padStart(2, "0")}` : `${mm}:${String(s).padStart(2, "0")}`;
 }
 
+// Rounds the whole duration before splitting it, so a part never reads 60
+// (openspec/changes/fix-true-scale-time-axis).
 function formatDuration(seconds) {
-  if (seconds >= 3600) {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.round((seconds % 3600) / 60);
+  const total = Math.round(seconds);
+  if (total >= 3600) {
+    const minutes = Math.round(total / 60);
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
     return m ? `${h} h ${m} min` : `${h} h`;
   }
-  if (seconds >= 60) {
-    const m = Math.floor(seconds / 60);
-    const s = Math.round(seconds % 60);
+  if (total >= 60) {
+    const m = Math.floor(total / 60);
+    const s = total % 60;
     return s ? `${m} min ${s} s` : `${m} min`;
   }
-  return `${Math.round(seconds)} s`;
+  return `${total} s`;
 }
 
 // ---- Chart scale (the signature control) ----------------------------------
@@ -396,7 +400,8 @@ function relayout(list) {
 
   for (const item of list.children) {
     const offset = Number(item.dataset.offset);
-    if (!Number.isFinite(offset) || previous === null) {
+    // A hidden line takes no space, so gaps run between visible lines only.
+    if (item.hidden || !Number.isFinite(offset) || previous === null) {
       item.style.marginTop = "";
     } else {
       const gapSeconds = Math.min(Math.max(offset - previous, 0), 86400);
@@ -418,7 +423,7 @@ function relayout(list) {
         note.remove();
       }
     }
-    if (Number.isFinite(offset)) previous = offset;
+    if (Number.isFinite(offset) && !item.hidden) previous = offset;
   }
 }
 
@@ -476,6 +481,15 @@ function appendTranscriptLine(list, { ts, tag, text }) {
     } else {
       offset = parsed.seconds - origin.seconds;
     }
+    // Earlier than every line so far: it becomes the origin, and elapsed
+    // times move along with it.
+    if (offset < 0) {
+      for (const other of list.children) {
+        if (other.dataset.offset !== undefined) other.dataset.offset = String(Number(other.dataset.offset) - offset);
+      }
+      sessionOrigin[flow] = parsed;
+      offset = 0;
+    }
   }
 
   const item = document.createElement("li");
@@ -510,7 +524,16 @@ function appendTranscriptLine(list, { ts, tag, text }) {
   body.appendChild(textEl);
 
   item.append(time, body);
-  list.appendChild(item);
+  // Sources finish transcribing at different times, so a line can arrive
+  // after later ones; it goes where its time falls
+  // (openspec/changes/fix-true-scale-time-axis).
+  let after = list.lastElementChild;
+  while (offset !== null && after && Number(after.dataset.offset) > offset) after = after.previousElementSibling;
+  if (offset !== null && after !== list.lastElementChild) {
+    list.insertBefore(item, after ? after.nextElementSibling : list.firstElementChild);
+  } else {
+    list.appendChild(item);
+  }
 
   const chart = list.closest(".chart");
   refreshEmptyStates();

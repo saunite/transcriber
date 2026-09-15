@@ -76,7 +76,7 @@
 
 ## 3. GUI
 
-- [ ] 3.1 In `tests/test_gui.py`, add `time axis` with the fake bridge:
+- [x] 3.1 In `tests/test_gui.py`, add `time axis` with the fake bridge:
   - **Late line:** emit SYS `14:22:10`, then SYS `14:22:30`, then MIC `14:22:20`. The MIC line sits between the two SYS lines in `#transcript-live`, and the elapsed labels read `0:00`, `0:10` and `0:20` in DOM order.
   - **Earlier than the first line:** a MIC `14:22:05` after those lines becomes the first child. The labels become `0:00`, `0:05`, `0:15` and `0:25`.
   - **Filtered gap:** lines SYS `14:00:00`, MIC `14:00:50`, SYS `14:01:40` with Show = SYS. The visible second SYS line's gap note reads "1 min 40 s", not "50 s".
@@ -84,9 +84,23 @@
 
   Verify each part fails against today's `src/main.js`.
 
-- [ ] 3.2 In `src/main.js`, per design.md Decisions 4–5: `appendTranscriptLine` inserts by offset and re-bases `sessionOrigin`, `relayout` skips hidden lines, and `formatDuration` rounds first.
+  **Done 2026-09-15.** `test_time_axis` is registered as "time axis", selects "Time into session", and runs its four parts on one chart. Each part was run on its own, with the other parts' assertions disabled, against the unchanged `src/main.js`, and each fails:
+  - **Late line:** order is `one, three, two`.
+  - **Earlier than the first line:** order is `one, three, two, zero`.
+  - **Filtered gap:** the note reads "50 s".
+  - **Durations:** `60 s`, `59 min 60 s`, `1 h 60 min`.
+
+  Deviation: the filtered-gap lines are at 15:00:00, 15:00:50 and 15:01:40 on the same chart, after the earlier lines, instead of 14:00. The last SYS line's gap is still measured from the previous visible SYS line.
+
+- [x] 3.2 In `src/main.js`, per design.md Decisions 4–5: `appendTranscriptLine` inserts by offset and re-bases `sessionOrigin`, `relayout` skips hidden lines, and `formatDuration` rounds first.
 
   Verify with `node --check`, then that `time axis` and all other GUI scenarios pass.
+
+  **Done 2026-09-15.**
+  - **`appendTranscriptLine`:** walks back from the last line past lines with a later offset, and inserts there. A line without an offset appends. A negative offset shifts every existing `data-offset` and becomes the origin.
+  - **`relayout`:** gives hidden lines no margin and doesn't take `previous` from them.
+  - **`formatDuration`:** rounds the total, and whole minutes for the hour form, before splitting.
+  - **Verified:** `node --check` passes, and all 16 GUI scenarios pass, including "time axis".
 
 - [ ] 3.3 **Impeccable pass on the chart roll.** This is behaviour on an existing surface, with no new component. Using the `impeccable` skill on the `src-index-html` surface and following `DESIGN.md`, check a dual-source session with a late MIC line inserted mid-roll, and a Show = MIC filtered view with gap notes. Confirm the `mark-lands` arrival animation reads correctly on a line that lands above the bottom, and record any adjustment.
 
