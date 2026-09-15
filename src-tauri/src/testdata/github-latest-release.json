@@ -1,0 +1,12 @@
+{
+  "url": "https://api.github.com/repos/astral-sh/uv/releases/388826415",
+  "html_url": "https://github.com/astral-sh/uv/releases/tag/0.12.14",
+  "id": 388826415,
+  "tag_name": "v0.2.0",
+  "target_commitish": "ce3bd7931f0a8dce4237f878c71824166025a195",
+  "name": "v0.2.0",
+  "draft": false,
+  "prerelease": false,
+  "created_at": "2026-09-15T01:37:42Z",
+  "published_at": "2026-09-15T02:19:30Z"
+}

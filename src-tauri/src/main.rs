@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod sidecar;
+mod update;
 
 use sidecar::SidecarManager;
 use std::sync::Mutex;
@@ -26,6 +27,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(AppState {
             sidecar: Mutex::new(SidecarManager::new()),
         })
@@ -35,6 +37,8 @@ fn main() {
             sidecar::stop_live_session,
             sidecar::start_file_transcription,
             sidecar::list_devices,
+            update::check_for_update,
+            update::open_releases_page,
         ])
         .run(tauri::generate_context!())
         .expect("error while running transcriber GUI");

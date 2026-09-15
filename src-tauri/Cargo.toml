@@ -16,6 +16,11 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+# Manual update check only (openspec/changes/add-manual-update-check): rustls
+# TLS, verified against the OS trust store so installed corporate CAs work.
+ureq = { version = "3", default-features = false, features = ["rustls", "platform-verifier"] }
+semver = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 regex = "1"
