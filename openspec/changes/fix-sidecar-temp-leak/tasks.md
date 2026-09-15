@@ -77,7 +77,7 @@
   - wait for only the dead marked folder to disappear.
 
   Verify it passes, all other scenarios still pass, and it fails with the cleanup call removed from `main.rs`.
-- [ ] 3.2 Add `engine stopped on quit` (Decision 6): start a file run on a WAV long enough to still be running, close the app the way a user does, then assert that within `STOP_GRACE` plus margin no engine process started by that app remains and its `TMPDIR` holds no `_MEI*` copy. Verify it passes, and fails with the `RunEvent::Exit` call removed.
+- **3.2 (dropped, not done, 2026-09-15, user's decision)** Planned: add `engine stopped on quit` (Decision 6): start a file run on a WAV long enough to still be running, close the app the way a user does, then assert that within `STOP_GRACE` plus margin no engine process started by that app remains and its `TMPDIR` holds no `_MEI*` copy. Verify it passes, and fails with the `RunEvent::Exit` call removed.
 
   **Done 2026-09-15.** `app_env` gives every app its own `TMPDIR` (`<scenario>/tmp`). `test_stale_extraction_cleaned` pre-creates four entries, starts the app, waits for the stale folder to disappear, then checks the other three one second later:
   - `_MEI<dead pid>stale` with the marker (the dead PID is from a finished `true` process);
@@ -89,6 +89,11 @@
 
   A first mutation attempt with `sed` didn't apply (the `||` clashed with its delimiter) and gave a meaningless pass; it was redone with a Python edit.
 
+  **Why it was dropped:** a file run can't discriminate. A file engine prints from its main thread, so it exits by itself once the closed app breaks its stdout pipe, with or without the fix; checked with a 3-hour silent WAV, where no engine and no copy remained in both builds. A discriminating test must start a live session, which would capture the machine's audio on every suite run. Quit behaviour stays covered by:
+  - `test_dual_capture.py` 3b'' (broken-pipe stop under the real SIGINT handler) and 3e (repeat-SIGINT guard);
+  - `a_slow_graceful_exit_is_not_killed` (the 15 s grace);
+  - the app-like repro (stop 1.9 s and 2.0 s, quit 3.2 s twice, 0 copies);
+  - the user's passing Linux check (5.2).
 ## 4. Docs
 
 - [x] 4.1 README "Building it yourself" or the Linux download notes: the engine unpacks about 350 MB into the temp directory per run; a normal stop removes it; leftovers from killed runs are removed the next time the app starts. Verify the note exists.
