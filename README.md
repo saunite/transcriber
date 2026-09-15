@@ -238,6 +238,7 @@ It runs each suite, prints PASS/FAIL with its duration, and exits 1 if any faile
 | `test_*.py` (repo root) | Engine and packaging units: bundled model default, live output path, transcript line format, mic fallback, macOS/WASAPI capture helpers, AppImage stripping |
 | `tests/test_gui.py` | The real `src/index.html` in headless Chromium with a fake `window.__TAURI__` (`tests/fake_tauri.js`), so no app build, audio or engine: live start/stop and the SYS/MIC indicators, the one-at-a-time file queue, unsupported files, a refused file run, and a check that every command the page invokes is registered in `src-tauri/src/main.rs` |
 | `tests/test_engine.py` | Transcribes a local English recording and checks the timestamped transcript, the detected language and at least 70% of its script's key words; random bytes must fail cleanly with no traceback and no transcript file |
+| `tests/test_e2e_linux.py` | Linux only. Builds the debug app and drives its real window through `tauri-driver`. Checks: the update check gives a real verdict online; with no network (inside `unshare -rn`) it says it couldn't check and the engine still transcribes; nothing opens a network connection at startup (`strace`); **Open download page** hands exactly the releases URL to the OS opener (a recording `xdg-open`) |
 
 **The speech recording is not in the repo.** Use any English recording you have, in any format the engine decodes, kept outside the repository and never committed. Put the words it says in a `.txt` with the same name beside it, then:
 
@@ -246,6 +247,16 @@ TRANSCRIBER_TEST_SPEECH=~/recordings/sample.ogg .venv/bin/python run_tests.py   
 ```
 
 Without it, the speech check prints `SKIP` and the rest still runs. `tests/test_engine.py` also takes `--speech <audio>` and `--script <txt>` directly.
+
+**The end-to-end suite** (`tests/test_e2e_linux.py`) runs only on Linux, from a graphical desktop session. **App windows open and close on screen while it runs.** It also needs the staged sidecar in `src-tauri/binaries/` and these tools, installed once:
+
+```bash
+cargo install tauri-driver --locked            # WebDriver bridge for Tauri apps
+sudo dnf install webkitgtk6.0 strace           # Fedora: WebKitWebDriver + strace
+sudo apt install webkit2gtk-driver strace      # Debian/Ubuntu equivalent
+```
+
+`unshare` (util-linux) and `ip` (iproute2) are normally present already. When something is missing, every scenario prints `SKIP` with what to install, and the suite doesn't fail. The online update check prints `SKIP` when `api.github.com` can't be reached (some VPNs block it). WebKitWebDriver doesn't support native clicks here ([tauri#6541](https://github.com/tauri-apps/tauri/issues/6541)), so the suite clicks the real buttons from script.
 
 **Testing a frozen engine.** The engine tests use `transcriber.py` by default. Point them at a built sidecar with `--engine`:
 

@@ -24,6 +24,7 @@
 ### 1. `tauri-driver` + `WebKitWebDriver`, driven by a stdlib WebDriver client
 The suite starts `tauri-driver` (port 4444, native driver on 4445) and creates a session with `{"capabilities": {"alwaysMatch": {"tauri:options": {"application": "<target/debug/transcriber-gui>"}}}}`. It speaks W3C WebDriver JSON over `urllib.request` using a handful of calls: new session, find element by CSS, click, element text, execute script, delete session. That's about 40 lines.
 
+- **Clicks are made from script (found while applying; the user chose this).** WebKitWebDriver 2.52.5 answers every native input command with `unsupported operation`: element click, element send keys, and key and pointer actions. That happened inside and outside the tool sandbox, and with `GDK_BACKEND=x11`. It's a known limitation (tauri-apps/tauri#6541), and WebdriverIO's Tauri troubleshooting guide recommends executing the interaction in the page. On Fedora, the only `WebKitWebDriver` ships with `webkitgtk6.0` (GTK4), while the app links `webkit2gtk-4.1`. The client's `click()` first confirms the element exists through WebDriver, then calls `element.click()` via execute-script. The page's real handler, Tauri commands, plugins, network and OS opener all still run; only the browser's own input synthesis is skipped.
 - *Alternative:* Selenium or WebdriverIO. This is the setup Tauri's docs show, but it adds a Python or Node dependency for six HTTP calls. Rejected.
 - *Alternative:* Playwright against WebKitGTK. Playwright can't attach to an embedded webview. Rejected.
 
