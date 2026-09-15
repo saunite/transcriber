@@ -506,6 +506,75 @@ def test_engine_liveness(browser):
     return page, errors
 
 
+def test_refused_starts(browser):
+    """A start the app refuses changes nothing but the note: no chart cleared,
+    no rerouting of a running session's lines, no reset of how the last session
+    ended (openspec/changes/fix-refused-start-routing)."""
+    status = "#run-state-label"
+    live_items = "#transcript-live li"
+    file_items = "#transcript-file li"
+    line = "(text) => __fake.emit('transcript-line', {ts: '2026-09-15 10:00:00', tag: 'SYS', text})"
+    busy_live = "A live session is still running. Stop it before transcribing a file."
+    busy_file = "A file transcription is still running. Wait for it to finish before starting a live session."
+    bad_folder = "the model folder /gone has no model.bin. Choose a faster-whisper model folder under Model, or pick Bundled (base)."
+
+    # B1: a file dropped during a live session is refused; the live session's
+    # lines keep landing on the live chart and it is not reported stalled.
+    page, errors = open_page(browser, {"start_file_transcription": {"reject": busy_live}}, clock=True)
+    page.click("#start-live-btn")
+    wait_for_calls(page, "start_live_session", 1)
+    log(page, "Listening... (Ctrl+C to stop)")
+    page.evaluate(line, "before the drop")
+    drop(page, "/media/one.mp4")
+    wait_for_calls(page, "start_file_transcription", 1)
+    expect(page.locator("#note-root")).to_contain_text(busy_live)
+    page.evaluate(line, "after the drop")
+    for _ in range(4):
+        page.clock.run_for(10_000)
+        page.evaluate("__fake.emit('sidecar-heartbeat', {tag: 'SYS'})")
+    expect(page.locator(live_items)).to_have_count(2)
+    expect(page.locator(file_items)).to_have_count(0)
+    assert "stalled" not in page.text_content(status), f"live session reported stalled: {page.text_content(status)}"
+    page.close()
+    assert not errors, errors
+
+    # B2: after a session stopped on silence, a refused live start keeps its
+    # transcript and the explanation of how it ended.
+    page, errors = open_page(browser, clock=True)
+    page.click("#start-live-btn")
+    wait_for_calls(page, "start_live_session", 1)
+    log(page, "Listening... (Ctrl+C to stop)")
+    page.evaluate(line, "the last meeting")
+    log(page, "Auto-stop: 10.0 minutes of silence detected")
+    page.evaluate("__fake.emit('live-session-ended', {code: 0, lastLine: 'Stopped'})")
+    explanation = page.text_content("#run-detail")
+    assert "Stopped after 10 minutes of silence" in explanation, explanation
+    page.evaluate(f"__fake.responses.start_live_session = {{reject: {json.dumps(bad_folder)}}}")
+    page.click("#start-live-btn")
+    wait_for_calls(page, "start_live_session", 2)
+    expect(page.locator("#note-root")).to_contain_text(bad_folder)
+    expect(page.locator(live_items)).to_have_count(1)
+    expect(page.locator("#run-detail")).to_have_text(explanation)
+    page.close()
+    assert not errors, errors
+
+    # During a file run, a refused live start leaves the run's output routed to it.
+    page, errors = open_page(browser, {"start_live_session": {"reject": busy_file}})
+    drop(page, "/media/one.mp4")
+    wait_for_calls(page, "start_file_transcription", 1)
+    page.click("#tab-live")
+    page.click("#start-live-btn")
+    wait_for_calls(page, "start_live_session", 1)
+    expect(page.locator("#note-root")).to_contain_text(busy_file)
+    page.evaluate(line, "from the file run")
+    expect(page.locator(file_items)).to_have_count(1)
+    expect(page.locator(live_items)).to_have_count(0)
+    page.evaluate("__fake.emit('file-transcription-complete', true)")
+    page.click("#tab-file")
+    assert queue_states(page) == ["done"], queue_states(page)
+    return page, errors
+
+
 def test_update_check(browser):
     """Each answer of check_for_update shows its result next to the button, and
     nothing checks by itself (openspec/changes/add-manual-update-check)."""
@@ -575,6 +644,7 @@ def main() -> int:
         report("chart search count", test_chart_search_count, browser)
         report("model folder", test_model_folder, browser)
         report("engine liveness", test_engine_liveness, browser)
+        report("refused starts", test_refused_starts, browser)
         browser.close()
     return 1 if failures else 0
 

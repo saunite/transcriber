@@ -873,17 +873,8 @@ function markLineArrived() {
 }
 
 async function startLiveSession() {
-  clearTranscript(els.transcriptLive);
   els.startLiveBtn.disabled = true;
-  currentFlow = "live";
-  sessionStartedAt = Date.now();
-  lastLineAt = Date.now();
-  lastActivityAt = null;
-  sawFirstLine = false;
-  silenceStopSeen = false;
-  endedMessage = "";
-  endedClean = false;
-  sessionSilenceMinutes = silenceMinutes();
+  const startMinutes = silenceMinutes();
   // A bare name (no folder) is saved in the default folder too, not in the
   // engine's working directory (openspec/changes/fix-gui-transcript-location).
   let chosenPath = els.outputPathInput.value.trim() || "transcript.txt";
@@ -899,15 +890,28 @@ async function startLiveSession() {
       micDevice: els.includeMicCheckbox.checked && els.micDeviceSelect.value !== "" ? Number(els.micDeviceSelect.value) : null,
       outputPath,
       audioDevice: els.audioDeviceInput.value.trim() !== "" ? Number(els.audioDeviceInput.value) : null,
-      silenceTimeoutMinutes: sessionSilenceMinutes,
+      silenceTimeoutMinutes: startMinutes,
     });
+    // Only now that the shell accepted the start: a refused start must leave
+    // the last meeting's chart, its "how it ended" note and the routing of any
+    // running engine's lines untouched (openspec/changes/fix-refused-start-routing).
+    // The engine cannot print before this resolves; it is still loading.
+    clearTranscript(els.transcriptLive);
+    currentFlow = "live";
+    sessionStartedAt = Date.now();
+    lastLineAt = Date.now();
+    lastActivityAt = null;
+    sawFirstLine = false;
+    silenceStopSeen = false;
+    endedMessage = "";
+    endedClean = false;
+    sessionSilenceMinutes = startMinutes;
     sessionRunning = true;
     appendLogMarker("transcription started");
     setLiveState("loaded");
   } catch (err) {
-    sessionRunning = false;
     showNote(`Could not start live capture: ${err}`);
-    setLiveState("idle");
+    renderRunState();
   } finally {
     els.startLiveBtn.disabled = false;
   }
@@ -1006,11 +1010,7 @@ async function startNextFile() {
   const next = fileQueue.some((f) => f.state === "transcribing")
     ? null
     : fileQueue.find((f) => f.state === "waiting");
-  if (next) {
-    next.state = "transcribing";
-    clearTranscript(els.transcriptFile);
-    currentFlow = "file";
-  }
+  if (next) next.state = "transcribing";
   renderFileQueue();
   if (!next) return;
   try {
@@ -1021,6 +1021,11 @@ async function startNextFile() {
       modelDir: chosenModelDir(),
       language: els.languageSelect.value || null,
     });
+    // Accepted: only now switch the chart and the routing, so a refused drop
+    // during a live session leaves that session's lines where they belong
+    // (openspec/changes/fix-refused-start-routing).
+    clearTranscript(els.transcriptFile);
+    currentFlow = "file";
   } catch (err) {
     showNote(`Could not transcribe ${next.name}: ${err}`);
     finishCurrentFile(false);
