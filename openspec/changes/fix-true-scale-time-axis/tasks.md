@@ -1,13 +1,20 @@
 ## 1. Engine tests first
 
-- [ ] 1.1 In `test_dual_capture.py`, add scenarios driving `_run_dual_capture` with the fake engine and `_feed`. Use a fixed `datetime.now` / `time` where needed, and `chunk_duration=2`, so chunk boundaries are deterministic:
+- [x] 1.1 In `test_dual_capture.py`, add scenarios driving `_run_dual_capture` with the fake engine and `_feed`. Use a fixed `datetime.now` / `time` where needed, and `chunk_duration=2`, so chunk boundaries are deterministic:
   - **Position:** relative stamps (`actual_time=False`) for three consecutive SYS chunks with a segment at `start=0.6` in each are `00:00.60`, `00:01.60` and `00:02.60`. Today they are `00:00.60`, `00:02.60` and `00:04.60`, because the offset counts the overlap.
   - **Skipped chunk:** a silent MIC chunk followed by an audible one stamps the audible chunk's segment after the silent chunk's time, not at the silent chunk's start.
   - **Speech time:** with `actual_time=True` and the clock frozen for the whole run, a segment at `start=1.2` in the second SYS chunk is stamped `stream_start + 1 s + 1.2 s`. Two segments of one chunk (`start=0.1` and `start=1.4`) get different stamps.
 
   Verify each scenario **fails** against today's `transcriber.py`, recording which assertions fail.
 
-- [ ] 1.2 Add a word-cut check with a fake engine that returns segments carrying `words`, calling `_process_audio_chunk` directly (in `test_resample.py` beside its existing `_process_audio_chunk` check, or a new root `test_chunk_words.py` if that reads better). For a 10 s chunk with 1 s overlap on both sides:
+  **Done 2026-09-15.** `_check_time_axis` is called from `main()`. Each section was run on its own against the unchanged engine, and each fails:
+  - **Position:** `00.60`, `02.60`, `04.60` (expected `00.60`, `01.60`, `02.60`).
+  - **Skipped chunk:** the MIC line is stamped `01.20` (expected `05.20`), since the silent 5 s chunk didn't advance the offset. It uses a paced fake mic stream that delivers a silent block, then an audible one.
+  - **Speech time:** four lines, all `12:00:00`, the frozen print time. Expected three: `11:59:59`, `12:00:00` and `12:00:01`. The fourth line is the overlap repeat.
+
+  Deviation: the speech-time section uses segments at 0.1 s and 1.4 s in each chunk, rather than one at 1.2 s in chunk 2. That one run covers both "distinct stamps within a chunk" and the second chunk's position.
+
+- [x] 1.2 Add a word-cut check with a fake engine that returns segments carrying `words`, calling `_process_audio_chunk` directly (in `test_resample.py` beside its existing `_process_audio_chunk` check, or a new root `test_chunk_words.py` if that reads better). For a 10 s chunk with 1 s overlap on both sides:
   - words starting at 0.3 s and 9.7 s are dropped;
   - words at 0.5 s and 9.4 s are kept;
   - a segment left with no words is dropped;
@@ -17,29 +24,55 @@
 
   Verify it fails against today's code.
 
-- [ ] 1.3 Measure word-timestamp cost. Run `TranscriptionEngine.transcribe_chunk` on 10 s chunks of `$TRANSCRIBER_TEST_SPEECH` with the bundled model, on CPU, with and without `word_timestamps=True`, and record the mean time per chunk for both under this task.
+  **Done 2026-09-15.** It's a new root `test_chunk_words.py` (the resample test is about resampling). Its fake segments carry `words`, and it checks:
+  - the leading 0.3 s word and the trailing 9.7 s word are dropped, while 0.5 s and 9.4 s are kept;
+  - a segment left empty is dropped;
+  - the first chunk keeps 0.1 s;
+  - a plain segment is kept or dropped by its start.
+
+  Against today's code it fails: `_process_audio_chunk` has no overlap cut, so the call is rejected (`unexpected keyword argument 'lead'`).
+
+- [x] 1.3 Measure word-timestamp cost. Run `TranscriptionEngine.transcribe_chunk` on 10 s chunks of `$TRANSCRIBER_TEST_SPEECH` with the bundled model, on CPU, with and without `word_timestamps=True`, and record the mean time per chunk for both under this task.
 
   Verify the slowdown is at most 25 %. If it's more, pause apply and report the numbers (design.md, Risks).
 
-- [ ] 1.4 In `tests/test_engine.py`, add a real-speech check, "live chunks do not repeat words". It runs only when a speech recording is set and no `--engine` binary is given, since it runs in-process:
+  **Done 2026-09-15.** 28.8 s recording, three 10 s chunks, bundled `base` model on CPU int8, `beam_size=3`, `vad_filter=True`, one warm-up, two rounds:
+  - **plain:** 1.458 and 1.600 s per chunk (mean 1.53 s);
+  - **with words:** 1.579 and 1.555 s per chunk (mean 1.57 s).
+
+  That's about +2.5 %, well within 25 %, and inference stays far below the 10 s chunk.
+
+- [x] 1.4 In `tests/test_engine.py`, add a real-speech check, "live chunks do not repeat words". It runs only when a speech recording is set and no `--engine` binary is given, since it runs in-process:
   - decode the recording to 16 kHz;
   - feed 10 s chunks with the 1 s overlap through `_process_audio_chunk`, the way `_drain_and_transcribe` cuts them;
   - join the lines, and assert (a) that word trigrams repeated within 12 words occur no more often than in the script, and (b) that the script's key words still reach `KEYWORD_THRESHOLD`.
 
   Verify it fails against today's chunking, or, if today's code happens to pass on this recording, record that and confirm it fails with the overlap cut disabled once 2.2 is in.
 
+  **Done 2026-09-15.** `check_live_chunks` runs as "live chunks do not repeat words". On today's code the recording's chunked transcript repeats "what you should do" and "will get it perfect", and the stamps run at 10 s and 20 s instead of 9 s and 18 s. The new call is also rejected outright (`lead`).
+
+  After 2.2 it passes. With the word filter mutated to keep every word, it fails with "a phrase repeats: … I will get it perfect. will get it perfect …". The file was restored afterwards and the filter confirmed present.
+
 ## 2. Engine fix
 
-- [ ] 2.1 `transcription_engine.py`: `transcribe_chunk` passes `word_timestamps=True` and adds `words: [(start, end, text)]` to each segment. File transcription stays unchanged.
+- [x] 2.1 `transcription_engine.py`: `transcribe_chunk` passes `word_timestamps=True` and adds `words: [(start, end, text)]` to each segment. File transcription stays unchanged.
 
   Verify `tests/test_engine.py`'s file speech check still passes.
 
-- [ ] 2.2 `transcriber.py`, per design.md Decisions 1–3:
+  **Done 2026-09-15.** `word_timestamps=True`, and each segment gains `words: [(start, end, word)]`. "speech sample transcribes" still passes.
+
+- [x] 2.2 `transcriber.py`, per design.md Decisions 1–3:
   - `_process_audio_chunk(engine, audio, chunk_start, language, sample_rate, lead, trail, stream_start=None)` returns `(results, spoke)`. It cuts words by `lead`/`trail`, and stamps with `_wall_clock_stamp(stream_start + ...)` when `stream_start` is set, or the relative range otherwise.
   - `_wall_clock_stamp` takes an optional datetime.
   - `_drain_and_transcribe` and `transcribe_live_simple` record `stream_start` from their first block, advance `position` by the new audio of every chunk before the gate and the `try`, and use the returned stamp instead of reading the clock at emit.
 
   Verify 1.1, 1.2 and 1.4 pass, and `test_resample.py`, `test_dual_capture.py` and `test_transcript_line_format.py` still pass.
+
+  **Done 2026-09-15.**
+  - **`_process_audio_chunk`:** now takes `chunk_start`, `lead`, `trail` and `stream_start`, and returns `(results, spoke)` with the stamp already formatted.
+  - **`_wall_clock_stamp(at=None)`**.
+  - **Both live paths:** keep `position` (new audio consumed) and `carried` (overlap the next chunk starts with). A chunk starts at `position - carried`, with `lead = carried / 2` and `trail = kept / 2`. `position` advances before the gate and the `try`. `stream_start` is read from the first block or callback, minus that block's length. `timedelta` is imported at module level.
+  - **Verified:** `test_chunk_words.py`, `test_dual_capture.py` (including the new time-axis section), `test_resample.py`, `test_transcript_line_format.py` and all three `tests/test_engine.py` checks pass.
 
 ## 3. GUI
 

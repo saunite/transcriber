@@ -75,6 +75,41 @@ def check_undecodable(engine, model_path, media=None):
         assert not output.exists(), "a transcript file was left behind"
 
 
+def repeated_trigrams(text, window=12):
+    """Word trigrams that recur within `window` words: a phrase said twice."""
+    w = re.findall(r"[a-z']+", text.lower())
+    grams = [tuple(w[i:i + 3]) for i in range(len(w) - 2)]
+    return sum(1 for i, g in enumerate(grams) if g in grams[max(0, i - window):i])
+
+
+def check_live_chunks(model_path, media, script):
+    """Cuts the recording as live capture does (10 s chunks, 1 s carried
+    overlap) and checks the overlap is not transcribed twice, while boundary
+    words still come through (openspec/changes/fix-true-scale-time-axis)."""
+    sys.path.insert(0, str(ROOT))
+    import transcriber
+    from faster_whisper import decode_audio
+    from transcription_engine import TranscriptionEngine
+
+    audio = decode_audio(str(media), sampling_rate=16000)
+    engine = TranscriptionEngine(model_path=str(model_path))
+    chunk, overlap = 10 * 16000, 16000
+    lines, position = [], 0.0
+    for start in range(0, len(audio) - chunk + 1, chunk - overlap):
+        results, _ = transcriber._process_audio_chunk(
+            engine, audio[start:start + chunk], position,
+            lead=overlap / 32000 if start else 0.0, trail=overlap / 32000)
+        lines += [seg["text"] for _, seg in results]
+        position += (chunk - overlap) / 16000
+    transcript = " ".join(lines)
+
+    said = script.read_text(encoding="utf-8")
+    assert repeated_trigrams(transcript) <= repeated_trigrams(said), f"a phrase repeats: {transcript}"
+    key = {w for w in words(said) if len(w) >= 5}
+    heard = key & words(transcript)
+    assert len(heard) / len(key) >= KEYWORD_THRESHOLD, f"missing key words {sorted(key - heard)}: {transcript}"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--engine", help="frozen engine binary (default: transcriber.py with this Python)")
@@ -100,6 +135,9 @@ def main() -> int:
         return 1
     else:
         checks.insert(0, ("speech sample transcribes", lambda: check_speech(engine, args.model_path, args.speech, script)))
+        if not args.engine:  # in-process: only when testing the source engine
+            checks.insert(1, ("live chunks do not repeat words",
+                              lambda: check_live_chunks(args.model_path, args.speech, script)))
 
     failures = 0
     for name, check in checks:

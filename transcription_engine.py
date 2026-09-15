@@ -208,16 +208,20 @@ class TranscriptionEngine:
             audio_chunk,
             language=language,
             beam_size=3,  # Lower for speed
-            vad_filter=True
+            vad_filter=True,
+            # Word times let the caller split the overlap between chunks by
+            # word; about 3 % slower on CPU (openspec/changes/fix-true-scale-time-axis).
+            word_timestamps=True
         )
-        
+
         # Convert to list
         segments = []
         for segment in segments_gen:
             segments.append({
                 'start': segment.start,
                 'end': segment.end,
-                'text': segment.text.strip()
+                'text': segment.text.strip(),
+                'words': [(w.start, w.end, w.word) for w in segment.words or []]
             })
         
         return segments

@@ -94,6 +94,84 @@ def _feed(blocks, then=KeyboardInterrupt, gap=0.0):
     return run_sys
 
 
+class _SegmentsEngine(_FakeEngine):
+    """Returns the same segments, at the given starts, for every chunk."""
+
+    def __init__(self, *starts):
+        super().__init__()
+        self.starts = starts
+
+    def transcribe_chunk(self, audio, language=None):
+        self.chunk_lengths.append(len(audio))
+        return [{"text": f"at {s}", "start": s, "end": s + 0.2} for s in self.starts]
+
+
+class _PacedMicStream(_FakeInputStream):
+    """Delivers a silent 5-second mic block, then an audible one, apart."""
+
+    def start(self):
+        def feed():
+            for level in (0.0, 0.5):
+                self.callback(np.full((5 * self.samplerate, 1), level, dtype=np.float32), 0, None, None)
+                time.sleep(0.3)
+        threading.Thread(target=feed, daemon=True).start()
+
+
+def _lines(out, tag):
+    return [line for line in out.splitlines() if f"[{tag}]" in line]
+
+
+def _check_time_axis(mic):
+    """Stamps are positions in the audio stream (openspec/changes/fix-true-scale-time-axis)."""
+    one_second = [np.zeros(16000, np.float32)] * 4  # 2 s chunks, so starts at 0, 1 and 2 s
+
+    # Position: the carried 1 s overlap is not counted twice.
+    code, out = _run(_SegmentsEngine(0.6), _args(None, chunk_duration=2, include_mic=False), title="T",
+                     mode_summary="T", sys_rate=lambda: 16000, run_sys=_feed(one_second, gap=0.12), mic=None)
+    assert code == 0, out
+    stamps = [line.split("]")[0] + "]" for line in _lines(out, "SYS")]
+    assert stamps == ["[00.60 -> 00.80]", "[01.60 -> 01.80]", "[02.60 -> 02.80]"], stamps
+
+    # Skipped chunk: a silent mic chunk still takes its time.
+    def idle(on_chunk, enqueue, check_silence):
+        time.sleep(1.5)
+        raise KeyboardInterrupt
+
+    global _FakeInputStream
+    real_stream, _FakeInputStream = _FakeInputStream, _PacedMicStream
+    try:
+        code, out = _run(_SegmentsEngine(1.2), _args(None), title="T", mode_summary="T",
+                         sys_rate=lambda: 16000, run_sys=idle, mic=mic)
+    finally:
+        _FakeInputStream = real_stream
+    assert code == 0, out
+    stamps = [line.split("]")[0] + "]" for line in _lines(out, "MIC")]
+    assert stamps == ["[05.20 -> 05.40]"], stamps
+
+    # Speech time: stream start plus position, whatever the clock reads when a
+    # line is printed. The clock is frozen at noon for the whole run, so the
+    # first 1 s block started at 11:59:59.
+    class Noon(transcriber.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 9, 15, 12, 0, 0)
+
+    real_datetime, transcriber.datetime = transcriber.datetime, Noon
+    try:
+        code, out = _run(_SegmentsEngine(0.1, 1.4), _args(None, chunk_duration=2, include_mic=False,
+                                                          actual_time=True),
+                         title="T", mode_summary="T", sys_rate=lambda: 16000,
+                         run_sys=_feed(one_second[:3], gap=0.12), mic=None)
+    finally:
+        transcriber.datetime = real_datetime
+    assert code == 0, out
+    stamps = [line.split("]")[0] + "]" for line in _lines(out, "SYS")]
+    # Chunk 1 (0-2 s) keeps both segments; chunk 2 (1-3 s) drops 0.1, which
+    # lies in the overlap chunk 1 already covered.
+    assert stamps == ["[2026-09-15 11:59:59]", "[2026-09-15 12:00:00]", "[2026-09-15 12:00:01]"], stamps
+    print("OK: time axis -- positions, skipped chunks, speech-time stamps")
+
+
 def main() -> None:
     mic = transcriber.MicConfig(device=3, channels=1, name="Fake Mic", rate=16000)
 
@@ -279,6 +357,8 @@ def main() -> None:
         pass
     handler(2, None)  # must return, not raise, now that a stop is under way
     transcriber._stop_requested = False
+
+    _check_time_axis(mic)
 
     # 4. The platform functions hand the runner the right pieces. The runner is
     #    replaced by a recorder, so no capture loop runs; the capture classes

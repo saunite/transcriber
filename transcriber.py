@@ -33,7 +33,7 @@ import argparse
 import multiprocessing
 import platform
 from collections import namedtuple
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 import av.error
@@ -557,17 +557,23 @@ def _resample(resampler, block, rate, flush=False):
 def _process_audio_chunk(
     engine,
     audio_data,
-    time_offset,
+    chunk_start,
     language=None,
-    sample_rate=16000
+    sample_rate=16000,
+    lead=0.0,
+    trail=0.0,
+    stream_start=None
 ):
-    """Resample to 16 kHz, transcribe a chunk, apply the running offset, format relative timestamps.
+    """Resample to 16 kHz, transcribe a chunk, and stamp each segment at its
+    position in the stream (openspec/changes/fix-true-scale-time-axis).
 
-    Returns (results, spoke, new_offset) where results is a list of
-    (timestamp_str, adjusted_segment) tuples and spoke is True if any
-    non-empty text was transcribed. timestamp_str is always the relative
-    [MM:SS -> MM:SS] range; callers substitute a live wall-clock stamp
-    (read from the system clock at emit time) when actual-time mode is on.
+    chunk_start is the chunk's position in seconds. Overlap shared with the
+    previous and next chunk is split at its midpoint: only words starting in
+    [lead, duration - trail) are kept, so each word is emitted by one chunk.
+    Returns (results, spoke): results is a list of (stamp, segment) and spoke
+    is True if any text was kept. The stamp is the local time the speech began
+    (stream_start plus position) when stream_start is given, else the
+    relative [MM:SS -> MM:SS] range.
     """
     import numpy as np
 
@@ -578,22 +584,22 @@ def _process_audio_chunk(
         # continuous stream would be fed the same audio twice.
         audio_data = _resample(_new_resampler(), audio_data, sample_rate, flush=True)
 
-    chunk_duration_sec = len(audio_data) / 16000
-    segments = engine.transcribe_chunk(audio_data, language=language)
-
+    until = len(audio_data) / 16000 - trail
     results = []
-    for seg in segments:
-        if not seg['text'].strip():
+    for seg in engine.transcribe_chunk(audio_data, language=language):
+        words = seg.get('words') or [(seg['start'], seg['end'], seg['text'])]
+        kept = [w for w in words if lead <= w[0] < until]
+        text = "".join(w[2] for w in kept).strip() if seg.get('words') else (seg['text'].strip() if kept else "")
+        if not text:
             continue
-        adjusted_start = seg['start'] + time_offset
-        adjusted_end = seg['end'] + time_offset
-        timestamp = engine.format_timestamp(adjusted_start, adjusted_end)
-        adjusted_seg = seg.copy()
-        adjusted_seg['start'] = adjusted_start
-        adjusted_seg['end'] = adjusted_end
-        results.append((timestamp, adjusted_seg))
+        start, end = chunk_start + kept[0][0], chunk_start + kept[-1][1]
+        if stream_start is None:
+            stamp = engine.format_timestamp(start, end)
+        else:
+            stamp = _wall_clock_stamp(stream_start + timedelta(seconds=start))
+        results.append((stamp, {**seg, 'start': start, 'end': end, 'text': text}))
 
-    return results, bool(results), time_offset + chunk_duration_sec
+    return results, bool(results)
 
 
 def _validate_live_capture_platform(args) -> Optional[str]:
@@ -695,9 +701,9 @@ def _resolve_mic_config(args) -> Optional[MicConfig]:
     return MicConfig(mic_device, channels, mic_info['name'], rate)
 
 
-def _wall_clock_stamp() -> str:
-    """Current local date/time, read fresh at the call site."""
-    return datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+def _wall_clock_stamp(at: Optional[datetime] = None) -> str:
+    """A local date/time stamp: `at`, or the clock read fresh at the call site."""
+    return (at or datetime.now()).strftime("[%Y-%m-%d %H:%M:%S]")
 
 
 def _print_header(model: str, language: Optional[str], chunk_duration: float, mode: str = "") -> None:
@@ -861,29 +867,38 @@ def _run_dual_capture(engine, args, *, title, mode_summary, sys_rate, run_sys, m
     def _drain_and_transcribe(q, buffer, threshold, tag, gate, transform):
         """Dedicated thread: drains an audio queue and runs inference."""
         nonlocal last_speech_time
-        time_offset = 0.0
+        position = 0.0  # seconds of new audio before the next chunk
+        carried = 0  # overlap samples the next chunk begins with
+        stream_start = None
 
         while not stop_event.is_set() or not q.empty():
             while not q.empty():
-                buffer.append(transform(q.get_nowait()))
+                block = transform(q.get_nowait())
+                if stream_start is None:
+                    # Idle until now, so this is when the block's audio ended.
+                    stream_start = datetime.now() - timedelta(seconds=len(block) / target_rate)
+                buffer.append(block)
 
             total = sum(len(c) for c in buffer)
             if total >= threshold:
                 data = np.concatenate(buffer)
-                if len(data) > overlap_samples:
-                    buffer[:] = [data[-overlap_samples:]]
-                else:
-                    buffer.clear()
+                kept = overlap_samples if len(data) > overlap_samples else 0
+                buffer[:] = [data[-kept:]] if kept else []
+                chunk_start, lead = position - carried / target_rate, carried / 2 / target_rate
+                # Every chunk takes its time, even one skipped or failed below.
+                position += (len(data) - carried) / target_rate
+                carried = kept
                 if not gate or np.max(np.abs(data)) > 0.01:
                     try:
-                        results, spoke, time_offset = _process_audio_chunk(
-                            engine, data, time_offset,
-                            language=args.language, sample_rate=target_rate
+                        results, spoke = _process_audio_chunk(
+                            engine, data, chunk_start,
+                            language=args.language, sample_rate=target_rate,
+                            lead=lead, trail=kept / 2 / target_rate,
+                            stream_start=stream_start if args.actual_time else None
                         )
                         if spoke:
                             last_speech_time = time.time()
-                        for ts, seg in results:
-                            stamp = _wall_clock_stamp() if args.actual_time else ts
+                        for stamp, seg in results:
                             _emit(f"{stamp} [{tag}] {seg['text']}")
                             all_segments.append(seg)
                     except Exception as e:
@@ -1006,7 +1021,9 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
     all_segments = []
     audio_buffer = []
     chunk_duration_samples = int(native_rate * args.chunk_duration)
-    time_offset = 0.0  # Track cumulative time offset
+    position = 0.0  # seconds of new audio before the next chunk
+    carried = 0  # overlap samples the next chunk begins with
+    stream_start = None
     last_speech_time = time.time()  # Track time of last detected speech
     silence_timeout_enabled = args.silence_timeout > 0
 
@@ -1023,7 +1040,9 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
     
     def audio_callback(audio_chunk):
         """Process incoming audio chunks."""
-        nonlocal time_offset, last_speech_time
+        nonlocal position, carried, stream_start, last_speech_time
+        if stream_start is None:
+            stream_start = datetime.now() - timedelta(seconds=len(audio_chunk) / native_rate)
 
         # Check for silence timeout
         if silence_timeout_enabled:
@@ -1043,24 +1062,28 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
             audio_buffer.clear()
             
             # Keep overlap for next chunk to prevent speech cutoff
-            if len(audio_data) > overlap_samples:
-                audio_buffer.append(audio_data[-overlap_samples:])
-            
+            kept = overlap_samples if len(audio_data) > overlap_samples else 0
+            if kept:
+                audio_buffer.append(audio_data[-kept:])
+            chunk_start, lead = position - carried / native_rate, carried / 2 / native_rate
+            position += (len(audio_data) - carried) / native_rate  # even if transcription fails
+            carried = kept
+
             # Transcribe
             try:
-                results, spoke, new_offset = _process_audio_chunk(
-                    engine, audio_data, time_offset,
-                    language=args.language, sample_rate=native_rate
+                results, spoke = _process_audio_chunk(
+                    engine, audio_data, chunk_start,
+                    language=args.language, sample_rate=native_rate,
+                    lead=lead, trail=kept / 2 / native_rate,
+                    stream_start=stream_start if args.actual_time else None
                 )
-                time_offset = new_offset
 
                 # Reset silence timer if speech was detected
                 if spoke:
                     last_speech_time = time.time()
 
                 # Print and save results
-                for timestamp, seg in results:
-                    stamp = _wall_clock_stamp() if args.actual_time else timestamp
+                for stamp, seg in results:
                     line = f"{stamp} {seg['text']}"
                     print(line)
                     all_segments.append(seg)
