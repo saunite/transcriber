@@ -6,13 +6,24 @@
 
 ## 2. Frontend
 
-- [ ] 2.1 Add the "Check for updates" button under Theme in `src/index.html`, and its handler in `src/main.js`: disable while checking, then a note for each of the four states. Extend `showNote` with an optional action, used for "Open download page" (Decision 4). Verify `node --check src/main.js`, and that the existing GUI tests still pass, including command drift and the policy scenarios.
-- [ ] 2.2 Add GUI scenarios to `tests/test_gui.py`, where the fake bridge answers `check_for_update` with each state:
+- [ ] 2.1 **Design the control and the result notes with the `impeccable` skill** (design.md Decision 4), operating on the `src-index-html` surface and following `.impeccable/surfaces/src-index-html.md` and `DESIGN.md`. The pass must settle:
+  - placement in the rail at both rail widths;
+  - the quiet-button treatment and its checking state;
+  - the note-with-action variant, resolving the click-to-dismiss conflict and keyboard access;
+  - the neutral (non-MIC-red) failure treatment, and plain-language copy for all four results.
+  Record its decisions and any placement change, with the reason, under this task. Verify:
+  - light and dark themes, at a normal window and at the 640×480 minimum, captured the way `.impeccable/review/*.png` were;
+  - "Start transcribing" is still the only filled control;
+  - no MIC red is used for the failure state.
+- [ ] 2.2 Implement the design from 2.1 in `src/index.html`, `src/style.css` and `src/main.js`: the button handler (disabled while checking, then a note for each of the four states) and `showNote`'s optional action invoking `open_releases_page`, with existing callers unchanged. Verify `node --check src/main.js`, and that the existing GUI tests still pass, including command drift and the content-security-policy scenarios, since no inline handlers or styles may be introduced.
+- [ ] 2.3 Add GUI scenarios to `tests/test_gui.py`, where the fake bridge answers `check_for_update` with each state:
   - **available:** the note shows "0.2.0 is available", and clicking its action invokes `open_releases_page`;
   - **up to date:** shows "You're up to date (0.1.0)";
   - **no release:** shows "No releases published yet";
   - **unavailable:** shows "Couldn't check for updates", and the button is enabled again afterwards.
   Also check that loading the page never invokes `check_for_update` by itself. Verify they pass, and that the no-automatic-check assertion fails if a check is temporarily triggered on page load.
+
+- [ ] 2.4 Finish the Impeccable pass: run its finish review of the built UI against the direction contract, and record the verdict and any fixes applied. Then update `DESIGN.md` (and `.impeccable/design.json` where a component or token changed) with the new rail control and the note-with-action variant. Verify `DESIGN.md` documents both, and the review verdict is recorded under this task.
 
 ## 3. Docs and licences
 

@@ -41,15 +41,23 @@ See proposal.md - Why. Facts, 2026-09-14:
 
 `#[tauri::command] fn open_releases_page(app)` calls `app.opener().open_url("https://github.com/saunite/transcriber/releases/latest", None::<&str>)` from `tauri-plugin-opener`, registered with `.plugin(tauri_plugin_opener::init())`. The URL is a constant, never taken from the API response. The page gets no `opener:` capability, so script in the window can't open anything itself. The repository slug is one Rust constant shared by both URLs.
 
-### 4. UI: a button and a note, with no new layout
+### 4. UI: designed through the Impeccable skill, within the existing design system
 
-A `<button id="check-updates-btn" class="…">Check for updates</button>` goes in its own `rail-field` under Theme, reusing an existing button style. On click it disables itself and shows "Checking…", then invokes `check_for_update` and reports the result through `showNote()`:
-- **up to date:** "You're up to date (0.1.0)";
-- **available:** "Transcriber 0.2.0 is available", with an **Open download page** control that invokes `open_releases_page`;
-- **no release:** "No releases published yet";
-- **unavailable:** "Couldn't check for updates. Check your connection and try again."
+This change adds a control and a new kind of note to the GUI, so the visual and interaction design is done with the **`impeccable` skill** against the project's existing design system, not with ad-hoc CSS. The maintainer asked for this on 2026-09-14. The inputs already exist:
+- `.impeccable/surfaces/src-index-html.md`: the chart-recorder direction contract, including its state vocabulary and "plain product language" rule;
+- `DESIGN.md` and `.impeccable/design.json`: tokens, components, and Do's and Don'ts.
 
-All text goes through `textContent`, as elsewhere. `showNote` currently takes plain text, so the "available" note needs a small extension: an optional action label and callback, added without changing existing callers.
+**What the pass has to settle, and constraints it must respect** (from `DESIGN.md`):
+- **Placement:** a control under Theme in the settings rail (`rail-field`). It has to fit the rail at both widths: 16.5rem, and 13.5rem below the 52rem breakpoint, down to the 640×480 minimum window.
+- **The button:** it's a secondary action, so it takes the **quiet button** treatment (`stock-raised`, `ink-soft`, bordered). "Start transcribing" stays the only filled control on the screen, and a "checking" state has to be visible without adding a badge.
+- **Result notes:** notes are "SYS-ink filled, stock text, slides in from the right, dismissible by click". **Conflict to resolve:** "update available" needs an **Open download page** action inside the note, and a click-to-dismiss note would swallow that click. The pass designs the note-with-action variant, meaning how the action is distinguished from dismissing and how it's reached by keyboard.
+- **Failure:** "Couldn't check for updates" maps onto an existing neutral or SYS treatment. It must **not** use MIC red, which is reserved for the MIC pen and the pen-lift fault, and `DESIGN.md` forbids a third accent colour.
+- **Copy:** plain product language for all four results.
+- **Themes:** light and dark are both verified; tokens are not reused across themes without a contrast check.
+
+**Wiring the implementation keeps regardless of the design:** the button invokes `check_for_update` and is disabled while a check runs. The result comes through the notes system, and every string goes in through `textContent`. The action invokes `open_releases_page`. `showNote` gains an optional action without changing existing callers. Everything must stay CSP-clean: no inline handlers or styles, which the GUI tests now enforce.
+
+If the pass concludes a different placement is better, for example beside the version, it records why, and that placement still has to satisfy the spec and the GUI tests.
 
 ### 5. Licences
 
@@ -61,4 +69,5 @@ Any licence in the new dependency tree beyond MIT/Apache-2.0 gets named in `THIR
 - **[Risk]** A tag that isn't semver, or doesn't match the app version → `Unavailable` rather than a wrong verdict. The release workflow already enforces that tags match the version.
 - **[Risk]** The live "update available" path can't be exercised against GitHub until a release is published. → `classify` is unit-tested with real GitHub response bodies. A manual check of the available path temporarily builds a debug app with an older version, or feeds `classify` a captured response.
 - **[Trade-off]** The README's "100% offline" becomes "offline unless you click Check for updates". That's honest, and it's what the maintainer chose.
+- **[Risk]** The note-with-action variant is a new pattern in the design system. If it isn't documented, the next change reinvents it. → The Impeccable pass ends by updating `DESIGN.md` (and `.impeccable/design.json` where tokens or components change), task 2.3.
 - **[Trade-off]** One more native dependency tree (TLS) in the Rust binary, about 1–2 MB, which is negligible next to the ~290 MB packages.
