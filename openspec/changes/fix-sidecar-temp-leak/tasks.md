@@ -72,5 +72,8 @@
 
 ## 5. Verification
 
-- [ ] 5.1 Run `.venv/bin/python run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set and a network that reaches GitHub. Verify it exits 0, and that `find /tmp -maxdepth 1 -name '_MEI*'` finds nothing new after the run, since the suite now uses its own `TMPDIR`.
+- [x] 5.1 Run `.venv/bin/python run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set and a network that reaches GitHub. Verify it exits 0, and that `find /tmp -maxdepth 1 -name '_MEI*'` finds nothing new after the run, since the suite now uses its own `TMPDIR`.
+
+  **Done 2026-09-15.** With `TRANSCRIBER_TEST_SPEECH` set and GitHub reachable: 13/13 suites passed, exit 0. `cargo test` took 24.9 s, including the 15 s grace in the process-tree test. `find /tmp -maxdepth 1 -name '_MEI*'` found 0 before and 0 after; the equivalent run before this change leaked 7.
+
 - [ ] 5.2 **User check on Linux** (`cargo tauri dev`): start a live session, speak for a bit, press Stop, and wait for "Not transcribing". Verify `find /tmp -maxdepth 1 -name '_MEI*'` finds nothing. Then quit the app during a session, reopen it, and verify the leftover copy is gone a few seconds after the window opens.
