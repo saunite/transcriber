@@ -97,6 +97,17 @@
             <select id="mic-device-select"></select>
           </label>
 
+          <!-- How long without speech ends a session by itself; 0 keeps it
+               running until Stop (openspec/changes/fix-engine-liveness). -->
+          <label class="rail-field">
+            <span class="rail-label">Stop after silence</span>
+            <span class="rail-input-unit">
+              <input id="silence-minutes-input" type="number" min="0" max="1440" step="1" value="10" />
+              <span class="rail-unit">min</span>
+            </span>
+            <span class="rail-hint">Ends the session after this long without speech. 0 keeps listening until you press Stop.</span>
+          </label>
+
           <label class="rail-field">
             <span class="rail-label">System audio device override</span>
             <input id="audio-device-input" type="number" min="0" step="1" placeholder="auto" />

@@ -59,19 +59,44 @@
 
 ## 3. Frontend
 
-- [ ] 3.1 **Design the silence setting with the `impeccable` skill** (Decision 5) on the `src-index-html` surface, following `DESIGN.md`. Settle:
+- [x] 3.1 **Design the silence setting with the `impeccable` skill** (Decision 5) on the `src-index-html` surface, following `DESIGN.md`. Settle:
   - placement (Live panel);
   - control type (number of minutes vs a select of common values) and how "never" is expressed;
   - the copy for the field, the "Listening — no speech right now" status, the silence-stop notice and the unexpected-end notice.
 
   Record the decisions under this task. Verify with light and dark screenshots at 900×640 and 640×480, with no overflow.
-- [ ] 3.2 Implement in `src/index.html`, `src/style.css` and `src/main.js`:
+
+  **Done 2026-09-15.** Impeccable, Operate mode, refining the rail with no new component.
+  - **Placement:** the Live panel, after Microphone device and before System audio device override, because it applies only to live sessions and the override stays the last, discouraged field.
+  - **Control:** "Stop after silence" as a number input with a `min` unit beside it, plus a hint: "Ends the session after this long without speech. 0 keeps listening until you press Stop." It mirrors the existing System audio device override (label, number, hint). A number, not a select of presets, because the user asked to *specify* the time. Off is 0, which the hint explains.
+  - **Status copy:** "Listening — no speech right now" once a line has arrived, and "no speech yet" before that. Silence stop: "Stopped after N minutes of silence. The transcript so far is saved." Unexpected end: "Transcription ended unexpectedly: <engine's last line>".
+  - **Stall detail:** rewritten as "The engine has reported nothing for Ns; it normally reports every 10s, speech or not. Check the engine log below, or stop and start again." This also removes the "raising and lowering the pens" copy (audit item D7).
+  - **CSS:** only `.rail-input-unit` and `.rail-unit`, using existing tokens.
+
+  **Verified** with Playwright under the app CSP and a simulated clock, in light and dark, at 900×640 and 640×480, with the field scrolled into view, in the quiet state (a line, then 60 s of heartbeats) and the stalled state (a line, then 36 s of nothing):
+  - labels read as intended;
+  - the stall detail shows only when stalled;
+  - no rail overflow, no CSP violations or script errors.
+
+- [x] 3.2 Implement in `src/index.html`, `src/style.css` and `src/main.js`:
   - the setting, stored under `transcriber-silence-minutes` (absent means 10), sent as `silenceTimeoutMinutes`;
   - `lastActivityAt` from lines and `sidecar-heartbeat`, `QUIET_MS = 2×` and `STALL_MS = 3×` chunk, and the `advancing → listening` return on quiet (Decision 4);
   - a `live-session-ended` handler with the silence-stop and unexpected-end notices, using the minutes the session was started with.
 
   Verify `node --check src/main.js`, and that the existing GUI tests pass after `test_exit_before_listening` moves from `sidecar-crashed` to `live-session-ended`.
-- [ ] 3.3 GUI scenarios in `tests/test_gui.py`, using Playwright's `page.clock` to advance time:
+
+  **Done 2026-09-15.**
+  - **`index.html`:** the `#silence-minutes-input` field.
+  - **`main.js`:**
+    - `silenceMinutes()` clamps to 0–1440, and `initSilenceMinutes()` stores under `transcriber-silence-minutes` with the theme's try/catch (absent means 10);
+    - `start_live_session` receives `silenceTimeoutMinutes`, captured in `sessionSilenceMinutes`;
+    - `lastActivityAt` is set by lines and by the new `sidecar-heartbeat` listener (`markHeartbeat`, which also leaves "starting");
+    - `tickInstrument` gives `penlift` past `STALL_MS` (30 s), `advancing` while a line is within `QUIET_MS` (20 s), and `listening` otherwise;
+    - `silenceStopSeen` is set from the engine log's "minutes of silence detected", because the stop summary follows it, so it can't be the last line;
+    - the `live-session-ended` handler shows the silence notice only for code 0 with `silenceStopSeen`, and the unexpected-end notice otherwise, replacing the `sidecar-crashed` listener.
+  - **Tests:** `test_exit_before_listening` now emits `live-session-ended {code: 1, lastLine}`. `node --check` passes, and all 13 GUI scenarios pass, including command drift and CSP. `grep sidecar-crashed` over `src`, `src-tauri/src` and `tests` finds nothing.
+
+- [x] 3.3 GUI scenarios in `tests/test_gui.py`, using Playwright's `page.clock` to advance time:
   - **quiet room:** after a line, heartbeats every 10 s for 3 minutes keep the status out of "stalled", and it reads the quiet label;
   - **stall:** after a line, no heartbeat or line for 31 s shows "stalled";
   - **silence stop:** `live-session-ended {code: 0, lastLine: "Auto-stop: 10.0 minutes of silence detected"}` shows the silence notice (no "unexpected" or error wording) and returns to idle;
@@ -80,6 +105,17 @@
   - **refusal:** a `start_live_session` rejection with the busy message is shown.
 
   Verify they pass. Also verify the quiet-room scenario fails if heartbeats are ignored (temporarily), and the silence-stop scenario fails if `code 0` is ignored.
+
+  **Done 2026-09-15.** `open_page(..., clock=True)` installs Playwright's clock. `test_engine_liveness` covers:
+  - **quiet room:** a line, then 18 heartbeats 10 s apart (3 simulated minutes); the status is never "stalled" and ends on "Listening — no speech right now";
+  - **stall:** then 31 s with nothing gives "stalled";
+  - **silence stop:** the log line "Auto-stop: 10.0 minutes of silence detected", then `live-session-ended {code: 0, lastLine: "Stopped — …"}`, shows "Stopped after 10 minutes of silence. The transcript so far is saved." with no unexpected/error/fail wording, and returns to idle;
+  - **unexpected ends:** `code 0` with the lost-source line, and `code 1`, each show "Transcription ended unexpectedly: <line>" and return to idle;
+  - **setting:** 10 by default and sent as `silenceTimeoutMinutes: 10`; 25 is remembered after a reload; 0 is sent as 0;
+  - **refusal:** the shell's busy message is shown.
+
+  Passes, and all 14 GUI scenarios pass. With heartbeats ignored, it failed with "a quiet room read as stalled". With code-0 ends ignored (the old behaviour), it failed at the silence notice.
+
 - [ ] 3.4 Finish the Impeccable pass: the `impeccable-finish-reviewer` agent reviews the built setting and status copy (not an inline self-review), material fixes are applied and re-screenshotted once, and the verdict is recorded. Run `detect.mjs` once on the changed files, noting if it ran degraded. Update `DESIGN.md`, and `.impeccable/design.json` if a component changed. Verify `DESIGN.md` describes the setting and the quiet and stall states.
 
 ## 4. Docs

@@ -394,6 +394,23 @@ select:focus-visible {
   gap: 0.25rem;
 }
 
+/* A number with its unit read as one value: "10 min". */
+.rail-input-unit {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.rail-input-unit input {
+  flex: 1;
+  min-width: 0;
+}
+
+.rail-unit {
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+}
+
 .rail-hint {
   font-size: 0.6875rem;
   line-height: 1.4;

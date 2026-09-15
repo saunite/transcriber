@@ -145,10 +145,12 @@ def serve_app(route):
     route.fulfill(status=200, body=file.read_bytes(), headers=headers)
 
 
-def open_page(browser, responses=None):
+def open_page(browser, responses=None, clock=False):
     page = browser.new_page()
     errors = []
     page.on("pageerror", lambda exc: errors.append(str(exc)))
+    if clock:  # page.clock.run_for() then advances timers and Date.now() on demand
+        page.clock.install()
     page.add_init_script(RECORD_CSP_VIOLATIONS)
     page.add_init_script(FAKE_BRIDGE)
     if responses:
@@ -237,7 +239,7 @@ def test_exit_before_listening(browser):
     wait_for_calls(page, "start_live_session", 1)
     for line in MODEL_LOADING:
         log(page, line)
-    page.evaluate("__fake.emit('sidecar-crashed', {message: 'No microphone found.'})")
+    page.evaluate("__fake.emit('live-session-ended', {code: 1, lastLine: 'No microphone found.'})")
     expect(page.locator("#note-root")).to_contain_text("No microphone found.")
     expect(page.locator(".pen-sys .pen-state, .pen-mic .pen-state")).to_have_text(["Idle", "Idle"])
     seen = page.evaluate("window.__penTexts")
@@ -409,6 +411,82 @@ def test_model_folder(browser):
     return page, errors
 
 
+def test_engine_liveness(browser):
+    """Quiet room vs stall, every self-ended session told apart, and the silence
+    setting (openspec/changes/fix-engine-liveness)."""
+    status = "#run-state-label"
+
+    def start(page, n=1):
+        page.click("#start-live-btn")
+        wait_for_calls(page, "start_live_session", n)
+        log(page, "Listening... (Ctrl+C to stop)")
+        page.evaluate("__fake.emit('transcript-line', {ts: '2026-09-15 10:00:00', tag: 'SYS', text: 'hello'})")
+
+    # Quiet room: heartbeats keep coming, no speech -> listening, never stalled.
+    page, errors = open_page(browser, clock=True)
+    start(page)
+    for _ in range(18):  # three minutes
+        page.clock.run_for(10_000)
+        page.evaluate("__fake.emit('sidecar-heartbeat', {tag: 'SYS'})")
+        assert "stalled" not in page.text_content(status), f"a quiet room read as stalled: {page.text_content(status)}"
+    expect(page.locator(status)).to_have_text("Listening — no speech right now")
+
+    # Stall: nothing at all for 31 s.
+    page.clock.run_for(31_000)
+    expect(page.locator(status)).to_contain_text("stalled")
+    page.close()
+    assert not errors, errors
+
+    # Silence stop: a clean end, told as information.
+    page, errors = open_page(browser, clock=True)
+    start(page)
+    log(page, "Auto-stop: 10.0 minutes of silence detected")
+    page.evaluate("__fake.emit('live-session-ended', {code: 0, lastLine: 'Stopped — 1 segment saved to /tmp/t.txt'})")
+    note = page.locator("#note-root")
+    expect(note).to_contain_text("Stopped after 10 minutes of silence. The transcript so far is saved.")
+    assert not re.search(r"unexpected|error|fail", note.text_content(), re.I), note.text_content()
+    expect(page.locator(status)).to_have_text("Not transcribing")
+
+    # Unexpected ends: a lost source (code 0 without a silence stop) and a crash.
+    for n, (code, line) in enumerate([(0, "❌ System audio capture ended unexpectedly"), (1, "Traceback: boom")], start=2):
+        page.evaluate("document.getElementById('note-root').replaceChildren()")
+        start(page, n)
+        page.evaluate("([code, line]) => __fake.emit('live-session-ended', {code, lastLine: line})", [code, line])
+        expect(note).to_contain_text(f"Transcription ended unexpectedly: {line}")
+        expect(page.locator(status)).to_have_text("Not transcribing")
+    page.close()
+    assert not errors, errors
+
+    # Setting: default 10, a change is sent and remembered, 0 means never.
+    page, errors = open_page(browser)
+    field = page.locator("#silence-minutes-input")
+    expect(field).to_have_value("10")
+    page.click("#start-live-btn")
+    wait_for_calls(page, "start_live_session", 1)
+    assert calls(page, "start_live_session")[0]["args"]["silenceTimeoutMinutes"] == 10
+    page.click("#stop-btn")
+    wait_for_calls(page, "stop_live_session", 1)
+    field.fill("25")
+    field.dispatch_event("change")
+    page.reload()
+    wait_for_calls(page, "list_devices", 1)
+    expect(field).to_have_value("25")
+    field.fill("0")
+    field.dispatch_event("change")
+    page.click("#start-live-btn")
+    wait_for_calls(page, "start_live_session", 1)
+    assert calls(page, "start_live_session")[0]["args"]["silenceTimeoutMinutes"] == 0
+    page.close()
+    assert not errors, errors
+
+    # Refusal: the shell's busy message reaches the user.
+    busy = "A file transcription is still running. Wait for it to finish before starting a live session."
+    page, errors = open_page(browser, {"start_live_session": {"reject": busy}})
+    page.click("#start-live-btn")
+    expect(page.locator("#note-root")).to_contain_text(busy)
+    return page, errors
+
+
 def test_update_check(browser):
     """Each answer of check_for_update shows its result next to the button, and
     nothing checks by itself (openspec/changes/add-manual-update-check)."""
@@ -477,6 +555,7 @@ def main() -> int:
         report("update check", test_update_check, browser)
         report("chart search count", test_chart_search_count, browser)
         report("model folder", test_model_folder, browser)
+        report("engine liveness", test_engine_liveness, browser)
         browser.close()
     return 1 if failures else 0
 

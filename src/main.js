@@ -19,6 +19,7 @@ const els = {
   outputPathInput: document.getElementById("output-path-input"),
   outputBrowseBtn: document.getElementById("output-browse-btn"),
   audioDeviceInput: document.getElementById("audio-device-input"),
+  silenceMinutesInput: document.getElementById("silence-minutes-input"),
   tabLive: document.getElementById("tab-live"),
   tabFile: document.getElementById("tab-file"),
   panelLive: document.getElementById("panel-live"),
@@ -63,7 +64,39 @@ const els = {
 // The GUI always passes --chunk-duration 10, so "output is overdue" is a
 // known constant here rather than a new backend signal.
 const CHUNK_SECONDS = 10;
-const STALL_MS = CHUNK_SECONDS * 2 * 1000;
+// A heartbeat (a chunk went through the engine, speech or not) or a line is
+// activity. No line for QUIET_MS but heartbeats still coming is a quiet room;
+// no activity at all for STALL_MS is a stall -- 3x a chunk, so slow CPU
+// inference on one chunk is not mistaken for one
+// (openspec/changes/fix-engine-liveness).
+const QUIET_MS = CHUNK_SECONDS * 2 * 1000;
+const STALL_MS = CHUNK_SECONDS * 3 * 1000;
+
+// ---- Stop after silence -----------------------------------------------------
+
+const SILENCE_MINUTES_KEY = "transcriber-silence-minutes";
+const DEFAULT_SILENCE_MINUTES = 10;
+
+function silenceMinutes() {
+  const value = Math.floor(Number(els.silenceMinutesInput.value));
+  return Number.isFinite(value) && value >= 0 ? Math.min(value, 1440) : DEFAULT_SILENCE_MINUTES;
+}
+
+function initSilenceMinutes() {
+  let stored = null;
+  try {
+    stored = localStorage.getItem(SILENCE_MINUTES_KEY);
+  } catch (e) {}
+  els.silenceMinutesInput.value = String(stored !== null && stored !== "" ? stored : DEFAULT_SILENCE_MINUTES);
+  els.silenceMinutesInput.value = String(silenceMinutes());
+  els.silenceMinutesInput.addEventListener("change", () => {
+    els.silenceMinutesInput.value = String(silenceMinutes());
+    try {
+      localStorage.setItem(SILENCE_MINUTES_KEY, els.silenceMinutesInput.value);
+    } catch (e) {}
+  });
+}
+initSilenceMinutes();
 
 // ---- Theme ------------------------------------------------------------
 
@@ -715,7 +748,12 @@ let liveState = "idle";
 let currentFlow = null; // "live" | "file" | null
 let sessionStartedAt = null;
 let lastLineAt = null;
+let lastActivityAt = null;
 let sawFirstLine = false;
+// The engine said it stopped on the silence limit, and with which setting the
+// session was started -- the notice names the user's own number.
+let silenceStopSeen = false;
+let sessionSilenceMinutes = DEFAULT_SILENCE_MINUTES;
 let stallTimer = null;
 // Whether a live session is *supposed* to be running right now. Distinct from
 // liveState, which is what the panel is displaying.
@@ -728,6 +766,7 @@ const STATE_LABEL = {
   idle: "Not transcribing",
   loaded: "Starting — waiting for the engine",
   listening: "Listening — no speech yet",
+  quiet: "Listening — no speech right now",
   advancing: "Transcribing",
   penlift: "Transcribing stalled — no output",
   stopping: "Stopping",
@@ -736,7 +775,9 @@ const STATE_LABEL = {
 function renderRunState() {
   const shown = liveState === "penlift" ? "penlift" : liveState;
   els.runState.dataset.state = shown;
-  els.runStateLabel.textContent = STATE_LABEL[shown] ?? shown;
+  // A quiet room after speech is still listening, not "no speech yet".
+  const label = shown === "listening" && sawFirstLine ? "quiet" : shown;
+  els.runStateLabel.textContent = STATE_LABEL[label] ?? shown;
 
   // The pens report what is being captured right now. The include-mic
   // checkbox next to MIC still expresses intent for the next session, which
@@ -750,11 +791,11 @@ function renderRunState() {
   els.startLiveBtn.hidden = liveState !== "idle";
 
   if (liveState === "penlift") {
-    const silent = lastLineAt ? Math.round((Date.now() - lastLineAt) / 1000) : 0;
+    const silent = lastActivityAt ? Math.round((Date.now() - lastActivityAt) / 1000) : 0;
     els.runDetail.hidden = false;
     els.runDetail.textContent =
-      `No transcript output for ${silent}s — the engine should produce a chunk every ${CHUNK_SECONDS}s. ` +
-      `Check the engine log below; raising and lowering the pens restarts capture.`;
+      `The engine has reported nothing for ${silent}s; it normally reports every ${CHUNK_SECONDS}s, speech or not. ` +
+      `Check the engine log below, or stop and start again.`;
   } else {
     els.runDetail.hidden = true;
     els.runDetail.textContent = "";
@@ -772,31 +813,42 @@ function setLiveState(next) {
   if (next === "idle") {
     sessionStartedAt = null;
     lastLineAt = null;
+    lastActivityAt = null;
     sawFirstLine = false;
+    silenceStopSeen = false;
   }
   renderRunState();
 }
 
-// The stall check: a frontend timer against the known chunk duration, not a
-// new backend signal. Only meaningful once at least one chunk has arrived —
-// before that the engine is still loading its model, which is not a stall.
+// The engine reports every chunk (--heartbeat), so the instrument can tell a
+// quiet room from a stall: only meaningful once the engine has shown activity
+// -- before that it is still loading its model, which is not a stall.
 function tickInstrument() {
   if (liveState === "idle") return;
 
-  if (sawFirstLine && (liveState === "advancing" || liveState === "penlift")) {
-    const overdue = Date.now() - lastLineAt > STALL_MS;
-    const next = overdue ? "penlift" : "advancing";
-    if (next !== liveState) {
-      liveState = next;
-    }
+  if (lastActivityAt && ["listening", "advancing", "penlift"].includes(liveState)) {
+    const now = Date.now();
+    let next = "listening";
+    if (now - lastActivityAt > STALL_MS) next = "penlift";
+    else if (lastLineAt && now - lastLineAt <= QUIET_MS) next = "advancing";
+    if (next !== liveState) liveState = next;
   }
   renderRunState();
 }
 
 stallTimer = setInterval(tickInstrument, 1000);
 
+function markHeartbeat() {
+  lastActivityAt = Date.now();
+  if (!sessionRunning) return;
+  // Proof the engine is capturing: leave "starting", or recover from a stall.
+  if (liveState === "loaded") liveState = "listening";
+  tickInstrument();
+}
+
 function markLineArrived() {
   lastLineAt = Date.now();
+  lastActivityAt = lastLineAt;
   sawFirstLine = true;
   // A chunk arriving while a session is supposed to be running is proof it is
   // alive, and outranks a stale display state. Gated on sessionRunning so
@@ -815,7 +867,10 @@ async function startLiveSession() {
   currentFlow = "live";
   sessionStartedAt = Date.now();
   lastLineAt = Date.now();
+  lastActivityAt = null;
   sawFirstLine = false;
+  silenceStopSeen = false;
+  sessionSilenceMinutes = silenceMinutes();
   // A bare name (no folder) is saved in the default folder too, not in the
   // engine's working directory (openspec/changes/fix-gui-transcript-location).
   let chosenPath = els.outputPathInput.value.trim() || "transcript.txt";
@@ -831,6 +886,7 @@ async function startLiveSession() {
       micDevice: els.includeMicCheckbox.checked && els.micDeviceSelect.value !== "" ? Number(els.micDeviceSelect.value) : null,
       outputPath,
       audioDevice: els.audioDeviceInput.value.trim() !== "" ? Number(els.audioDeviceInput.value) : null,
+      silenceTimeoutMinutes: sessionSilenceMinutes,
     });
     sessionRunning = true;
     appendLogMarker("transcription started");
@@ -1029,14 +1085,34 @@ listen("sidecar-log", (event) => {
   if (currentFlow !== "file" && liveState === "loaded" && event.payload.line.includes("Listening...")) {
     setLiveState("listening");
   }
+  // Both live paths print "... minutes of silence detected" when the silence
+  // limit ends the session; the stop summary follows it, so it is noted here
+  // rather than read from the last line.
+  if (currentFlow !== "file" && event.payload.line.includes("minutes of silence detected")) {
+    silenceStopSeen = true;
+  }
   appendDebugLine(event.payload.line);
 });
 
-listen("sidecar-crashed", (event) => {
+listen("sidecar-heartbeat", () => {
+  if (currentFlow !== "file") markHeartbeat();
+});
+
+// The engine ended a live session the user did not stop. A silence stop is a
+// clean end and reads as information; anything else is an error with the
+// engine's last line (openspec/changes/fix-engine-liveness).
+listen("live-session-ended", (event) => {
+  const { code, lastLine } = event.payload;
+  const silence = code === 0 && silenceStopSeen;
   sessionRunning = false;
-  appendLogMarker("engine exited unexpectedly");
+  appendLogMarker(silence ? "stopped after silence" : "engine ended the session");
+  const minutes = sessionSilenceMinutes;
   setLiveState("idle");
-  showNote(event.payload.message);
+  showNote(
+    silence
+      ? `Stopped after ${minutes} minute${minutes === 1 ? "" : "s"} of silence. The transcript so far is saved.`
+      : `Transcription ended unexpectedly: ${lastLine || `the engine exited with code ${code ?? "unknown"}`}`,
+  );
 });
 
 listen("file-transcription-complete", (event) => {
