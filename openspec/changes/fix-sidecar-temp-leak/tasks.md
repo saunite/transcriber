@@ -10,8 +10,11 @@
 
 ## 2. Marker and cleanup
 
-- [ ] 2.1 Add `resources/transcriber-sidecar.marker` (one line naming what it is for) to `transcriber-sidecar.spec`'s `datas` at the bundle root (Decision 2). Rebuild with `build_sidecar.py` and stage it. Verify an unpacked copy of the rebuilt sidecar contains `transcriber-sidecar.marker`, by listing the `_MEI*` folder while a `--file` run is in progress.
-- [ ] 2.2 In `sidecar.rs`, add:
+- [x] 2.1 Add `resources/transcriber-sidecar.marker` (one line naming what it is for) to `transcriber-sidecar.spec`'s `datas` at the bundle root (Decision 2). Rebuild with `build_sidecar.py` and stage it. Verify an unpacked copy of the rebuilt sidecar contains `transcriber-sidecar.marker`, by listing the `_MEI*` folder while a `--file` run is in progress.
+
+  **Done 2026-09-15.** `resources/transcriber-sidecar.marker` (one line) is added to the spec's `datas` at `"."`. Rebuilt with `build_sidecar.py` (exit 0) and copied to `src-tauri/binaries/`. During a `--file` run with `TMPDIR` pointed at a scratch folder, `_MEI000ba0e7VlOIPp/transcriber-sidecar.marker` existed with that line, and the folder was gone after the run exited.
+
+- [x] 2.2 In `sidecar.rs`, add:
   - `stale_extraction_dirs(dir, is_alive)`, which selects directories named `^_MEI[0-9a-f]{8}` containing the marker whose PID isn't alive;
   - `remove_stale_extractions(dir)`, which removes them with `remove_dir_all`, skipping errors, and prints the count to stderr;
   - the per-OS `is_alive`: `pid_alive` on Unix, and on Windows `tasklist` with `CREATE_NO_WINDOW` that counts as alive when `tasklist` fails (Decision 3).
@@ -22,7 +25,22 @@
   - the PID is parsed from the 8 hex digits (`_MEI000b7664m8XSeA` → 751204).
 
   Verify `cargo test` passes.
-- [ ] 2.3 Call the cleanup once from `main.rs` `.setup(...)` on `tauri::async_runtime::spawn_blocking`, with `std::env::temp_dir()` (Decision 4). Verify `cargo build` has no warnings. Verify it by hand: create a marked `_MEI` folder named after a dead PID in `/tmp`, start the debug app, and check it's gone while the window opened at once.
+
+  **Done 2026-09-15.** In `sidecar.rs`:
+  - `EXTRACTION_MARKER`;
+  - `stale_extraction_dirs(dir, is_alive)`: the name must be `_MEI` + 8 ASCII hex digits parsed as the PID, the entry must be a directory, it must contain the marker, and `!is_alive(pid)`;
+  - `extraction_owner_alive(pid)`: `pid_alive` on Unix; on Windows `tasklist /FI "PID eq n" /NH /FO CSV` with `CREATE_NO_WINDOW`, looking for `"<pid>"`, and alive if `tasklist` fails;
+  - `remove_stale_extractions(dir)`, which removes with `remove_dir_all`, skips errors, and prints the count to stderr.
+
+  `only_this_sidecars_dead_copies_are_stale` selects only the dead marked `_MEI000b7664m8XSeA` (PID 751204). It keeps a live marked folder (PID 2), a dead unmarked one, `_MEIzzzzzzzz…`, a non-`_MEI` folder, and a `_MEI…` *file*. `cargo test` passes. The Windows branch isn't compiled here, since no Windows target is installed on this machine; the release workflow's Windows build compiles it.
+
+- [x] 2.3 Call the cleanup once from `main.rs` `.setup(...)` on `tauri::async_runtime::spawn_blocking`, with `std::env::temp_dir()` (Decision 4). Verify `cargo build` has no warnings. Verify it by hand: create a marked `_MEI` folder named after a dead PID in `/tmp`, start the debug app, and check it's gone while the window opened at once.
+
+  **Done 2026-09-15.** `main.rs` `.setup(...)` runs `remove_stale_extractions(&std::env::temp_dir())` on `spawn_blocking`. `cargo build` has no warnings. Checked by hand in the real `/tmp`, with the debug app:
+  - a marked `_MEI<dead pid>manualtest` folder was removed 0.4 s after launch, while the window opened;
+  - the unmarked `_MEI<dead pid>unmarked` was kept;
+  - stderr printed "Removed 1 leftover sidecar copies from /tmp";
+  - no other `_MEI*` folder remained afterwards.
 
 ## 3. End-to-end
 

@@ -47,7 +47,12 @@ a = Analysis(
     [str(Path(SPECPATH) / "transcriber.py")],
     pathex=[],
     binaries=_BINARIES,
-    datas=[(_faster_whisper_assets_dir(), "faster_whisper/assets")],
+    datas=[
+        (_faster_whisper_assets_dir(), "faster_whisper/assets"),
+        # Proves an unpacked _MEI* folder is this sidecar's, so the app can
+        # remove copies a killed engine left behind (openspec/changes/fix-sidecar-temp-leak).
+        (str(Path(SPECPATH) / "resources" / "transcriber-sidecar.marker"), "."),
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

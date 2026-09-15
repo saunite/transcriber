@@ -1,0 +1,1 @@
+Marks an unpacked copy of Transcriber's sidecar, so the app can safely remove copies left behind by a killed engine (openspec/changes/fix-sidecar-temp-leak).

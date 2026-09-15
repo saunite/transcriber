@@ -171,6 +171,29 @@ mod tests {
         assert!(took < std::time::Duration::from_secs(10), "the wait did not end when the engine exited: {took:?}");
     }
 
+    #[test]
+    fn only_this_sidecars_dead_copies_are_stale() {
+        let dir = scratch_dir("extractions");
+        let make = |name: &str, marker: bool| {
+            let path = dir.join(name);
+            std::fs::create_dir_all(&path).unwrap();
+            if marker {
+                std::fs::write(path.join(super::EXTRACTION_MARKER), "x").unwrap();
+            }
+            path
+        };
+        let dead = make("_MEI000b7664m8XSeA", true); // pid 751204
+        make("_MEI00000002abcdef", true); // pid 2, alive
+        make("_MEI000b7665unmarked", false); // dead, but not ours
+        make("_MEIzzzzzzzznotapid", true); // not a pid
+        make("otherfolder", true);
+        std::fs::write(dir.join("_MEI00000003file"), "x").unwrap(); // a file, not a folder
+        let alive = |pid: u32| pid == 2;
+        assert_eq!(stale_extraction_dirs(&dir, alive), vec![dead.clone()]);
+        assert_eq!(u32::from_str_radix("000b7664", 16).unwrap(), 751204);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     #[cfg(not(windows))]
     #[test]
     fn pid_alive_distinguishes_live_from_dead() {
@@ -187,7 +210,7 @@ mod tests {
 
     use super::{
         build_file_args, build_live_session_args, engine_busy, heartbeat_tag, on_terminated, select_model_dir,
-        strip_extended_length_prefix, RunEnded, SidecarManager,
+        stale_extraction_dirs, strip_extended_length_prefix, RunEnded, SidecarManager,
     };
     // cfg-gated to match the helpers themselves, which only exist off Windows.
     #[cfg(not(windows))]
@@ -982,6 +1005,66 @@ fn stop_result_line(survivors: &[u32]) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         )
+    }
+}
+
+/// The file `transcriber-sidecar.spec` bundles at the root of every unpacked
+/// copy, so a `_MEI*` folder is provably this sidecar's before it is removed.
+const EXTRACTION_MARKER: &str = "transcriber-sidecar.marker";
+
+/// PyInstaller's one-file bootloader unpacks into `_MEI<pid as 8 hex><random>`
+/// and deletes that folder when the engine exits by itself -- but not after a
+/// SIGKILL, an app quit mid-session or a crash (openspec/changes/fix-sidecar-temp-leak).
+/// Returns this sidecar's leftover copies in `dir`: named `_MEI` + 8 hex
+/// digits, holding the marker, and whose bootloader process is not alive.
+fn stale_extraction_dirs(dir: &std::path::Path, is_alive: impl Fn(u32) -> bool) -> Vec<std::path::PathBuf> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let hex = name.strip_prefix("_MEI")?.get(..8)?;
+            let pid = u32::from_str_radix(hex, 16).ok().filter(|_| hex.bytes().all(|b| b.is_ascii_hexdigit()))?;
+            let path = entry.path();
+            (path.is_dir() && path.join(EXTRACTION_MARKER).is_file() && !is_alive(pid)).then_some(path)
+        })
+        .collect()
+}
+
+/// Whether a leftover copy's bootloader still runs. Uncertainty counts as
+/// alive: a copy is only ever removed when its process is provably gone.
+fn extraction_owner_alive(pid: u32) -> bool {
+    #[cfg(not(windows))]
+    {
+        pid_alive(pid)
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        match std::process::Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+        {
+            Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).contains(&format!("\"{pid}\"")),
+            _ => true,
+        }
+    }
+}
+
+/// Removes this sidecar's leftover unpacked copies from `dir`; run once at app
+/// start, off the UI thread. Errors are skipped: a folder that cannot be
+/// removed now is tried again next start.
+pub fn remove_stale_extractions(dir: &std::path::Path) {
+    let removed = stale_extraction_dirs(dir, extraction_owner_alive)
+        .into_iter()
+        .filter(|path| std::fs::remove_dir_all(path).is_ok())
+        .count();
+    if removed > 0 {
+        eprintln!("Removed {removed} leftover sidecar copies from {}", dir.display());
     }
 }
 

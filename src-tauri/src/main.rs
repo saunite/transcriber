@@ -31,6 +31,13 @@ fn main() {
         .manage(AppState {
             sidecar: Mutex::new(SidecarManager::new()),
         })
+        // Leftover unpacked engine copies from killed runs, removed in the
+        // background so the window still opens at once
+        // (openspec/changes/fix-sidecar-temp-leak).
+        .setup(|_app| {
+            tauri::async_runtime::spawn_blocking(|| sidecar::remove_stale_extractions(&std::env::temp_dir()));
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_platform,
             sidecar::start_live_session,
