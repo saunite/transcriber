@@ -37,8 +37,9 @@ None.
 - **`src-tauri/src/sidecar.rs`:** both start commands take an optional `model_dir` instead of `model`, with a pure, unit-tested folder check. The page's call arguments change.
 - **`src/index.html`, `src/style.css`, `src/main.js`:** the title-block Model field is redesigned through the Impeccable skill, since it changes the GUI layout. `DESIGN.md` is updated.
 - **`transcriber.py`:** `--model` defaults to unset, so an explicit value can be told apart. The model label is derived once and used by the three output sites.
-- **Tests:** (end-to-end scenarios in `tests/test_e2e_linux.py` too, see design.md Decision 6)
+- **Tests:**
   - `cargo test` for the folder check and argument building;
   - GUI scenarios for pick, remember, reset and refusal;
-  - a CLI unit test for the label.
+  - a CLI unit test for the label;
+  - end-to-end scenarios in `tests/test_e2e_linux.py` for the remembered choice, the refusal and the folder actually used (design.md Decision 6).
 - **Unchanged:** no new dependencies, and no network use. The offline first run and the bundled model are unchanged.
