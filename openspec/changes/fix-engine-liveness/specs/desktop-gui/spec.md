@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: On-demand sidecar lifecycle with crash recovery
-The system SHALL spawn the bundled Python sidecar only when the user starts a live session or submits a file, SHALL stop it cleanly on user request or app quit, and SHALL detect unexpected sidecar exit and surface an error instead of leaving the UI in a stuck state. An exit of a live session's engine that the user did not request SHALL be treated as unexpected whatever its exit code, and the user SHALL be told the session ended. Stopping SHALL terminate every process the sidecar launch created, including any process the frozen binary re-executes into, since that descendant is what holds the audio device. The system SHALL NOT begin a file transcription while a live session's engine is still running, and SHALL NOT begin a live session while a live session's engine or a file transcription's engine is still running. The exit of an earlier session's engine SHALL NOT affect a session started after it.
+The system SHALL spawn the bundled Python sidecar only when the user starts a live session or submits a file, SHALL stop it cleanly on user request or app quit, and SHALL detect unexpected sidecar exit and surface an error instead of leaving the UI in a stuck state. An exit of a live session's engine that the user did not request SHALL be treated as unexpected whatever its exit code, except a stop at the configured silence limit, which is an expected, clean end the user SHALL be informed of rather than warned about (see "Live sessions stop after a configurable silence"). Stopping SHALL terminate every process the sidecar launch created, including any process the frozen binary re-executes into, since that descendant is what holds the audio device. The system SHALL NOT begin a file transcription while a live session's engine is still running, and SHALL NOT begin a live session while a live session's engine or a file transcription's engine is still running. The exit of an earlier session's engine SHALL NOT affect a session started after it.
 
 #### Scenario: Start live capture
 - **WHEN** a user starts a live capture session
@@ -57,7 +57,7 @@ During a live session, the system SHALL visually distinguish "capturing normally
 ## ADDED Requirements
 
 ### Requirement: Live sessions stop after a configurable silence
-The system SHALL let the user set how many minutes without detected speech end a live session, defaulting to 10 minutes, with a value that turns the automatic stop off. The setting SHALL be remembered across application restarts and SHALL apply to live sessions started after it changes. When a session ends because of this limit, the system SHALL tell the user it stopped after that much silence and SHALL return the UI to idle state.
+The system SHALL let the user set how many minutes without detected speech end a live session, defaulting to 10 minutes, with a value that turns the automatic stop off. The setting SHALL be remembered across application restarts and SHALL apply to live sessions started after it changes. A stop at this limit is a clean end of the session, not an error: the engine SHALL exit successfully, the system SHALL NOT present it as a failure, and SHALL tell the user plainly that it stopped after that much silence before returning the UI to idle state.
 
 #### Scenario: Default limit
 - **WHEN** a user starts a live session without having changed the setting
@@ -77,4 +77,4 @@ The system SHALL let the user set how many minutes without detected speech end a
 
 #### Scenario: User is told about a silence stop
 - **WHEN** a live session stops because the silence limit was reached
-- **THEN** the user is told the session stopped after that many minutes of silence, the interface returns to idle, and the transcript saved so far is kept
+- **THEN** the user is told, as information and not as an error, that the session stopped after that many minutes of silence; the interface returns to idle, and the transcript saved so far is kept

@@ -39,7 +39,7 @@
 - [ ] 3.3 GUI scenarios in `tests/test_gui.py`, using Playwright's `page.clock` to advance time:
   - **quiet room:** after a line, heartbeats every 10 s for 3 minutes keep the status out of "stalled", and it reads the quiet label;
   - **stall:** after a line, no heartbeat or line for 31 s shows "stalled";
-  - **silence stop:** `live-session-ended {code: 0, lastLine: "Auto-stop: 10.0 minutes of silence detected"}` shows the silence notice and returns to idle;
+  - **silence stop:** `live-session-ended {code: 0, lastLine: "Auto-stop: 10.0 minutes of silence detected"}` shows the silence notice (no "unexpected" or error wording) and returns to idle;
   - **unexpected end:** `{code: 0, lastLine: "❌ System audio capture ended unexpectedly"}` and a non-zero code both show the unexpected-end notice with the line;
   - **setting:** the default sends 10, a changed value is sent, it persists across a reload, and "never" sends 0;
   - **refusal:** a `start_live_session` rejection with the busy message is shown.

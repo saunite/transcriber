@@ -19,7 +19,7 @@ The logic audit (2026-09-15, cluster A) found that the desktop app can say it is
   - Heartbeat lines become a `sidecar-heartbeat` event, not engine-log lines.
 - **GUI:**
   - **New setting:** stop after silence, in minutes. The default is 10, 0 means never, it's remembered, and it's passed as `--silence-timeout`.
-  - **Notice when a session ends by itself:** a silence stop names the silence ("stopped after 10 minutes of silence"); any other self-ended session is an error with the engine's last line. Either way the UI returns to idle.
+  - **Notice when a session ends by itself:** a silence stop is a clean exit (code 0), shown as information, not an error: "Stopped after 10 minutes of silence. The transcript so far is saved." Any other self-ended session is an error with the engine's last line. Either way the UI returns to idle.
   - **Stall detection counts heartbeats as liveness:** a quiet room shows a listening state, and "stalled" appears only when neither heartbeats nor lines arrive for 3× the chunk length (30 s).
 - **Not in this change:** audit clusters B (flow routing), C (time axis) and D (CLI and launcher edges), which are recorded in `openspec/backlog.md`. Also a microphone stream that errors while system audio continues, and recovering a session after the page reloads.
 
