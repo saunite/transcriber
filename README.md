@@ -42,6 +42,8 @@ The packages are install-tested on current Debian, Ubuntu LTS, Fedora, openSUSE 
 
 The `.deb` and `.rpm` also put the command-line transcriber on your `PATH` as `transcriber-sidecar`. Run that way, it downloads models on first use instead of using the bundled one.
 
+Each time the transcription engine runs, it unpacks itself (about 350 MB) into your temporary folder, `/tmp` on Linux, which is often held in RAM, and removes that copy when it exits. Pressing **Stop** gives it up to 15 seconds to finish and clean up. If a copy is left behind anyway (the app was quit mid-session, or the engine was killed), the app removes it the next time it starts. It only ever removes its own engine's copies, and only when no running engine is using them.
+
 #### Windows
 
 | File | What it is |

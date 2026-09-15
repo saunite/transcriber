@@ -63,7 +63,12 @@
 
 ## 4. Docs
 
-- [ ] 4.1 README "Building it yourself" or the Linux download notes: the engine unpacks about 350 MB into the temp directory per run; a normal stop removes it; leftovers from killed runs are removed the next time the app starts. Verify the note exists.
+- [x] 4.1 README "Building it yourself" or the Linux download notes: the engine unpacks about 350 MB into the temp directory per run; a normal stop removes it; leftovers from killed runs are removed the next time the app starts. Verify the note exists.
+
+  **Done 2026-09-15.** README "Download and run" → Linux gains a paragraph after the `transcriber-sidecar` note:
+  - the engine unpacks about 350 MB into the temporary folder (`/tmp`, often RAM) per run and removes it on exit;
+  - Stop allows up to 15 s to finish;
+  - leftovers from a quit or a killed engine are removed at the next app start, only this engine's copies and only when unused.
 
 ## 5. Verification
 
