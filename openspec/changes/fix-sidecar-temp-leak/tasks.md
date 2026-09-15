@@ -1,0 +1,37 @@
+## 1. Stop grace
+
+- [ ] 1.1 In `src-tauri/src/sidecar.rs`, replace the 3 s wait in `terminate_process_tree` with a named `STOP_GRACE` of 15 s (design.md Decision 1), and update its doc comment. Add a Unix unit test: `terminate_process_tree` on `sh -c 'trap "sleep 5; exit 0" INT; sleep 60'` returns no survivors, and the process ended with exit code 0, not killed by signal 9. Verify `cargo test` passes, and the new test fails with the grace set back to 3 s.
+
+## 2. Marker and cleanup
+
+- [ ] 2.1 Add `resources/transcriber-sidecar.marker` (one line naming what it is for) to `transcriber-sidecar.spec`'s `datas` at the bundle root (Decision 2). Rebuild with `build_sidecar.py` and stage it. Verify an unpacked copy of the rebuilt sidecar contains `transcriber-sidecar.marker`, by listing the `_MEI*` folder while a `--file` run is in progress.
+- [ ] 2.2 In `sidecar.rs`, add:
+  - `stale_extraction_dirs(dir, is_alive)`, which selects directories named `^_MEI[0-9a-f]{8}` containing the marker whose PID isn't alive;
+  - `remove_stale_extractions(dir)`, which removes them with `remove_dir_all`, skipping errors, and prints the count to stderr;
+  - the per-OS `is_alive`: `pid_alive` on Unix, and on Windows `tasklist` with `CREATE_NO_WINDOW` that counts as alive when `tasklist` fails (Decision 3).
+
+  Unit tests over a temp directory:
+  - a dead marked folder is selected;
+  - kept: a live marked folder, a dead unmarked folder, a non-`_MEI` folder, and a file named like `_MEI00000001x`;
+  - the PID is parsed from the 8 hex digits (`_MEI000b7664m8XSeA` → 751204).
+
+  Verify `cargo test` passes.
+- [ ] 2.3 Call the cleanup once from `main.rs` `.setup(...)` on `tauri::async_runtime::spawn_blocking`, with `std::env::temp_dir()` (Decision 4). Verify `cargo build` has no warnings. Verify it by hand: create a marked `_MEI` folder named after a dead PID in `/tmp`, start the debug app, and check it's gone while the window opened at once.
+
+## 3. End-to-end
+
+- [ ] 3.1 In `tests/test_e2e_linux.py`, give each app its own `TMPDIR` under the scenario directory (in `app_env`). Add `stale extraction cleaned` (Decision 5):
+  - pre-create a dead marked, a live marked, a dead unmarked and a non-`_MEI` folder;
+  - start the app;
+  - wait for only the dead marked folder to disappear.
+
+  Verify it passes, all other scenarios still pass, and it fails with the cleanup call removed from `main.rs`.
+
+## 4. Docs
+
+- [ ] 4.1 README "Building it yourself" or the Linux download notes: the engine unpacks about 350 MB into the temp directory per run; a normal stop removes it; leftovers from killed runs are removed the next time the app starts. Verify the note exists.
+
+## 5. Verification
+
+- [ ] 5.1 Run `.venv/bin/python run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set and a network that reaches GitHub. Verify it exits 0, and that `find /tmp -maxdepth 1 -name '_MEI*'` finds nothing new after the run, since the suite now uses its own `TMPDIR`.
+- [ ] 5.2 **User check on Linux** (`cargo tauri dev`): start a live session, speak for a bit, press Stop, and wait for "Not transcribing". Verify `find /tmp -maxdepth 1 -name '_MEI*'` finds nothing. Then quit the app during a session, reopen it, and verify the leftover copy is gone a few seconds after the window opens.
