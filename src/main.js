@@ -188,6 +188,82 @@ window.__TAURI__.app
   .then((v) => (els.appVersion.textContent = v))
   .catch(() => {});
 
+// ---- Model folder -----------------------------------------------------------
+
+// The bundled model, or a faster-whisper model folder the user chose, kept
+// like the theme. The shell checks the folder holds a model before starting
+// an engine (openspec/changes/choose-model-folder).
+const MODEL_DIR_KEY = "transcriber-model-dir";
+const CHOOSE_FOLDER = "choose-folder";
+
+function chosenModelDir() {
+  try {
+    return localStorage.getItem(MODEL_DIR_KEY) || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// A Hugging Face cache folder (models--Org--name/snapshots/<hash>) is named
+// after its model, not its hash.
+function folderName(path) {
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  if (parts.length >= 3 && parts.at(-2) === "snapshots") return parts.at(-3).replace(/^models--/, "");
+  return parts.at(-1) ?? path;
+}
+
+function renderModelSelect() {
+  const dir = chosenModelDir();
+  const options = [["", "Bundled (base)"]];
+  if (dir) options.push([dir, folderName(dir)]);
+  options.push([CHOOSE_FOLDER, "Choose folder…"]);
+  els.modelSelect.replaceChildren(
+    ...options.map(([value, label]) => {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      return option;
+    }),
+  );
+  els.modelSelect.value = dir ?? "";
+  els.modelSelect.title = dir ?? "The base model shipped with the app";
+}
+
+function setModelDir(dir) {
+  try {
+    if (dir) localStorage.setItem(MODEL_DIR_KEY, dir);
+    else localStorage.removeItem(MODEL_DIR_KEY);
+  } catch (e) {}
+  renderModelSelect();
+}
+
+// Arrow keys on a closed select change its value step by step; stepping onto
+// "Choose folder…" must not throw a dialog at a keyboard user. The picker opens
+// only when it is chosen outright (from the open list, or by pointer).
+const STEP_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"]);
+let steppedByKey = false;
+els.modelSelect.addEventListener("keydown", (event) => {
+  steppedByKey = STEP_KEYS.has(event.key);
+});
+
+els.modelSelect.addEventListener("change", async () => {
+  const stepped = steppedByKey;
+  steppedByKey = false;
+  if (els.modelSelect.value === CHOOSE_FOLDER && stepped) {
+    renderModelSelect();
+    return;
+  }
+  if (els.modelSelect.value !== CHOOSE_FOLDER) {
+    setModelDir(els.modelSelect.value);
+    return;
+  }
+  const dir = await openFileDialog({ directory: true, title: "Choose a faster-whisper model folder" });
+  // A cancelled picker changes nothing.
+  if (typeof dir === "string") setModelDir(dir);
+  else renderModelSelect();
+});
+renderModelSelect();
+
 // ---- Timestamps -----------------------------------------------------------
 
 // Three shapes reach us as `ts` (the Rust regex has already stripped the
@@ -748,7 +824,7 @@ async function startLiveSession() {
   els.outputPathInput.value = outputPath;
   try {
     await invoke("start_live_session", {
-      model: els.modelSelect.value,
+      modelDir: chosenModelDir(),
       language: els.languageSelect.value || null,
       includeMic: els.includeMicCheckbox.checked,
       // "" is "System default": send no device so the engine auto-detects.
@@ -873,7 +949,7 @@ async function startNextFile() {
       filePath: next.path,
       format: els.formatSelect.value,
       task: els.taskSelect.value,
-      model: els.modelSelect.value,
+      modelDir: chosenModelDir(),
       language: els.languageSelect.value || null,
     });
   } catch (err) {

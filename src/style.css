@@ -287,6 +287,13 @@ textarea {
   color: var(--ink-soft);
 }
 
+/* A long model folder name must not squeeze Save to; the select's title
+   carries the full path (openspec/changes/choose-model-folder). */
+#model-select {
+  max-width: 12rem;
+  text-overflow: ellipsis;
+}
+
 .tb-input-row {
   display: flex;
   gap: 0.35rem;
@@ -1104,6 +1111,11 @@ input[type="range"]::-moz-range-thumb {
 /* ---- Narrow windows (app minimum is 640×480) ---------------------------- */
 
 @media (max-width: 52rem) {
+  /* Keep the Save to path readable at the 640px minimum. */
+  #model-select {
+    max-width: 9rem;
+  }
+
   .instrument {
     grid-template-columns: 13.5rem 1fr;
   }

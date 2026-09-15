@@ -25,6 +25,8 @@ Every [release](https://github.com/saunite/transcriber/releases) offers each pla
 - **Installer or package**: installs like any other app, with a menu entry and an uninstaller.
 - **CLI**: the command-line transcriber on its own, with no GUI and no Python needed, plus the meeting launcher script.
 
+**Using a different model in the app.** The **Model** field in the title bar uses the bundled `base` model by default. To use a better one, download a faster-whisper model folder yourself (for example [Systran/faster-whisper-small](https://huggingface.co/Systran/faster-whisper-small); the folder must contain `model.bin`), then pick **Choose folder…** in the Model field and select it. The app remembers the choice. Pick **Bundled (base)** to go back. If the folder later moves or holds no `model.bin`, starting a transcription says so instead of starting. English-only models (names ending in `.en`) can only transcribe English.
+
 #### Linux
 
 The packages are install-tested on current Debian, Ubuntu LTS, Fedora, openSUSE Leap, and openSUSE Tumbleweed.
@@ -191,7 +193,7 @@ python build_portable.py --target x86_64-pc-windows-gnu
 
 The bundled artifact ships the `base` Whisper model (~145MB) for a fully offline first run. No ffmpeg bundling is needed — the sidecar decodes audio and video via PyAV (bundled with faster-whisper), not an external ffmpeg binary; see `openspec/changes/drop-ffmpeg-dependency/`.
 
-The GUI sidecar always passes an explicit `--model-path` pointing at its bundled model directory (resolved relative to the running app, so it works the same whether run from the extracted Windows folder, the AppImage, or the `.app`), instead of relying on faster-whisper's network/cache-based model lookup. The CLI gained the same `--model-path <dir>` flag for anyone running from a bundled build directly.
+The GUI always passes the sidecar an explicit `--model-path`: the bundled model directory (resolved relative to the running app, so it works the same whether run from the extracted Windows folder, the AppImage, or the `.app`), or the model folder the user chose in the Model field. It never relies on faster-whisper's network/cache-based model lookup. The CLI gained the same `--model-path <dir>` flag for anyone running from a bundled build directly.
 
 #### Releasing
 
@@ -399,6 +401,7 @@ python transcriber.py --live --wasapi --include-mic --mic-device 5
 - `--include-mic` - Include microphone capture alongside system audio (use with --wasapi or --coreaudio-tap)
 - `--mic-device <id>` - Microphone device index (use --list-devices to find)
 - `--model <size>` - Model size: tiny, base, small, medium, large, turbo (default: base)
+- `--model-path <dir>` - Load the model from a local faster-whisper (CTranslate2) model folder, one containing `model.bin`, instead of resolving `--model` by name. Download one yourself, e.g. [Systran/faster-whisper-small](https://huggingface.co/Systran/faster-whisper-small). Output names the model after the folder (e.g. `faster-whisper-small`) unless `--model` is also given. English-only (`*.en`) models can only transcribe English.
 - `--language <code>` - Language code (e.g., en, es, fr) - auto-detect if not specified
 - `--task <type>` - Task: transcribe or translate (default: transcribe)
 - `--output <path>` - Output file for transcript (default: `<name>_transcript_<timestamp>.<format>` for `--file`, `transcript_<timestamp>.txt` for `--live`, both in the current directory)

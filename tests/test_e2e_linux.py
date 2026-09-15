@@ -178,7 +178,11 @@ def app_env(workdir):
     shim = shim_dir / "xdg-open"
     shim.write_text(f'#!/bin/sh\nprintf "%s\\n" "$*" >> "{log}"\n', encoding="utf-8")
     shim.chmod(0o755)
-    env = {**os.environ, "PATH": f"{shim_dir}{os.pathsep}{os.environ.get('PATH', '')}"}
+    # Its own data directory too, so the app's WebKit storage (the theme, the
+    # chosen model folder) never touches the user's real app data
+    # (openspec/changes/choose-model-folder).
+    env = {**os.environ, "PATH": f"{shim_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+           "XDG_DATA_HOME": str(workdir / "data")}
     return env, log
 
 

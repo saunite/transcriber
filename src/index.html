@@ -40,13 +40,9 @@
 
         <label class="tb-field">
           <span class="tb-label">Model</span>
-          <select id="model-select">
-            <option value="tiny">tiny</option>
-            <option value="base" selected>base</option>
-            <option value="small">small</option>
-            <option value="medium">medium</option>
-            <option value="large">large</option>
-          </select>
+          <!-- Bundled model, or a model folder the user chose; options are built
+               by main.js (openspec/changes/choose-model-folder). -->
+          <select id="model-select"></select>
         </label>
 
         <label class="tb-field">

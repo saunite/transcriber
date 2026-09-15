@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
-from transcriber import _bundled_model_path
+from transcriber import _bundled_model_path, _model_label
 
 
 def _fake_release_dir(tmp: str) -> str:
@@ -55,7 +55,16 @@ def test_not_frozen_ignores_bundled_model():
     print("OK: running from source never picks up a bundled model")
 
 
+def test_model_label_never_names_an_unloaded_size():
+    """openspec/changes/choose-model-folder: output names a --model-path model by its folder."""
+    assert _model_label(None, None) == "base"
+    assert _model_label(None, "/m/faster-whisper-small/") == "faster-whisper-small"
+    assert _model_label("small", "/m/x") == "small"
+    print("OK: model label follows --model, then the --model-path folder, then base")
+
+
 if __name__ == "__main__":
+    test_model_label_never_names_an_unloaded_size()
     test_frozen_with_bundled_model_uses_it()
     test_other_model_size_ignores_bundled_model()
     test_frozen_without_model_dir_resolves_by_name()

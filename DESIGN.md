@@ -159,6 +159,11 @@ Small, near-uniform radii (1–3px) throughout, closer to a physical instrument'
 ### Inputs / Fields
 - **Style:** `stock-raised` background, `1px solid panel-edge` border, `2px` radius, `0.8125rem` text. Uniform across text, number, search, and select inputs.
 - **Focus:** border shifts to `--focus` (`pen-sys` in light mode, the lightened `pen-sys` in dark mode); no glow or ring on inputs, though `:focus-visible` elsewhere uses a `2px` outline.
+- **Model field (title block):** a native select, like Language, not a path box with buttons: the title-block row has no room for three controls at 640px.
+  - **Options:** "Bundled (base)" is always first, and is the way back. The chosen model folder follows, shown by folder name with its full path as the select's tooltip; a Hugging Face cache snapshot (`models--Org--name/snapshots/<hash>`) is named `Org--name`, not by its hash. "Choose folder…" opens the system folder picker, and cancelling restores the previous choice.
+  - **Keyboard:** arrowing onto "Choose folder…" on the closed select snaps back and never opens a dialog. The picker opens only when that option is chosen outright.
+  - **Width:** capped at `12rem`, and `9rem` under `52rem`, with an ellipsis, so the Save to path stays readable.
+  - **Refusal:** a chosen folder without `model.bin` is refused by the shell, and the note says so in the control's own words ("…under Model, or pick Bundled (base).").
 
 ### Transport / Pens
 - **Run state:** a drawn pen-nib dot that changes color and vertical position per state — soft ink-soft raised for idle/loaded, SYS-navy lowered-flat for listening, MIC-red lowered for advancing, MIC-red raised for pen-lift (the fault). The instrument's mechanism changes; nothing is layered on top as a badge.

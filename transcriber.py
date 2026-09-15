@@ -62,6 +62,15 @@ def _bundled_model_path(model: str) -> Optional[str]:
     return str(model_dir) if (model_dir / "model.bin").exists() else None
 
 
+def _model_label(model: Optional[str], model_path: Optional[str]) -> str:
+    """How output names the model: --model if given, else the --model-path
+    folder's name, else the default size -- never a size that wasn't loaded
+    (openspec/changes/choose-model-folder)."""
+    if model:
+        return model
+    return Path(model_path).name if model_path else 'base'
+
+
 def _live_output_path(args, now: datetime) -> Optional[str]:
     """Where a live session saves its transcript: --output if given, nothing
     with --no-output, otherwise a stamped transcript_<YYYYMMDD_HHMMSS>.txt in
@@ -116,7 +125,7 @@ Examples:
     parser.add_argument(
         '--model', '-m',
         type=str,
-        default='base',
+        default=None,
         choices=['tiny', 'base', 'small', 'medium', 'large', 'turbo'],
         help='Whisper model size (default: base). Larger = more accurate but slower'
     )
@@ -127,7 +136,8 @@ Examples:
         default=None,
         help='Load the model from this local directory instead of resolving '
              '--model by name via the network/cache. Used by bundled builds '
-             '(GUI sidecar, portable build); --model is still used for logging.'
+             '(GUI sidecar, portable build). Output names the model after this '
+             'folder unless --model is also given.'
     )
 
     parser.add_argument(
@@ -271,6 +281,8 @@ Examples:
     )
 
     args = parser.parse_args()
+    args.model_label = _model_label(args.model, args.model_path)
+    args.model = args.model or 'base'
     if not args.model_path:
         args.model_path = _bundled_model_path(args.model)
     if args.output and args.no_output:
@@ -309,7 +321,7 @@ Examples:
         signal.signal(signal.SIGINT, _make_signal_handler(args.verbose))
         
         engine = TranscriptionEngine(
-            model_size=args.model,
+            model_size=args.model_label,  # names a --model-path folder in the load message
             device=args.device,
             compute_type=args.compute_type,
             model_path=args.model_path
@@ -619,7 +631,7 @@ def _setup_output_files(args):
     if args.output:
         output_file = open(args.output, 'w', encoding='utf-8')
         output_file.write(f"# Live Transcription Started\n")
-        output_file.write(f"# Model: {args.model}\n")
+        output_file.write(f"# Model: {args.model_label}\n")
         output_file.write(f"# Language: {args.language or 'auto-detect'}\n\n")
         output_file.flush()
 
@@ -680,7 +692,7 @@ def _run_dual_capture(engine, args, *, title, mode_summary, sys_rate, run_sys, m
     # The GUI waits for the "Listening..." line before showing capture as
     # active (openspec/changes/fix-capturing-shown-before-listening).
     print(f"Transcriber → {args.output}" if args.output else "Transcriber (not saving a transcript file)")
-    print(f"{args.model} model ({engine.device}/{engine.compute_type}), {args.language or 'auto-detect'} language, {mode_summary}")
+    print(f"{args.model_label} model ({engine.device}/{engine.compute_type}), {args.language or 'auto-detect'} language, {mode_summary}")
     listen_line = "Listening... (Ctrl+C to stop"
     if args.silence_timeout > 0:
         listen_line += f", auto-stop after {args.silence_timeout/60:.1f}m silence"
@@ -702,7 +714,7 @@ def _run_dual_capture(engine, args, *, title, mode_summary, sys_rate, run_sys, m
     if args.output:
         output_file = open(args.output, 'w', encoding='utf-8')
         output_file.write(f"# Live Transcription ({title})\n")
-        output_file.write(f"# Model: {args.model}\n")
+        output_file.write(f"# Model: {args.model_label}\n")
         output_file.write(f"# Language: {args.language or 'auto-detect'}\n\n")
         output_file.flush()
 
@@ -864,7 +876,7 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
 
     # Print header
     if args.verbose:
-        _print_header(args.model, args.language, args.chunk_duration)
+        _print_header(args.model_label, args.language, args.chunk_duration)
 
     # Initialize audio capture with native sample rate
     if use_linux_loopback:
@@ -985,7 +997,7 @@ def _transcribe_live_linux_dual(engine: TranscriptionEngine, args) -> int:
     import sounddevice as sd
 
     if args.verbose:
-        _print_header(args.model, args.language, args.chunk_duration, "System audio + microphone (Linux)")
+        _print_header(args.model_label, args.language, args.chunk_duration, "System audio + microphone (Linux)")
 
     # Resolve system-audio (loopback/monitor) device. sounddevice/PortAudio
     # can't see the real PipeWire/PulseAudio monitor source
@@ -1072,7 +1084,7 @@ def transcribe_live_wasapi(engine: TranscriptionEngine, args) -> int:
 
     # Print header
     if args.verbose:
-        _print_header(args.model, args.language, args.chunk_duration, "WASAPI Loopback (Bluetooth-compatible)")
+        _print_header(args.model_label, args.language, args.chunk_duration, "WASAPI Loopback (Bluetooth-compatible)")
 
     # Initialize WASAPI capture for system audio
     capture = WASAPICapture()
@@ -1136,7 +1148,7 @@ def transcribe_live_coreaudio_tap(engine: TranscriptionEngine, args) -> int:
     )
 
     if args.verbose:
-        _print_header(args.model, args.language, args.chunk_duration, "Core Audio Process Tap (macOS)")
+        _print_header(args.model_label, args.language, args.chunk_duration, "Core Audio Process Tap (macOS)")
 
     capture = MacOSCapture()
     device_info = capture.get_default_loopback_device()

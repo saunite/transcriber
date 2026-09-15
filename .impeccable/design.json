@@ -117,6 +117,14 @@
       "css": ".ds-nameplate { display: flex; flex-direction: column; gap: 0.4rem; padding-top: 0.8rem; border-top: 1px solid #bcc7bb; } .ds-nameplate-id { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; } .ds-label { font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #4e6152; } .ds-readout { font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; font-size: 0.6875rem; letter-spacing: 0.04em; color: #4e6152; } .ds-update-result { margin: 0; font-size: 0.6875rem; line-height: 1.4; color: #4e6152; } .ds-update-result[data-state=\"available\"] { color: #17231b; font-weight: 600; }"
     },
     {
+      "name": "Model Field",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "Title-block native select: Bundled (base) first, the chosen model folder by name (full path in title; HF cache snapshots named by model), and Choose folder… which opens the system picker. Arrow-key stepping never opens the picker. Capped at 12rem (9rem narrow) with ellipsis.",
+      "html": "<label class=\"ds-tb-field\"><span class=\"ds-label\">Model</span><select class=\"ds-select\" title=\"/home/me/models/faster-whisper-small\"><option value=\"\">Bundled (base)</option><option selected>faster-whisper-small</option><option>Choose folder…</option></select></label>",
+      "css": ".ds-tb-field { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; } .ds-label { font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #4e6152; } .ds-select { max-width: 12rem; text-overflow: ellipsis; background: #f4f8f4; color: #17231b; border: 1px solid #bcc7bb; border-radius: 2px; padding: 0.3rem 0.4rem; font-size: 0.8125rem; }"
+    },
+    {
       "name": "Drop Zone",
       "kind": "custom",
       "refersTo": null,

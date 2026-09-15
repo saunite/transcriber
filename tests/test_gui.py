@@ -337,6 +337,78 @@ def test_chart_search_count(browser):
     return page, errors
 
 
+def test_model_folder(browser):
+    """The Model field: bundled by default, a chosen folder sent to both
+    commands and remembered, reset, cancel, and the shell's refusal shown
+    (openspec/changes/choose-model-folder)."""
+    refusal = "the model folder /models/gone has no model.bin. Choose a faster-whisper model folder under Model, or pick Bundled (base)."
+    page, errors = open_page(browser)
+    select = page.locator("#model-select")
+    shown = lambda: page.eval_on_selector("#model-select", "s => s.selectedOptions[0].textContent")
+
+    def start_live(n):
+        page.click("#start-live-btn")
+        wait_for_calls(page, "start_live_session", n)
+        model_dir = calls(page, "start_live_session")[n - 1]["args"]["modelDir"]
+        page.click("#stop-btn")
+        wait_for_calls(page, "stop_live_session", n)
+        return model_dir
+
+    # Default: the bundled model, sent as no folder.
+    expect(select).to_have_value("")
+    assert shown() == "Bundled (base)", shown()
+    assert start_live(1) is None
+
+    # Pick: the folder picker's answer is shown and sent to both commands.
+    page.evaluate("__fake.dialogOpen = '/models/small'")
+    select.select_option("choose-folder")
+    expect(select).to_have_value("/models/small")
+    assert shown() == "small", shown()
+    assert start_live(2) == "/models/small"
+    drop(page, "/media/one.mp4")
+    wait_for_calls(page, "start_file_transcription", 1)
+    assert calls(page, "start_file_transcription")[0]["args"]["modelDir"] == "/models/small"
+    page.evaluate("__fake.emit('file-transcription-complete', true)")
+
+    # Cancel: a dismissed picker keeps the current choice.
+    page.evaluate("__fake.dialogOpen = null")
+    select.select_option("choose-folder")
+    expect(select).to_have_value("/models/small")
+
+    # Remember: a reload still shows and sends the folder.
+    page.reload()
+    wait_for_calls(page, "list_devices", 1)
+    expect(select).to_have_value("/models/small")
+    assert start_live(1) == "/models/small"
+
+    # Keyboard: stepping onto "Choose folder…" with arrows never opens the picker.
+    page.evaluate("__fake.dialogOpen = '/should/not/open'; __fake.dialogOpens = 0")
+    select.focus()
+    page.keyboard.press("End")
+    page.keyboard.press("ArrowDown")
+    page.wait_for_timeout(200)
+    assert page.evaluate("__fake.dialogOpens") == 0, "arrow keys opened the folder picker"
+    expect(select).not_to_have_value("choose-folder")
+
+    # A Hugging Face cache snapshot is named after its model, not its hash.
+    page.evaluate("__fake.dialogOpen = '/home/me/.cache/huggingface/hub/models--Systran--faster-whisper-small/snapshots/536b0662742c02347bc0e980a01041f333bce120'")
+    select.select_option("choose-folder")
+    expect(select).to_have_value(re.compile("snapshots"))
+    assert shown() == "Systran--faster-whisper-small", shown()
+
+    # Reset: back to the bundled model, sent as no folder.
+    select.select_option("")
+    assert start_live(2) is None
+    page.close()
+    assert not errors, f"script error on the page: {errors}"
+
+    # Refusal: the shell's message reaches the user.
+    page, errors = open_page(browser, {"start_live_session": {"reject": refusal}})
+    page.click("#start-live-btn")
+    expect(page.locator("#note-root")).to_contain_text(refusal)
+    return page, errors
+
+
 def test_update_check(browser):
     """Each answer of check_for_update shows its result next to the button, and
     nothing checks by itself (openspec/changes/add-manual-update-check)."""
@@ -404,6 +476,7 @@ def main() -> int:
         report("injected script refused", test_injected_script_refused, browser)
         report("update check", test_update_check, browser)
         report("chart search count", test_chart_search_count, browser)
+        report("model folder", test_model_folder, browser)
         browser.close()
     return 1 if failures else 0
 

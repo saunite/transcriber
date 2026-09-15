@@ -152,7 +152,7 @@ mod tests {
         assert!(!pid_alive(pid), "a reaped process must not read as alive");
     }
 
-    use super::{build_live_session_args, strip_extended_length_prefix};
+    use super::{build_file_args, build_live_session_args, select_model_dir, strip_extended_length_prefix};
     // cfg-gated to match the helpers themselves, which only exist off Windows.
     #[cfg(not(windows))]
     use super::{descendant_pids, pid_alive, stop_result_line, terminate_process_tree};
@@ -192,8 +192,8 @@ mod tests {
         // --wasapi on Linux made the sidecar refuse to start
         // (openspec/changes/fix-gui-file-queue-and-linux-live).
         let args = build_live_session_args(
-            "base".to_string(),
             "/model/dir".to_string(),
+            true,
             None,
             false,
             None,
@@ -208,8 +208,8 @@ mod tests {
     #[test]
     fn omits_audio_device_when_unset() {
         let args = build_live_session_args(
-            "base".to_string(),
             "/model/dir".to_string(),
+            true,
             None,
             false,
             None,
@@ -225,8 +225,8 @@ mod tests {
     #[test]
     fn passes_audio_device_override_when_set() {
         let args = build_live_session_args(
-            "base".to_string(),
             "/model/dir".to_string(),
+            true,
             None,
             false,
             None,
@@ -243,8 +243,8 @@ mod tests {
     #[test]
     fn omits_language_when_auto_detect() {
         let args = build_live_session_args(
-            "base".to_string(),
             "/model/dir".to_string(),
+            true,
             None,
             false,
             None,
@@ -260,8 +260,8 @@ mod tests {
     #[test]
     fn passes_language_when_selected() {
         let args = build_live_session_args(
-            "base".to_string(),
             "/model/dir".to_string(),
+            true,
             Some("en".to_string()),
             false,
             None,
@@ -284,8 +284,8 @@ mod tests {
     fn forwards_stamped_output_path_verbatim() {
         let stamped = "transcript_20260909_143012.txt";
         let args = build_live_session_args(
-            "base".to_string(),
             "/model/dir".to_string(),
+            true,
             None,
             false,
             None,
@@ -299,11 +299,65 @@ mod tests {
         assert_eq!(args[idx + 1], stamped);
     }
 
+    /// A fresh directory under the system temp dir, removed first if a previous
+    /// run left it behind.
+    fn scratch_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("transcriber-test-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn no_chosen_folder_selects_the_bundled_model() {
+        let bundled = "/bundled/model".to_string();
+        assert_eq!(select_model_dir(None, bundled.clone()), Ok((bundled.clone(), true)));
+        assert_eq!(select_model_dir(Some(String::new()), bundled.clone()), Ok((bundled, true)));
+    }
+
+    #[test]
+    fn chosen_folder_with_a_model_is_selected() {
+        let dir = scratch_dir("with-model");
+        std::fs::write(dir.join("model.bin"), b"").unwrap();
+        let chosen = dir.to_string_lossy().into_owned();
+        assert_eq!(select_model_dir(Some(chosen.clone()), "/bundled".to_string()), Ok((chosen, false)));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn chosen_folder_without_a_model_is_refused_naming_it() {
+        let empty = scratch_dir("no-model");
+        let missing = empty.join("gone");
+        for dir in [&empty, &missing] {
+            let chosen = dir.to_string_lossy().into_owned();
+            let err = select_model_dir(Some(chosen.clone()), "/bundled".to_string()).unwrap_err();
+            assert!(err.contains(&chosen) && err.contains("model.bin"), "{err}");
+        }
+        let _ = std::fs::remove_dir_all(empty);
+    }
+
+    #[test]
+    fn model_size_is_passed_only_for_the_bundled_model() {
+        let live = |bundled| build_live_session_args("/m".to_string(), bundled, None, false, None, None, None);
+        let file = |bundled| {
+            build_file_args("a.wav".into(), "txt".into(), "transcribe".into(), "/m".into(), bundled, None)
+        };
+        for args in [live(true), file(true)] {
+            let i = args.iter().position(|a| a == "--model").expect("--model for the bundled model");
+            assert_eq!(args[i + 1], "base");
+            assert!(args.windows(2).any(|w| w == ["--model-path", "/m"]), "{args:?}");
+        }
+        for args in [live(false), file(false)] {
+            assert!(!args.contains(&"--model".to_string()), "a chosen folder must not be labelled base: {args:?}");
+            assert!(args.windows(2).any(|w| w == ["--model-path", "/m"]), "{args:?}");
+        }
+    }
+
     #[test]
     fn omits_output_when_empty_rather_than_passing_a_blank_path() {
         let args = build_live_session_args(
-            "base".to_string(),
             "/model/dir".to_string(),
+            true,
             None,
             false,
             None,
@@ -439,6 +493,54 @@ fn spawn_sidecar_events(
     });
 }
 
+/// Which model folder a session loads: the bundled one when the user chose
+/// none, otherwise the chosen folder -- refused before any engine starts when
+/// it holds no model (openspec/changes/choose-model-folder). Returns the folder
+/// and whether it is the bundled one.
+fn select_model_dir(chosen: Option<String>, bundled: String) -> Result<(String, bool), String> {
+    match chosen.filter(|dir| !dir.is_empty()) {
+        None => Ok((bundled, true)),
+        Some(dir) if std::path::Path::new(&dir).join("model.bin").is_file() => Ok((dir, false)),
+        Some(dir) => Err(format!(
+            "the model folder {dir} has no model.bin. Choose a faster-whisper model folder under Model, or pick Bundled (base)."
+        )),
+    }
+}
+
+/// `--model base` only names the bundled model; a chosen folder is named by
+/// the engine after its own directory, so no size that wasn't loaded appears.
+fn model_args(model_dir: String, bundled: bool) -> Vec<String> {
+    let mut args = Vec::new();
+    if bundled {
+        args.extend(["--model".to_string(), "base".to_string()]);
+    }
+    args.extend(["--model-path".to_string(), model_dir]);
+    args
+}
+
+/// Builds `start_file_transcription`'s sidecar argument list, testable like
+/// the live one below.
+fn build_file_args(
+    file_path: String,
+    format: String,
+    task: String,
+    model_dir: String,
+    bundled: bool,
+    language: Option<String>,
+) -> Vec<String> {
+    let mut args = vec![
+        "--file".to_string(), file_path,
+        "--format".to_string(), format,
+        "--task".to_string(), task,
+    ];
+    args.extend(model_args(model_dir, bundled));
+    if let Some(lang) = language {
+        args.push("--language".to_string());
+        args.push(lang);
+    }
+    args
+}
+
 /// Builds `start_live_session`'s sidecar argument list. Pulled out of the
 /// `#[tauri::command]` itself (which needs a live `AppHandle` for
 /// `resolve_model_dir()`, unavailable in a unit test) so the actual
@@ -451,8 +553,8 @@ fn spawn_sidecar_events(
 /// the macOS live-capture gate in src/main.js is on), and none on Linux, whose
 /// default --live path already captures system audio + microphone.
 fn build_live_session_args(
-    model: String,
     model_dir: String,
+    bundled: bool,
     language: Option<String>,
     include_mic: bool,
     mic_device: Option<i32>,
@@ -465,11 +567,8 @@ fn build_live_session_args(
     } else if cfg!(target_os = "macos") {
         args.push("--coreaudio-tap".to_string());
     }
+    args.extend(model_args(model_dir, bundled));
     args.extend([
-        "--model".to_string(),
-        model,
-        "--model-path".to_string(),
-        model_dir,
         // Mirrors win-start-transcription.bat's default invocation:
         // --chunk-duration 10 --actual-time. Not user-configurable (the
         // .bat doesn't expose them either) -- output_path and audio_device
@@ -509,17 +608,17 @@ fn build_live_session_args(
 pub async fn start_live_session(
     app: AppHandle,
     state: State<'_, AppState>,
-    model: String,
+    model_dir: Option<String>,
     language: Option<String>,
     include_mic: bool,
     mic_device: Option<i32>,
     output_path: Option<String>,
     audio_device: Option<i32>,
 ) -> Result<(), String> {
-    let model_dir = resolve_model_dir(&app)?;
+    let (model_dir, bundled) = select_model_dir(model_dir, resolve_model_dir(&app)?)?;
     let args = build_live_session_args(
-        model,
         model_dir,
+        bundled,
         language,
         include_mic,
         mic_device,
@@ -783,9 +882,10 @@ pub async fn start_file_transcription(
     file_path: String,
     format: String,
     task: String,
-    model: String,
+    model_dir: Option<String>,
     language: Option<String>,
 ) -> Result<(), String> {
+    let (model_dir, bundled) = select_model_dir(model_dir, resolve_model_dir(&app)?)?;
     // One engine at a time. A live session's engine keeps the audio device
     // and its own stdout pipe, so starting a file run beside it produced two
     // engines writing into one stream -- live [MIC]/[SYS] lines landed in the
@@ -816,17 +916,7 @@ pub async fn start_file_transcription(
         .parent()
         .filter(|dir| !dir.as_os_str().is_empty())
         .map(|dir| dir.to_path_buf());
-    let mut args = vec![
-        "--file".to_string(), file_path,
-        "--format".to_string(), format,
-        "--task".to_string(), task,
-        "--model".to_string(), model,
-        "--model-path".to_string(), resolve_model_dir(&app)?,
-    ];
-    if let Some(lang) = language {
-        args.push("--language".to_string());
-        args.push(lang);
-    }
+    let args = build_file_args(file_path, format, task, model_dir, bundled, language);
     let mut sidecar_command = app
         .shell()
         .sidecar(SIDECAR_NAME)
