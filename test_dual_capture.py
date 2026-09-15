@@ -196,6 +196,34 @@ def main() -> None:
         assert code == 1 and out.rstrip().splitlines()[-1] == transcriber.LOST_SOURCE_MESSAGE, out
         assert time.time() - start < 15, f"shutdown hung for {time.time() - start:.0f}s on a stuck mic stream"
 
+        # 3b''. The app went away: stdout is a broken pipe. A worker's print must
+        #       stop the whole session, not just kill its thread and leave the
+        #       capture loop recording, orphaned (openspec/changes/fix-sidecar-temp-leak).
+        class _GoneReader(io.StringIO):
+            def write(self, text):
+                if "HEARTBEAT" in text:
+                    raise BrokenPipeError(32, "Broken pipe")
+                return super().write(text)
+
+        def capture_until_interrupted(on_chunk, enqueue, check_silence):
+            try:  # like every real capture_stream: a stop returns normally
+                deadline = time.time() + 20
+                while time.time() < deadline:
+                    on_chunk(np.zeros(1600, np.float32))
+                    time.sleep(0.01)
+            except KeyboardInterrupt:
+                return
+
+        start = time.time()
+        gone = os.path.join(tmp, "gone.txt")
+        with contextlib.redirect_stdout(_GoneReader()):
+            code = transcriber._run_dual_capture(
+                _FakeEngine(), _args(gone, heartbeat=True), title="T", mode_summary="T",
+                sys_rate=lambda: 16000, run_sys=capture_until_interrupted, mic=None)
+        assert time.time() - start < 10, f"the session kept running {time.time() - start:.0f}s with nobody reading stdout"
+        assert code == 0, f"a vanished reader is a stop, not a lost source: exit {code}"
+        assert "[SYS] hello" in open(gone, encoding="utf-8").read(), "the transcript lost its lines"
+
         # 3c. Every real capture_stream swallows KeyboardInterrupt and returns
         #     normally, so a silence stop raised inside it must still exit 0
         #     and not be reported as a lost source.

@@ -5,7 +5,7 @@
 - **Which endings clean up,** measured with a signalled file run: normal exit, SIGINT and SIGTERM remove the folder, because the bootloader waits for its child and then deletes it. SIGKILL leaves it.
 - **Stop:** `sidecar.rs` `terminate_process_tree(pid)` sends SIGINT to the worker and the bootloader, polls `pid_alive` for up to **3 s**, then SIGKILLs survivors. Windows `stop_live_session` uses `taskkill /F /T`, an immediate kill.
 - **Engine shutdown after SIGINT:** close the mic (bounded at 5 s), stop the capture, join both workers (up to 60 s each, only while a chunk is mid-inference), close the transcript. With the base model on CPU a chunk takes a few seconds; larger models take longer.
-- **Exit:** `main.rs` has no setup hook or exit handling, and `tauri-plugin-shell` kills spawned children when the app exits.
+- **Exit:** `main.rs` has no setup hook or exit handling. `tauri-plugin-shell` does **not** end spawned children when the app exits; the user's check found a live engine still capturing after the window was closed (Decision 6).
 
 ## Goals / Non-Goals
 
@@ -47,6 +47,11 @@ A reused PID (a dead bootloader's number now owned by an unrelated process) read
 The user's Linux check found a live engine still running under `systemd --user` after closing the window mid-session. `tauri-plugin-shell` doesn't end children on exit, so the engine kept capturing, and its copy stayed in use. `main.rs` switches from `.run(context)` to `.build(context)?.run(|app, event| …)`, and on `RunEvent::Exit` calls `sidecar::stop_all_engines(app)`. That takes the live and file children out of `SidecarManager` and ends each one the way Stop does: `terminate_process_tree` on Unix (SIGINT, `STOP_GRACE`, SIGKILL fallback), `taskkill /F /T` on Windows. The terminate/`taskkill` logic moves out of `stop_live_session` into a shared `end_engine_tree(pid) -> Vec<u32>`, used by both. Exit blocks for at most `STOP_GRACE` after the window has already closed.
 
 - *Alternative:* `RunEvent::ExitRequested` with `prevent_exit`, then exiting after the stop. It adds a second exit path for no visible benefit, since the window is gone either way. Rejected.
+
+### 7. The engine stops itself when nobody reads its output (added during apply)
+Found while verifying Decision 6. The app reads the engine's stdout; when the app goes away (closed, crashed, killed) that pipe breaks. A live engine prints transcript lines and heartbeats from its **worker threads**, so the failing `print` killed only that thread while the main capture loop kept recording. Reproduced with the frozen engine and a stdout reader that quit after "Listening...": 25 s later the engine still ran with 25 threads and `parec`, and its copy was in use. A file run prints from the main thread, so it exited instead, which is why a file run can't show the orphan.
+
+`transcriber.py` gains `_print_or_stop(line)`, used for transcript lines (written to the file **before** printing) and heartbeats. On `BrokenPipeError` or a closed stdout, it marks a requested stop and raises `KeyboardInterrupt` in the main thread (`_thread.interrupt_main()`), which takes the normal graceful stop: the transcript is kept, exit 0, and the bootloader removes the copy. With `--heartbeat` the engine notices within about one chunk. This covers the crash and kill cases where `RunEvent::Exit` never runs; Decision 6 stays for an immediate stop on a normal quit.
 
 ### 5. Tests
 - **`cargo test`:**

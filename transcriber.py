@@ -68,6 +68,24 @@ def _source_ended_unexpectedly() -> bool:
     return lost
 
 
+def _print_or_stop(line: str) -> None:
+    """Print a line, stopping the session gracefully once nobody reads stdout.
+
+    The desktop app reads the engine's stdout; when the app goes away (closed,
+    crashed or killed) that pipe breaks. A worker thread's print then raised
+    and killed only that thread, while the main capture loop kept recording,
+    orphaned, with its unpacked copy in use (openspec/changes/fix-sidecar-temp-leak).
+    Raising KeyboardInterrupt in the main thread takes the normal stop path."""
+    global _stop_requested
+    try:
+        print(line)
+    except (BrokenPipeError, ValueError):  # ValueError: stdout already closed
+        if not _stop_requested:
+            _stop_requested = True
+            import _thread
+            _thread.interrupt_main()
+
+
 def _close_stream_bounded(stream, timeout: float = 5.0) -> bool:
     """Stop and close a PortAudio stream without hanging the session's end.
 
@@ -803,12 +821,13 @@ def _run_dual_capture(engine, args, *, title, mode_summary, sys_rate, run_sys, m
         mic_audio_queue.put(mic_audio.flatten().copy())
 
     def _emit(line):
-        """Print and write a transcription line (thread-safe)."""
-        print(line)
+        """Write and print a transcription line (thread-safe). The file comes
+        first, so a line is kept even when nobody reads stdout any more."""
         if output_file:
             with write_lock:
                 output_file.write(line + "\n")
                 output_file.flush()
+        _print_or_stop(line)
 
     def _to_target_rate(rate_fn):
         """Resample from a source's real rate to 16 kHz, on the worker thread.
@@ -860,7 +879,7 @@ def _run_dual_capture(engine, args, *, title, mode_summary, sys_rate, run_sys, m
                     except Exception as e:
                         print(f"  ❌ Error transcribing {tag.lower()} audio: {e}")
                 if args.heartbeat:
-                    print(f"HEARTBEAT {tag}")
+                    _print_or_stop(f"HEARTBEAT {tag}")
             else:
                 time.sleep(0.05)
 
@@ -1047,7 +1066,7 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
             except Exception as e:
                 print(f"  ❌ Error transcribing: {e}")
             if args.heartbeat:
-                print("HEARTBEAT SYS")
+                _print_or_stop("HEARTBEAT SYS")
 
     
     exit_code = 0

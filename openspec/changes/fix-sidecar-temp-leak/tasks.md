@@ -42,7 +42,18 @@
   - stderr printed "Removed 1 leftover sidecar copies from /tmp";
   - no other `_MEI*` folder remained afterwards.
 
-- [ ] 2.4 **Stop engines on app exit** (Decision 6, added during apply): move the terminate logic into `end_engine_tree(pid)`, used by `stop_live_session`; add `stop_all_engines(app)`, which takes and ends the live and file children; call it from `RunEvent::Exit` in `main.rs`. Verify `cargo test` and `cargo build` pass. Also verify by hand: start the debug app, begin a file run on a long file, close the window, and check that no `transcriber-sidecar` process remains and the run's `_MEI*` copy is gone.
+- [x] 2.4 **Stop engines on app exit** (Decision 6, added during apply): move the terminate logic into `end_engine_tree(pid)`, used by `stop_live_session`; add `stop_all_engines(app)`, which takes and ends the live and file children; call it from `RunEvent::Exit` in `main.rs`. Verify `cargo test` and `cargo build` pass. Also verify by hand: start the debug app, begin a file run on a long file, close the window, and check that no `transcriber-sidecar` process remains and the run's `_MEI*` copy is gone.
+
+  **Done 2026-09-15.**
+  - **Code:** the Windows `taskkill` logic moves into a shared `taskkill_tree(pid)`, used by `stop_live_session`. `stop_all_engines(app)` marks both sessions inactive, takes the live and file children, and ends each with `terminate_process_tree` on Unix (survivors to stderr) or `taskkill_tree` on Windows. `main.rs` uses `.build(context)` and `.run(|app, event| …)`, calling it on `RunEvent::Exit`. `cargo build` has no warnings, and `cargo test` passes 31.
+  - **By hand:** a file run on a 3-hour silent WAV, then closing the WebDriver session, left no engine and no copy. The same happened *without* the exit call, though, so that check doesn't show the handler's effect. A file engine exits on its own once its stdout pipe breaks, which led to Decision 7. The handler's effect on a live session is covered by the user check (5.2).
+- [x] 2.5 **Engine stops itself when its stdout reader is gone** (Decision 7, added during apply): in `transcriber.py`, add `_print_or_stop` for transcript lines (file first) and heartbeats. On a broken or closed stdout, it marks a requested stop and interrupts the main thread. Verify a `test_dual_capture.py` scenario, and a repro with the rebuilt frozen engine.
+
+  **Done 2026-09-15.**
+  - **Before the fix,** with the frozen engine: `--live --include-mic --heartbeat` with its stdout reader quitting after "Listening..." still ran 25 s later (25 threads, `parec`, copy present).
+  - **The fix:** `_print_or_stop` catches `BrokenPipeError` or `ValueError`, sets `_stop_requested` and calls `_thread.interrupt_main()`. `_emit` now writes the transcript file before printing.
+  - **New test 3b''** in `test_dual_capture.py`: a stdout whose writes raise `BrokenPipeError` on heartbeats, and a capture loop that swallows `KeyboardInterrupt` like the real ones. The run ends in under 10 s with exit 0, and the transcript keeps `[SYS] hello`. With the heartbeat print reverted to plain `print`, it fails with "the session kept running 20s with nobody reading stdout".
+  - **Checks:** all nine root test scripts pass. Rebuilt and staged the sidecar; the same repro now ends about 6 s after the reader leaves, with no process, no `parec` and 0 copies left.
 
 ## 3. End-to-end
 

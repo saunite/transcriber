@@ -47,6 +47,13 @@ fn main() {
             update::check_for_update,
             update::open_releases_page,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running transcriber GUI");
+        .build(tauri::generate_context!())
+        .expect("error while building transcriber GUI")
+        // Closing the app must not leave an engine capturing or transcribing
+        // (specs/desktop-gui "SHALL stop it cleanly on user request or app quit").
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                sidecar::stop_all_engines(app);
+            }
+        });
 }

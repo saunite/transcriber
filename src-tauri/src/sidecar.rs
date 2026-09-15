@@ -1115,6 +1115,64 @@ fn terminate_process_tree(pid: u32) -> Vec<u32> {
     survivors
 }
 
+/// Ends a sidecar's whole process tree on Windows and describes the result.
+///
+/// PyInstaller's --onefile bootloader relaunches into a child process on
+/// Windows (extracts to a temp dir, then execs into it); killing only the
+/// bootloader orphans the actual worker process, which keeps running and
+/// holding the audio device -- verified by stopping a live session and finding
+/// transcriber-sidecar.exe still alive afterward. taskkill /T kills the whole
+/// process tree instead. CREATE_NO_WINDOW: taskkill is a console program, and
+/// std::process::Command does not suppress its console the way
+/// tauri-plugin-shell does for the sidecar itself -- without this flag a
+/// terminal visibly flashes on every stop, which breaks specs/desktop-gui
+/// "Launches without a console or terminal window". Reported from real
+/// Windows testing.
+#[cfg(windows)]
+fn taskkill_tree(pid: u32) -> String {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    match std::process::Command::new("taskkill")
+        .args(["/F", "/T", "/PID", &pid.to_string()])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+    {
+        Ok(output) if output.status.success() => "Capture engine stopped.".to_string(),
+        Ok(output) => format!("Failed to stop the capture engine (taskkill exit code {:?}).", output.status.code()),
+        Err(e) => format!("Failed to stop the capture engine: {e}"),
+    }
+}
+
+/// Ends every engine the app started, the way Stop does, when the app exits.
+/// tauri-plugin-shell does not end its children on exit: a live engine used to
+/// keep capturing, orphaned, after the window was closed mid-session, and its
+/// unpacked copy stayed in use (openspec/changes/fix-sidecar-temp-leak). Their
+/// exit events see the session already inactive, so nothing is reported.
+pub fn stop_all_engines(app: &AppHandle) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    let children: Vec<CommandChild> = {
+        let mut sidecar = state.sidecar.lock().unwrap();
+        sidecar.session_active = false;
+        sidecar.file_running = false;
+        [sidecar.child.take(), sidecar.file_child.take()].into_iter().flatten().collect()
+    };
+    for child in children {
+        #[cfg(not(windows))]
+        {
+            let survivors = terminate_process_tree(child.pid());
+            if !survivors.is_empty() {
+                eprintln!("{}", stop_result_line(&survivors));
+            }
+        }
+        #[cfg(windows)]
+        {
+            let _ = taskkill_tree(child.pid());
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn stop_live_session(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     // Take the child and release the lock before terminating: a std
@@ -1135,36 +1193,7 @@ pub async fn stop_live_session(app: AppHandle, state: State<'_, AppState>) -> Re
         // transcript lines or leave partial WAV files in practice.
         #[cfg(windows)]
         {
-            // PyInstaller's --onefile bootloader relaunches into a child
-            // process on Windows (extracts to a temp dir, then execs into
-            // it); child.kill() below only terminates that bootloader and
-            // orphans the actual worker process, which keeps running and
-            // holding the audio device -- verified by stopping a live
-            // session and finding transcriber-sidecar.exe still alive
-            // afterward. taskkill /T kills the whole process tree instead.
-            // CREATE_NO_WINDOW: taskkill is a console program, and
-            // std::process::Command does not suppress its console the way
-            // tauri-plugin-shell does for the sidecar itself -- without this
-            // flag a terminal visibly flashes on every stop, which breaks
-            // specs/desktop-gui "Launches without a console or terminal
-            // window" ("none SHALL appear ... for any process it spawns").
-            // Reported from real Windows testing.
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            let result = std::process::Command::new("taskkill")
-                .args(["/F", "/T", "/PID", &child.pid().to_string()])
-                .creation_flags(CREATE_NO_WINDOW)
-                .output();
-            let line = match result {
-                Ok(output) if output.status.success() => {
-                    "Capture engine stopped.".to_string()
-                }
-                Ok(output) => format!(
-                    "Failed to stop the capture engine (taskkill exit code {:?}).",
-                    output.status.code()
-                ),
-                Err(e) => format!("Failed to stop the capture engine: {e}"),
-            };
+            let line = taskkill_tree(child.pid());
             let _ = app.emit("sidecar-log", SidecarLogPayload { line });
         }
         #[cfg(not(windows))]
