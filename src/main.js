@@ -443,13 +443,16 @@ function applyFilters() {
   const pen = els.penFilter.value;
   const query = els.chartSearch.value.trim().toLowerCase();
   let hits = 0;
+  // The count is what the user can see: the displayed chart, after the Show
+  // filter (openspec/changes/fix-chart-search-count).
+  const shownList = els.chartLive.hidden ? els.transcriptFile : els.transcriptLive;
 
   for (const list of [els.transcriptLive, els.transcriptFile]) {
     for (const item of list.children) {
       const penOk = pen === "all" || item.dataset.pen === pen;
       const textEl = item.querySelector(".trace-text");
       const matches = query !== "" && textEl.textContent.toLowerCase().includes(query);
-      if (query !== "" && matches) hits += 1;
+      if (matches && penOk && list === shownList) hits += 1;
 
       item.hidden = !penOk || (query !== "" && !matches);
       item.classList.toggle("trace-hit", query !== "" && matches && penOk);
@@ -478,6 +481,7 @@ function selectTab(name) {
   els.panelFile.hidden = liveActive;
   els.chartLive.hidden = !liveActive;
   els.chartFile.hidden = liveActive;
+  applyFilters();
 }
 
 els.tabLive.addEventListener("click", () => {

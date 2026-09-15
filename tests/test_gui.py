@@ -304,6 +304,39 @@ def test_refusal_shown(browser):
     return page, errors
 
 
+def test_chart_search_count(browser):
+    """The count is the matching lines the user can see: the shown chart, after
+    the Show filter (openspec/changes/fix-chart-search-count)."""
+    page, errors = open_page(browser)
+    line = "(line) => __fake.emit('transcript-line', line)"
+    count = page.locator("#search-count")
+    page.evaluate(line, {"ts": "2026-09-03 14:22:07", "tag": "SYS", "text": "the budget is fine"})
+    page.evaluate(line, {"ts": "2026-09-03 14:22:09", "tag": "MIC", "text": "which budget?"})
+
+    page.select_option("#pen-filter", "SYS")
+    page.fill("#chart-search", "budget")
+    expect(count).to_have_text("1 line")
+    expect(page.locator("#transcript-live .trace-hit")).to_have_count(1)
+
+    # A file run's line lands on the file chart, which is then shown.
+    page.select_option("#pen-filter", "all")
+    drop(page, "/media/one.mp4")
+    wait_for_calls(page, "start_file_transcription", 1)
+    page.evaluate(line, {"ts": "00:01.000 -> 00:03.000", "tag": None, "text": "quarterly budget review"})
+    expect(page.locator("#chart-file")).to_be_visible()
+    expect(count).to_have_text("1 line")
+
+    page.fill("#chart-search", "quarterly")
+    page.click("#tab-live")
+    expect(count).to_have_text("0 lines")
+    page.click("#tab-file")
+    expect(count).to_have_text("1 line")
+
+    page.fill("#chart-search", "")
+    expect(count).to_be_hidden()
+    return page, errors
+
+
 def test_update_check(browser):
     """Each answer of check_for_update shows its result next to the button, and
     nothing checks by itself (openspec/changes/add-manual-update-check)."""
@@ -370,6 +403,7 @@ def main() -> int:
         report("refusal shown", test_refusal_shown, browser)
         report("injected script refused", test_injected_script_refused, browser)
         report("update check", test_update_check, browser)
+        report("chart search count", test_chart_search_count, browser)
         browser.close()
     return 1 if failures else 0
 
