@@ -11,7 +11,7 @@
 - [ ] 2.2 Record `securitypolicyviolation` events into `window.__cspViolations` from an init script, and make `report()` fail a scenario whose page recorded any (Decision 3). Verify:
   - all scenarios still pass, with no violations;
   - a scratch copy of `src/index.html` with an added inline `onclick="…"` attribute, served by a temporary switch of the route's source directory, makes "page loads" fail and name the `script-src-attr` violation;
-  - so does a scratch copy whose theme `<script>` text is edited without any hash change being possible (proving the hash is load-bearing).
+  - with `effective_csp` temporarily returning the policy without the inline-script hashes, "page loads" fails naming a `script-src-elem` violation for the theme script. That proves the computed hash is load-bearing: a hash computed from the served HTML can't be tested by editing that HTML.
   Restore both.
 
 ## 3. Injection scenario
