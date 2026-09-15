@@ -1,6 +1,12 @@
 ## 1. Stop grace
 
-- [ ] 1.1 In `src-tauri/src/sidecar.rs`, replace the 3 s wait in `terminate_process_tree` with a named `STOP_GRACE` of 15 s (design.md Decision 1), and update its doc comment. Add a Unix unit test: `terminate_process_tree` on `sh -c 'trap "sleep 5; exit 0" INT; sleep 60'` returns no survivors, and the process ended with exit code 0, not killed by signal 9. Verify `cargo test` passes, and the new test fails with the grace set back to 3 s.
+- [x] 1.1 In `src-tauri/src/sidecar.rs`, replace the 3 s wait in `terminate_process_tree` with a named `STOP_GRACE` of 15 s (design.md Decision 1), and update its doc comment. Add a Unix unit test: `terminate_process_tree` on `sh -c 'trap "sleep 5; exit 0" INT; sleep 60'` returns no survivors, and the process ended with exit code 0, not killed by signal 9. Verify `cargo test` passes, and the new test fails with the grace set back to 3 s.
+
+  **Done 2026-09-15.** `STOP_GRACE` (15 s, Unix) replaces the 3 s deadline in `terminate_process_tree`, and the doc comments explain the unpacked-copy reason.
+
+  **Deviation from the task text:** the planned `sh -c 'trap ... INT; sleep 60'` stand-in doesn't behave like an engine. A foreground `sleep` makes `sh` exit 130 without running the trap, and a background one ignores SIGINT, so a variant loop hung. The test `a_slow_graceful_exit_is_not_killed` uses a `python3` stand-in instead: SIGINT handler sleeps 5 s then exits 0; it prints "ready" before the signal; the test skips if `python3` is missing. It asserts no survivors, no terminating signal, exit code 0, and that the wait ended before 10 s.
+
+  Passes in 5.1 s. With the grace set back to 3 s it fails with "the engine was killed (… 9) instead of exiting by itself". `cargo test`: 30 passed, 1 ignored. The suite now takes about 15 s, because `finds_and_terminates_a_whole_process_tree`'s background `sleep` ignores SIGINT and waits out the grace before the SIGKILL fallback it tests.
 
 ## 2. Marker and cleanup
 

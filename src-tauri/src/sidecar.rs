@@ -138,6 +138,39 @@ mod tests {
         let _ = parent.wait();
     }
 
+    /// A stop that takes a few seconds must end by itself, not by SIGKILL:
+    /// only then does PyInstaller's bootloader delete its unpacked copy
+    /// (openspec/changes/fix-sidecar-temp-leak).
+    #[cfg(not(windows))]
+    #[test]
+    fn a_slow_graceful_exit_is_not_killed() {
+        use std::os::unix::process::ExitStatusExt;
+        // Like the engine: SIGINT starts a clean shutdown that takes a while.
+        let script = "import signal, sys, time\n\
+                      signal.signal(signal.SIGINT, lambda *_: (time.sleep(5), sys.exit(0)))\n\
+                      print('ready', flush=True)\n\
+                      time.sleep(60)\n";
+        let Ok(mut engine) = std::process::Command::new("python3")
+            .args(["-c", script])
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+        else {
+            eprintln!("skipped: python3 is not available");
+            return;
+        };
+        let mut ready = String::new();
+        std::io::BufRead::read_line(&mut std::io::BufReader::new(engine.stdout.take().unwrap()), &mut ready).unwrap();
+        assert_eq!(ready.trim(), "ready", "the stand-in did not start");
+        let started = std::time::Instant::now();
+        let survivors = terminate_process_tree(engine.id());
+        let took = started.elapsed();
+        assert!(survivors.is_empty(), "survivors: {survivors:?}");
+        let status = engine.wait().unwrap();
+        assert_eq!(status.signal(), None, "the engine was killed ({status:?}) instead of exiting by itself");
+        assert_eq!(status.code(), Some(0), "{status:?}");
+        assert!(took < std::time::Duration::from_secs(10), "the wait did not end when the engine exited: {took:?}");
+    }
+
     #[cfg(not(windows))]
     #[test]
     fn pid_alive_distinguishes_live_from_dead() {
@@ -952,6 +985,15 @@ fn stop_result_line(survivors: &[u32]) -> String {
     }
 }
 
+/// How long a stopping engine gets to exit on its own after SIGINT. It
+/// finishes the chunk it is transcribing and closes the mic (bounded at 5 s);
+/// only an engine that exits by itself lets PyInstaller's bootloader delete
+/// its ~350 MB unpacked copy -- SIGKILL leaves it in the temp directory
+/// (openspec/changes/fix-sidecar-temp-leak). An engine that exits sooner ends
+/// the wait at once.
+#[cfg(not(windows))]
+const STOP_GRACE: std::time::Duration = std::time::Duration::from_secs(15);
+
 /// Signals a sidecar's whole process tree and reports what survived.
 ///
 /// SIGINT first so transcriber.py's handler flushes and closes its transcript
@@ -960,8 +1002,8 @@ fn stop_result_line(survivors: &[u32]) -> String {
 /// answerable instead of assumed (design.md Decisions 2 and 3).
 ///
 /// Blocking on purpose: tokio is not a direct dependency, and the whole
-/// sequence is bounded at ~3s. Called from an async command, so it briefly
-/// occupies a runtime worker rather than the UI thread.
+/// sequence is bounded at about STOP_GRACE. Called from an async command, so
+/// it occupies a runtime worker rather than the UI thread.
 #[cfg(not(windows))]
 fn terminate_process_tree(pid: u32) -> Vec<u32> {
     let mut targets = descendant_pids(pid);
@@ -970,7 +1012,7 @@ fn terminate_process_tree(pid: u32) -> Vec<u32> {
     targets.push(pid);
     signal_pids("-INT", &targets);
 
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    let deadline = std::time::Instant::now() + STOP_GRACE;
     while std::time::Instant::now() < deadline && targets.iter().any(|p| pid_alive(*p)) {
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
