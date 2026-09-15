@@ -249,6 +249,10 @@ The system SHALL save every live session's transcript to a file, defaulting to a
 - **WHEN** a session starts at 15:43:34 local time
 - **THEN** the stamped filename contains `_154334`, whatever the system's UTC offset
 
+#### Scenario: A folder name contains a dot
+- **WHEN** a user starts a live session with an output path whose folder contains a dot and whose file name has no extension, such as `/home/a.b/transcript`
+- **THEN** the transcript is saved in that folder, as `/home/a.b/transcript_<timestamp>`, not in a folder derived from the part before the dot
+
 ### Requirement: Live capture defaults to dual-source (system + microphone) capture
 The system SHALL default a new live session to capturing both system audio and the microphone, with a 10-second transcription chunk duration and wall-clock timestamps, while still letting the user disable microphone capture before starting.
 

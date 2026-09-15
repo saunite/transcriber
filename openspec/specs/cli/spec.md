@@ -77,7 +77,7 @@ The system SHALL provide `--coreaudio-tap` to select native macOS system-audio l
 - **THEN** the system prints a clear error naming the correct flag for the current platform and exits without attempting capture
 
 ### Requirement: Select Linux dual-source live capture mode
-The system SHALL route live capture through the auto-detected monitor/loopback source with optional concurrent microphone capture via `--include-mic` and `--mic-device` when neither `--wasapi` nor `--coreaudio-tap` is set (the Linux default live-capture path). A microphone device that cannot open at the transcription sample rate (16 kHz) SHALL be opened at its own default sample rate and resampled to 16 kHz rather than failing the session. A microphone that cannot be auto-detected SHALL likewise not fail the session: the system SHALL fall back to the first device reporting input channels, and SHALL only exit when no input device exists at all.
+The system SHALL route live capture through the auto-detected monitor/loopback source (or the explicit `--audio-device`) with optional concurrent microphone capture, using the same capture and transcription behaviour whether or not a microphone is included, via `--include-mic` and `--mic-device` when neither `--wasapi` nor `--coreaudio-tap` is set (the Linux default live-capture path). A microphone device that cannot open at the transcription sample rate (16 kHz) SHALL be opened at its own default sample rate and resampled to 16 kHz rather than failing the session. A microphone that cannot be auto-detected SHALL likewise not fail the session: the system SHALL fall back to the first device reporting input channels, and SHALL only exit when no input device exists at all.
 
 #### Scenario: Default live capture with microphone
 - **WHEN** a user runs `--live --include-mic --mic-device N` with no `--wasapi` or `--coreaudio-tap`
@@ -85,7 +85,15 @@ The system SHALL route live capture through the auto-detected monitor/loopback s
 
 #### Scenario: Default live capture without microphone
 - **WHEN** a user runs `--live` without `--include-mic`, `--wasapi`, or `--coreaudio-tap`
-- **THEN** the system captures only the monitor source, unchanged from today's behavior
+- **THEN** the system captures only the system-audio source and labels its segments `[SYS]`, with the same compact output as a session with a microphone
+
+#### Scenario: Explicit system-audio device without microphone
+- **WHEN** a user runs `--live --audio-device N` without `--include-mic`, and speech continues for longer than one chunk
+- **THEN** no captured audio is dropped while chunks are transcribed, and the lines are labelled `[SYS]`
+
+#### Scenario: Silence stop without microphone
+- **WHEN** a user runs `--live --silence-timeout S` without `--include-mic`, with or without `--audio-device`, and no speech is detected for S seconds
+- **THEN** the session stops and exits successfully, as a session with a microphone does
 
 #### Scenario: Microphone that refuses 16 kHz
 - **WHEN** the selected or auto-detected microphone refuses to open at 16 kHz (for example a raw ALSA `hw:` device that only accepts 44.1 or 48 kHz)

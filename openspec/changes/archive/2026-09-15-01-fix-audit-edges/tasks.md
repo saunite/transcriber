@@ -75,7 +75,9 @@
 
   **Done 2026-09-15.** With `TRANSCRIBER_TEST_SPEECH` set and GitHub reachable: 15/15 suites passed, exit 0. That's one more suite than before (`test_launchers.py`), and it includes the no-mic scenario, "dotted output folder", and the e2e Linux suite. It ran after the README and backlog edits.
 
-- [ ] 3.4 **Manual check, by the user, on a rebuilt sidecar:** first rebuild and stage the sidecar (`build_sidecar.py`, copied to `src-tauri/binaries/`), then build the app. In the app, untick the microphone and start a short live session over a playing video, keeping nothing afterwards. Verify:
+- [x] 3.4 **Manual check, by the user, on a rebuilt sidecar:** first rebuild and stage the sidecar (`build_sidecar.py`, copied to `src-tauri/binaries/`), then build the app. In the app, untick the microphone and start a short live session over a playing video, keeping nothing afterwards. Verify:
   - lines appear on the chart;
   - they stay visible under Show = SYS;
   - with Stop after silence set to 1 minute, the session stops by itself after a minute of silence.
+
+  **Done 2026-09-15.** The sidecar was rebuilt from this change and staged at 14:32, and the app built at 14:34. The user reported that all three checks worked: lines on the chart with the microphone unticked, those lines still visible under Show = SYS, and the session stopping by itself after a minute of silence.
