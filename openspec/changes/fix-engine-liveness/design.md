@@ -32,6 +32,8 @@
 ### 1. The engine exits 1 when the source ends on its own
 In `_run_dual_capture`, reaching the line after `run_sys(...)` without an exception means the source ended on its own. The engine prints `❌ System audio capture ended unexpectedly` and sets `exit_code = 1`. The existing `finally` still joins the workers and closes the transcript, so everything transcribed so far is kept. `KeyboardInterrupt` (user or `check_silence`) keeps exit 0. `transcribe_live_simple` gets the same treatment after its `capture_stream(...)` call.
 
+**Corrected while applying (task 1.1):** "a normal return means the source ended" is not enough on its own. Every `capture_stream` (Linux, WASAPI, macOS, generic) catches `KeyboardInterrupt` and returns normally, so a user stop or a silence stop also returns. `transcriber.py` therefore records a requested stop: the SIGINT handler and both silence checks call `_request_stop()`, which sets `_stop_requested` and raises. A normal return counts as a lost source only when no stop was requested. The flag is reset at the start of each live session.
+
 - *Alternative:* have each `capture_stream` raise on EOF or read error. That touches three platform modules, one of them (macOS) untestable here, for the same observable result. Rejected.
 
 ### 2. `--heartbeat`: one line per chunk, per source, hidden from help

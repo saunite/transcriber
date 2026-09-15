@@ -41,6 +41,29 @@ from audio_capture import AudioCapture, setup_loopback_instructions
 from transcription_engine import NoDecodableAudioError, TranscriptionEngine
 import time
 
+# Set when a live session was asked to stop (Ctrl+C/SIGINT, or the silence
+# timeout). Every capture_stream swallows KeyboardInterrupt and returns
+# normally, so a normal return only means "the source ended on its own" when
+# no stop was requested (openspec/changes/fix-engine-liveness).
+_stop_requested = False
+
+
+def _request_stop(reason=""):
+    global _stop_requested
+    _stop_requested = True
+    raise KeyboardInterrupt(reason)
+
+
+def _source_ended_unexpectedly() -> bool:
+    """Called after capture returned normally: True unless a stop was requested."""
+    return not _stop_requested
+
+
+# Printed as the session's very last line, after the stop summary, so the GUI
+# can show it as the reason (openspec/changes/fix-engine-liveness).
+LOST_SOURCE_MESSAGE = "❌ System audio capture ended unexpectedly"
+
+
 def _make_signal_handler(verbose: bool):
     """Ctrl+C handler, gated on --verbose -- the compact default prints its
     own one-line stop summary once cleanup finishes (see _print_summary),
@@ -48,7 +71,7 @@ def _make_signal_handler(verbose: bool):
     def signal_handler(signum, frame):
         if verbose:
             print("\n\n⏹️  Shutdown requested, stopping transcription...")
-        raise KeyboardInterrupt
+        _request_stop()
     return signal_handler
 
 
@@ -169,6 +192,11 @@ Examples:
         action='store_true',
         help='Live capture only: print the transcript without saving it to a file'
     )
+
+    # For the desktop app only: one line per audio chunk that went through the
+    # pipeline, speech or not, so a quiet room is not mistaken for a stalled
+    # engine (openspec/changes/fix-engine-liveness). Hidden from --help.
+    parser.add_argument('--heartbeat', action='store_true', help=argparse.SUPPRESS)
     
     parser.add_argument(
         '--format',
@@ -686,6 +714,8 @@ def _run_dual_capture(engine, args, *, title, mode_summary, sys_rate, run_sys, m
     import sounddevice as sd
     import queue
     import threading
+    global _stop_requested
+    _stop_requested = False
 
     # Compact default status: identity, model/language/mode/device summary,
     # and a listening confirmation (openspec/changes/compact-live-cli-output).
@@ -721,7 +751,7 @@ def _run_dual_capture(engine, args, *, title, mode_summary, sys_rate, run_sys, m
     def check_silence():
         if args.silence_timeout > 0 and (time.time() - last_speech_time) > args.silence_timeout:
             print(f"\nAuto-stop: {args.silence_timeout/60:.1f} minutes of silence detected")
-            raise KeyboardInterrupt("Silence timeout")
+            _request_stop("Silence timeout")
 
     def on_chunk(audio_chunk):
         check_silence()
@@ -792,6 +822,8 @@ def _run_dual_capture(engine, args, *, title, mode_summary, sys_rate, run_sys, m
                             all_segments.append(seg)
                     except Exception as e:
                         print(f"  ❌ Error transcribing {tag.lower()} audio: {e}")
+                if args.heartbeat:
+                    print(f"HEARTBEAT {tag}")
             else:
                 time.sleep(0.05)
 
@@ -812,6 +844,7 @@ def _run_dual_capture(engine, args, *, title, mode_summary, sys_rate, run_sys, m
         mic_thread.start()
 
     exit_code = 0
+    source_lost = False
     mic_stream = None
     try:
         if mic:
@@ -819,6 +852,10 @@ def _run_dual_capture(engine, args, *, title, mode_summary, sys_rate, run_sys, m
                                         blocksize=1024, callback=mic_callback)
             mic_stream.start()
         run_sys(on_chunk, sys_audio_queue.put, check_silence)
+        # A normal return with no stop requested: the system audio source ended
+        # on its own (parec EOF, a WASAPI read error).
+        if _source_ended_unexpectedly():
+            exit_code, source_lost = 1, True
     except KeyboardInterrupt:
         print("\n\nStopping transcription...")
     except capture_errors as e:
@@ -841,6 +878,8 @@ def _run_dual_capture(engine, args, *, title, mode_summary, sys_rate, run_sys, m
     if args.verbose:
         _print_summary(all_segments, args, output_path=args.output)
     _print_compact_stop(all_segments, args.output)
+    if exit_code == 1 and source_lost:
+        print(LOST_SOURCE_MESSAGE)
     return exit_code
 
 
@@ -852,6 +891,9 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
     (openspec/changes/add-linux-dual-source-live-capture)."""
     if args.include_mic:
         return _transcribe_live_linux_dual(engine, args)
+
+    global _stop_requested
+    _stop_requested = False
 
     import numpy as np
     import sounddevice as sd
@@ -922,7 +964,7 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
             elapsed_silence = time.time() - last_speech_time
             if elapsed_silence > args.silence_timeout:
                 print(f"\n⏱️  Stopping: {args.silence_timeout/60:.1f} minutes of silence detected")
-                raise KeyboardInterrupt("Silence timeout")
+                _request_stop("Silence timeout")
 
         audio_buffer.append(audio_chunk.flatten())
         
@@ -967,14 +1009,19 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
             
             except Exception as e:
                 print(f"  ❌ Error transcribing: {e}")
+            if args.heartbeat:
+                print("HEARTBEAT SYS")
 
     
+    exit_code = 0
     try:
         # Start capturing
         if use_linux_loopback:
             capture.capture_stream(callback=audio_callback, device_index=loopback_name, verbose=args.verbose)
         else:
             capture.capture_stream(callback=audio_callback, device=args.audio_device)
+        if _source_ended_unexpectedly():
+            exit_code = 1
     except KeyboardInterrupt:
         print("\n\n⏹️  Stopping transcription...")
     finally:
@@ -985,8 +1032,10 @@ def transcribe_live_simple(engine: TranscriptionEngine, args) -> int:
     if args.verbose:
         _print_summary(all_segments, args, output_path=args.output)
     _print_compact_stop(all_segments, args.output)
+    if exit_code == 1:
+        print(LOST_SOURCE_MESSAGE)
 
-    return 0
+    return exit_code
 
 
 def _transcribe_live_linux_dual(engine: TranscriptionEngine, args) -> int:

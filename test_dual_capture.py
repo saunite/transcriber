@@ -54,7 +54,8 @@ class _FakeInputStream:
 
 def _args(output, **overrides):
     values = dict(output=output, model="base", model_label="base", language=None, silence_timeout=0,
-                  chunk_duration=1, actual_time=False, verbose=False, audio_device=-1, include_mic=True)
+                  chunk_duration=1, actual_time=False, verbose=False, audio_device=-1, include_mic=True,
+                  heartbeat=False)
     values.update(overrides)
     return types.SimpleNamespace(**values)
 
@@ -80,13 +81,15 @@ def _run(engine, args, **kwargs):
 def _feed(blocks, then=KeyboardInterrupt, gap=0.0):
     """A run_sys that hands blocks to on_chunk, lets the workers catch up, then
     stops. A gap longer than the worker's 50 ms poll makes it take one block
-    at a time, so chunk boundaries are deterministic."""
+    at a time, so chunk boundaries are deterministic. then=None returns
+    normally, as a capture does when its audio source ends on its own."""
     def run_sys(on_chunk, enqueue, check_silence):
         for block in blocks:
             on_chunk(block)
             time.sleep(gap)
         time.sleep(0.3)
-        raise then()
+        if then is not None:
+            raise then()
     return run_sys
 
 
@@ -162,6 +165,51 @@ def main() -> None:
             del transcriber.open
         assert code == 1 and "❌" in out, out
         assert opened and all(f.closed for f in opened), "the transcript file was left open"
+
+    # 3b. A system source that ends on its own -- run_sys returns with no stop
+    #     requested -- is a lost source: exit 1, a message, and the transcript
+    #     keeps what was written (openspec/changes/fix-engine-liveness).
+    with tempfile.TemporaryDirectory() as tmp:
+        lost = os.path.join(tmp, "lost.txt")
+        code, out = _run(_FakeEngine(), _args(lost), title="T", mode_summary="T", sys_rate=lambda: 16000,
+                         run_sys=_feed([np.zeros(16000, np.float32)] * 2, then=None, gap=0.12), mic=None)
+        assert code == 1 and out.rstrip().splitlines()[-1] == transcriber.LOST_SOURCE_MESSAGE, out
+        assert "[SYS] hello" in open(lost, encoding="utf-8").read(), "the transcript lost its lines"
+
+        # 3c. Every real capture_stream swallows KeyboardInterrupt and returns
+        #     normally, so a silence stop raised inside it must still exit 0
+        #     and not be reported as a lost source.
+        def swallowing(on_chunk, enqueue, check_silence):
+            try:
+                deadline = time.time() + 5
+                while time.time() < deadline:
+                    on_chunk(np.zeros(160, np.float32))
+                    time.sleep(0.05)
+            except KeyboardInterrupt:
+                return
+
+        code, out = _run(_FakeEngine(text=""), _args(os.path.join(tmp, "quiet.txt"), silence_timeout=0.2),
+                         title="T", mode_summary="T", sys_rate=lambda: 16000, run_sys=swallowing, mic=None)
+        assert code == 0 and "Auto-stop" in out and "ended unexpectedly" not in out, out
+
+    # 3d. --heartbeat: a silent engine still reports every chunk it processed,
+    #     for both sources, and nothing is printed without the flag. The MIC
+    #     block is audible (gate passes) and the SYS one silent.
+    with tempfile.TemporaryDirectory() as tmp:
+        for heartbeat in (True, False):
+            code, out = _run(_FakeEngine(text=""), _args(os.path.join(tmp, f"hb{heartbeat}.txt"), heartbeat=heartbeat),
+                             title="T", mode_summary="T", sys_rate=lambda: 16000,
+                             run_sys=_feed([np.zeros(16000, np.float32)] * 2, gap=0.12), mic=mic)
+            beats = {line for line in out.splitlines() if line.startswith("HEARTBEAT")}
+            if heartbeat:
+                assert beats == {"HEARTBEAT SYS", "HEARTBEAT MIC"}, out
+            else:
+                assert not beats, out
+    help_text = io.StringIO()
+    with contextlib.redirect_stdout(help_text), contextlib.suppress(SystemExit):
+        sys.argv = ["transcriber.py", "--help"]
+        transcriber.main()
+    assert "--heartbeat" not in help_text.getvalue(), "--heartbeat must stay hidden from --help"
 
     # 4. The platform functions hand the runner the right pieces. The runner is
     #    replaced by a recorder, so no capture loop runs; the capture classes

@@ -78,6 +78,8 @@ def test_non_transcript_lines_do_not_match():
     non_transcript_lines = [
         "Audio Transcriber",
         "  (no speech detected)",
+        "HEARTBEAT SYS",  # openspec/changes/fix-engine-liveness
+        "HEARTBEAT MIC",
         "🎙️  Listening... (Press Ctrl+C to stop)",
         "",
     ]

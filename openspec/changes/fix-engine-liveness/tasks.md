@@ -1,17 +1,38 @@
 ## 1. Engine
 
-- [ ] 1.1 In `transcriber.py`, make a live capture whose system source ends on its own print `❌ System audio capture ended unexpectedly` and return 1 (design.md Decision 1). That applies after `run_sys(...)` returns normally in `_run_dual_capture`, and after `capture_stream(...)` returns normally in `transcribe_live_simple`. `KeyboardInterrupt` keeps exit 0, and the transcript keeps everything written so far. In `test_dual_capture.py`:
+- [x] 1.1 In `transcriber.py`, make a live capture whose system source ends on its own print `❌ System audio capture ended unexpectedly` and return 1 (design.md Decision 1). That applies after `run_sys(...)` returns normally in `_run_dual_capture`, and after `capture_stream(...)` returns normally in `transcribe_live_simple`. `KeyboardInterrupt` keeps exit 0, and the transcript keeps everything written so far. In `test_dual_capture.py`:
   - change scenario 1's fake source to end with `KeyboardInterrupt` (a user stop), which still expects exit 0;
   - add a scenario whose source simply returns, expecting exit 1, the message, and the transcript lines written before it;
   - keep the silence scenario at exit 0 with "Auto-stop".
 
   Verify the tests pass, and that the new scenario fails with the exit-code change reverted.
-- [ ] 1.2 Add the hidden `--heartbeat` flag (`help=argparse.SUPPRESS`; Decision 2). `_drain_and_transcribe` prints `HEARTBEAT <TAG>` once per buffer that reaches its threshold, gated MIC chunks included, after the transcription attempt. `transcribe_live_simple` prints `HEARTBEAT SYS` per processed chunk. In `test_dual_capture.py`, check:
+
+  **Done 2026-09-15.**
+  - **Design correction:** every `capture_stream` swallows `KeyboardInterrupt` and returns normally, so "returned normally" alone would have reported every user stop and silence stop as a lost source. `_request_stop()` now sets `_stop_requested` from the SIGINT handler and both silence checks, and `_source_ended_unexpectedly()` prints `❌ System audio capture ended unexpectedly` only when no stop was requested. The flag is reset at the start of `_run_dual_capture` and `transcribe_live_simple`. Both paths return 1 in that case, and the transcript is closed by the existing `finally`.
+  - **Tests** in `test_dual_capture.py`:
+    - scenario 1 already ends with `KeyboardInterrupt`, so it's unchanged and still expects exit 0;
+    - `_feed(..., then=None)` returns normally;
+    - new 3b: a source that returns gives exit 1, the message, and the `[SYS] hello` line still in the transcript;
+    - new 3c: a `run_sys` that swallows `KeyboardInterrupt` like the real captures, with a 0.2 s silence timeout, gives exit 0, "Auto-stop", and no "ended unexpectedly";
+    - the silence scenario (2) still gives exit 0.
+  - **Ordering:** the lost-source message (`LOST_SOURCE_MESSAGE`) is printed as the session's very last line, after the stop summary, so the GUI can show it as the reason; 3b asserts it is the final line. A silence stop's own line is followed by the stop summary too, so the page recognises a silence stop from the engine log during the session, not from the last line (noted for 3.2).
+  - **Verified:** the tests pass. With the lost-source report disabled, 3b fails; with the stop flag ignored, 3c fails.
+
+- [x] 1.2 Add the hidden `--heartbeat` flag (`help=argparse.SUPPRESS`; Decision 2). `_drain_and_transcribe` prints `HEARTBEAT <TAG>` once per buffer that reaches its threshold, gated MIC chunks included, after the transcription attempt. `transcribe_live_simple` prints `HEARTBEAT SYS` per processed chunk. In `test_dual_capture.py`, check:
   - with the flag, a silent engine (`text=""`) still prints `HEARTBEAT SYS` and `HEARTBEAT MIC`;
   - without it, no `HEARTBEAT` appears;
   - `--help` doesn't mention it.
 
   Verify the tests pass, and that the heartbeat line doesn't match `test_transcript_line_format.py`'s transcript regex.
+
+  **Done 2026-09-15.** `--heartbeat` is added with `help=argparse.SUPPRESS`. `_drain_and_transcribe` prints `HEARTBEAT <TAG>` after every buffer that reached its threshold, whether transcribed, gated or errored. `transcribe_live_simple` prints `HEARTBEAT SYS` after each processed chunk. Engine stdout is already line-buffered, so beats reach the GUI immediately.
+
+  Tests:
+  - `test_dual_capture.py` 3d: with a silent engine, the flag prints exactly `{HEARTBEAT SYS, HEARTBEAT MIC}`, and without it no `HEARTBEAT` line appears;
+  - `transcriber.main()` with `--help` doesn't mention `--heartbeat`;
+  - `test_transcript_line_format.py`'s must-not-match list gains `HEARTBEAT SYS` and `HEARTBEAT MIC`.
+
+  `_args` gained `heartbeat=False`. All nine root test scripts pass.
 
 ## 2. Shell
 
