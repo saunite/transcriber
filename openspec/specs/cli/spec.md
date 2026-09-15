@@ -100,7 +100,7 @@ The system SHALL route live capture through the auto-detected monitor/loopback s
 - **THEN** live capture enumerates the same input devices and monitor sources that the host system exposes to other audio applications, rather than a reduced set that omits the default input
 
 ### Requirement: Accept an explicit local model path
-The system SHALL provide `--model-path <dir>` to load the whisper model from a local directory directly, bypassing the network/cache-based model name lookup, for both file and live transcription modes. When `--model-path` is not given, the standalone (frozen) CLI executable SHALL load its bundled model from a `model` directory next to the executable if that directory holds a model and the requested `--model` size is the bundled size (`base`).
+The system SHALL provide `--model-path <dir>` to load the whisper model from a local directory directly, bypassing the network/cache-based model name lookup, for both file and live transcription modes. When `--model-path` is not given, the standalone (frozen) CLI executable SHALL load its bundled model from a `model` directory next to the executable if that directory holds a model and the requested `--model` size is the bundled size (`base`). Wherever the system names the model in its output (transcript file header, live summary line, and live header), it SHALL use the `--model` value when `--model` is given, and the name of the `--model-path` directory when `--model-path` is given without `--model`; with neither, it SHALL use the default size `base`.
 
 #### Scenario: File transcription with explicit model path
 - **WHEN** a user runs `--file audio.wav --model-path C:\path\to\model`
@@ -121,6 +121,14 @@ The system SHALL provide `--model-path <dir>` to load the whisper model from a l
 #### Scenario: Standalone executable asked for a different model size
 - **WHEN** the standalone CLI executable is run without `--model-path` and with a `--model` size other than `base`
 - **THEN** the system ignores the bundled model and resolves the requested size by name, as before
+
+#### Scenario: Output names a model path by its folder
+- **WHEN** a user runs `--live --model-path /models/faster-whisper-small` without `--model`
+- **THEN** the transcript header, summary line, and live header name the model `faster-whisper-small`, not `base`
+
+#### Scenario: Explicit model name still labels the output
+- **WHEN** a user runs with both `--model small` and `--model-path /models/anything`
+- **THEN** the output names the model `small`
 
 ### Requirement: Handle interruption gracefully
 The system SHALL handle Ctrl+C by stopping capture, finalizing the transcript, cleaning up resources, and exiting without a crash.
