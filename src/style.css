@@ -494,6 +494,11 @@ select:focus-visible {
   gap: 0.5rem;
 }
 
+/* A check in progress stays at full ink so "Checking…" is readable. */
+.btn-quiet[aria-disabled="true"] {
+  cursor: progress;
+}
+
 .update-result {
   margin: 0;
   font-size: 0.6875rem;

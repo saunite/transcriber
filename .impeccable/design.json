@@ -112,7 +112,7 @@
       "name": "Nameplate",
       "kind": "custom",
       "refersTo": null,
-      "description": "Rail foot: running version and the manual update check. The result stays inline under the button, never in a note; neutral ink-soft for every result except a newer version (ink, 600, plus an Open download page quiet button).",
+      "description": "Rail foot: running version and the manual update check. The result stays inline under the button, never in a note; neutral ink-soft for every result except a newer version (ink, 600), where Open download page replaces the Check button. Checking uses aria-disabled at full ink so focus and legibility hold.",
       "html": "<div class=\"ds-nameplate\"><div class=\"ds-nameplate-id\"><span class=\"ds-label\">Version</span><span class=\"ds-readout\">0.1.0</span></div><button class=\"ds-btn-quiet\" type=\"button\">Check for updates</button><p class=\"ds-update-result\" data-state=\"available\" role=\"status\">Transcriber 0.2.0 is available.</p><button class=\"ds-btn-quiet\" type=\"button\">Open download page</button></div>",
       "css": ".ds-nameplate { display: flex; flex-direction: column; gap: 0.4rem; padding-top: 0.8rem; border-top: 1px solid #bcc7bb; } .ds-nameplate-id { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; } .ds-label { font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #4e6152; } .ds-readout { font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; font-size: 0.6875rem; letter-spacing: 0.04em; color: #4e6152; } .ds-update-result { margin: 0; font-size: 0.6875rem; line-height: 1.4; color: #4e6152; } .ds-update-result[data-state=\"available\"] { color: #17231b; font-weight: 600; }"
     },

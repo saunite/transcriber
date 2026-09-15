@@ -177,9 +177,9 @@ Small, near-uniform radii (1–3px) throughout, closer to a physical instrument'
 
 ### Nameplate
 - The rail's last block, pushed to its foot (`margin-top: auto`) under a `1px panel-edge` hairline: a `Version` label with the running version as a mono `rail-readout` on the same row, then the quiet **Check for updates** button.
-- **Checking:** the button disables and reads "Checking…". No spinner, no badge.
-- **Result:** one `0.6875rem` line under the button, `ink-soft` for up to date, no release published, and couldn't check. "Couldn't check" is neutral, not MIC red: an unreachable network is not the instrument failing. A newer version is the only result in `ink` at weight 600, and it adds a second quiet button, **Open download page**. Both are real buttons, reachable by keyboard.
-- The result line is a `role="status"` region, so the result is announced without moving focus.
+- **Checking:** the button reads "Checking…" and is `aria-disabled` (ignores clicks, `cursor: progress`), at full `ink-soft`, not the faded `:disabled` look. A truly disabled button would drop keyboard focus to the page and fade the only sign of progress to ~2.2:1. No spinner, no badge.
+- **Result:** one `0.6875rem` line under the button, `ink-soft` for up to date, no release published, and couldn't check. "Couldn't check" is neutral, not MIC red: an unreachable network is not the instrument failing. A newer version is the only result in `ink` at weight 600. Then **Check for updates** gives way to **Open download page**, so one quiet action sits under the line, and focus moves to it if the check button had it.
+- The result line is a `role="status"` region, always rendered (empty when idle) and cleared at the start of each check, so every result, even a repeat, is announced without moving focus.
 
 ### Drop Zone
 - Dashed `1px` border in `panel-edge`, `stock-raised` background; on drag-over the border solidifies and shifts to `pen-sys` (not `pen-mic`) with text darkening to `ink` — the drop affordance references the SYS pen, not the live-fault red.

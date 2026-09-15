@@ -55,6 +55,14 @@
   - Native buttons give keyboard access and the themed `:focus-visible` ring. The result is announced through `role="status"`.
   - Copy names the action and, on failure, the recovery.
 
+  **Independent finish review, 2026-09-15, by the `impeccable-finish-reviewer` agent, after the inline review above.** The user asked for it. **Verdict: fix.** Topology, type, material, ground and fit all matched, and the ceiling was reached. It found four material issues, all applied:
+  1. **Keyboard focus lost:** disabling the focused Check button dropped focus to the page, and it didn't come back. The button now uses `aria-disabled` and ignores clicks while checking.
+  2. **Result may not be announced:** the result line went from `hidden` to filled in one step. It is now always rendered, and cleared at the start of each check.
+  3. **"Checking…" unreadable:** at `opacity: 0.5` it measured about 2.2:1. `[aria-disabled]` keeps full `ink-soft` and uses `cursor: progress`.
+  4. **Two equal buttons under "available":** **Check for updates** is now hidden, so **Open download page** is the one action, and it receives focus.
+
+  `test_update_check` now drives the button by keyboard. It asserts focus stays on the Check button, or moves to **Open download page** when a newer version is found, and that the Check button is hidden then. It passes, and fails against the pre-fix `main.js`. Re-screenshotted once, in light and dark at 900×640 and 640×480, in the checking and available states: focus is held with a visible ring, the text colour is at full ink, there's no overflow, and no CSP violations or script errors. `DESIGN.md` and `design.json` describe the fixed behaviour.
+
   `DESIGN.md` gains a **Nameplate** component, adds both buttons to the Quiet button list, adds the rail foot to Layout, and notes under Notes (toast) that notes carry no actions. `.impeccable/design.json` gains a `Nameplate` component. Tokens are unchanged. Both files already ended with a stray `</content>` line, which makes `design.json` invalid JSON. That drift predates this change and was left alone.
 
 ## 3. Docs and licences

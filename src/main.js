@@ -146,10 +146,15 @@ const UPDATE_MESSAGES = {
   unavailable: () => "Couldn't check for updates. Check your connection and try again.",
 };
 
+// aria-disabled, not disabled: disabling the focused button would drop
+// keyboard focus to the page. The result line stays rendered and is cleared
+// first, so each new result is announced, even a repeat.
 async function checkForUpdate() {
-  els.updateCheckBtn.disabled = true;
+  if (els.updateCheckBtn.getAttribute("aria-disabled") === "true") return;
+  els.updateCheckBtn.setAttribute("aria-disabled", "true");
   els.updateCheckBtn.textContent = "Checking…";
-  els.updateOpenBtn.hidden = true;
+  els.updateResult.textContent = "";
+  delete els.updateResult.dataset.state;
   let result;
   try {
     result = await invoke("check_for_update");
@@ -158,11 +163,16 @@ async function checkForUpdate() {
   }
   const state = Object.hasOwn(UPDATE_MESSAGES, result?.state) ? result.state : "unavailable";
   els.updateResult.dataset.state = state;
-  els.updateResult.hidden = false;
   els.updateResult.textContent = UPDATE_MESSAGES[state](result?.version);
-  els.updateOpenBtn.hidden = state !== "available";
   els.updateCheckBtn.textContent = "Check for updates";
-  els.updateCheckBtn.disabled = false;
+  els.updateCheckBtn.removeAttribute("aria-disabled");
+  // Once a newer version is found, the download page is the only action left.
+  if (state === "available") {
+    const hadFocus = document.activeElement === els.updateCheckBtn;
+    els.updateOpenBtn.hidden = false;
+    els.updateCheckBtn.hidden = true;
+    if (hadFocus) els.updateOpenBtn.focus();
+  }
 }
 
 els.updateCheckBtn.addEventListener("click", checkForUpdate);

@@ -318,14 +318,19 @@ def test_update_check(browser):
         page, errors = open_page(browser, {"check_for_update": response})
         page.wait_for_timeout(200)
         assert calls(page, "check_for_update") == [], "the page checked for updates without a click"
-        page.click("#update-check-btn")
+        page.focus("#update-check-btn")
+        page.keyboard.press("Enter")
         expect(page.locator("#update-result")).to_contain_text(text)
-        expect(page.locator("#update-check-btn")).to_be_enabled()
         open_btn = page.locator("#update-open-btn")
         if response.get("state") == "available":
-            open_btn.click()
+            # The download page becomes the one action, and keeps keyboard focus.
+            expect(page.locator("#update-check-btn")).to_be_hidden()
+            expect(open_btn).to_be_focused()
+            page.keyboard.press("Enter")
             wait_for_calls(page, "open_releases_page", 1)
         else:
+            expect(page.locator("#update-check-btn")).to_be_enabled()
+            expect(page.locator("#update-check-btn")).to_be_focused()
             expect(open_btn).to_be_hidden()
         if response is not cases[-1][0]:  # the last page goes back to report()
             violations = page.evaluate("window.__cspViolations")
