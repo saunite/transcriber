@@ -148,7 +148,10 @@
 
 ## 5. Verification
 
-- [ ] 5.1 Rebuild the sidecar (`./.venv/bin/python build_sidecar.py`), since the shell now passes `--heartbeat`, which older staged sidecars reject. Then run `.venv/bin/python run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set and a network that reaches GitHub. Verify it exits 0, and that every end-to-end scenario prints `PASS`.
+- [x] 5.1 Rebuild the sidecar (`./.venv/bin/python build_sidecar.py`), since the shell now passes `--heartbeat`, which older staged sidecars reject. Then run `.venv/bin/python run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set and a network that reaches GitHub. Verify it exits 0, and that every end-to-end scenario prints `PASS`.
+
+  **Done 2026-09-15.** `build_sidecar.py` succeeded, and `dist/linux/transcriber-sidecar` was copied over the staged `src-tauri/binaries/transcriber-sidecar-x86_64-unknown-linux-gnu`, which is git-ignored. The new binary accepts `--heartbeat` (`--heartbeat --list-devices-json` exits 0), and `--help` doesn't list it. `run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set, GitHub reachable (404), and the sandbox off for network: 13/13 suites passed, exit 0. All nine end-to-end scenarios printed `PASS`, and no app, driver or sidecar processes were left behind.
+
 - [ ] 5.2 **User check on Linux** (a local build):
   - with the setting at 1 minute, a live session in a quiet room shows the quiet status, not "stalled", then stops after about a minute with the silence notice, and the transcript file is kept;
   - restarting PipeWire (`systemctl --user restart pipewire pipewire-pulse`) during a session shows the unexpected-end notice;
