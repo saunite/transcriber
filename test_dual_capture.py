@@ -53,7 +53,7 @@ class _FakeInputStream:
 
 
 def _args(output, **overrides):
-    values = dict(output=output, model="base", language=None, silence_timeout=0,
+    values = dict(output=output, model="base", model_label="base", language=None, silence_timeout=0,
                   chunk_duration=1, actual_time=False, verbose=False, audio_device=-1, include_mic=True)
     values.update(overrides)
     return types.SimpleNamespace(**values)

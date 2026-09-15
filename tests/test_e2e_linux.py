@@ -10,6 +10,10 @@ are all real:
 - download page: the OS URL opener gets exactly the releases URL (a recording
   xdg-open stands in for the browser);
 - no request at startup: strace sees no IPv4/IPv6 connect from any process;
+- model folder (openspec/changes/choose-model-folder): a stored choice survives
+  a restart, a folder without model.bin is refused before any live engine
+  starts, and a chosen folder is what the engine loads (the folder dialog
+  itself can't be driven, so the choice is stored the way the page stores it);
 - offline (re-run inside `unshare -rn`): the update check says it couldn't
   check, the download page still opens, and the engine transcribes the speech
   sample with the staged sidecar.
@@ -45,6 +49,7 @@ COULD_NOT_CHECK = "Couldn't check for updates"
 PORT = 4444
 TIMEOUT = 60
 SCENARIOS = ["update check online", "download page", "no request at startup",
+             "model folder remembered", "model folder refused", "model folder used",
              "update check offline", "download page offline", "engine offline"]
 
 
@@ -264,6 +269,106 @@ def test_no_request_at_startup(workdir):
     assert not connects, "network connection attempted at startup:\n" + "\n".join(connects[:5])
 
 
+# The chosen model folder (openspec/changes/choose-model-folder). The native
+# folder dialog can't be driven, so the choice is stored the way the page
+# stores it, then the page re-renders from it.
+MODEL_DIR_KEY = "transcriber-model-dir"
+BUNDLED_MODEL = SRC_TAURI / "resources" / "model"
+
+
+def store_model_dir(app, folder):
+    value = json.dumps(str(folder)) if folder else "null"
+    app.run_async(f"if ({value}) localStorage.setItem('{MODEL_DIR_KEY}', {value}); "
+                  f"else localStorage.removeItem('{MODEL_DIR_KEY}'); renderModelSelect(); done('ok');")
+
+
+def shown_model(app):
+    return app.run_async("const s = document.getElementById('model-select'); done([s.value, s.selectedOptions[0]?.textContent ?? '']);")
+
+
+def model_folder(workdir, name, with_model):
+    """A model folder: symlinks to the bundled model's files, or empty."""
+    folder = workdir / name
+    folder.mkdir()
+    if with_model:
+        for file in BUNDLED_MODEL.iterdir():
+            (folder / file.name).symlink_to(file)
+    return folder
+
+
+def silent_wav(path):
+    import wave
+    with wave.open(str(path), "wb") as out:
+        out.setnchannels(1)
+        out.setsampwidth(2)
+        out.setframerate(16000)
+        out.writeframes(b"\0\0" * 16000)
+    return path
+
+
+def debug_log(app):
+    return app.run_async("done(document.getElementById('debug-log').textContent);")
+
+
+def test_model_folder_remembered(workdir):
+    env = app_env(workdir)[0]
+    folder = model_folder(workdir, "faster-whisper-e2e", with_model=True)
+    app = App(env)
+    try:
+        store_model_dir(app, folder)
+        # WebKit writes localStorage to disk about half a second later; closing
+        # the process group before that would lose it, which is the test's doing,
+        # not the app's.
+        needle = str(folder).encode("utf-16-le")
+        App._wait(lambda: any(needle in f.read_bytes() or str(folder).encode() in f.read_bytes()
+                              for f in (workdir / "data").rglob("*.localstorage*") if f.is_file()),
+                  "the choice to reach the app's storage on disk")
+    finally:
+        app.close()
+    app = App(env)  # same data directory, fresh process
+    try:
+        value, label = App._wait(lambda: (lambda v: v if v[0] else None)(shown_model(app)), "the Model field to load")
+        assert [value, label] == [str(folder), "faster-whisper-e2e"], f"after a restart the Model field shows {label!r} ({value!r})"
+    finally:
+        app.close()
+
+
+def test_model_folder_refused(workdir):
+    folder = model_folder(workdir, "not-a-model", with_model=False)
+    live = ["pgrep", "-f", "transcriber-sidecar.*--live"]
+    app = App(app_env(workdir)[0])
+    try:
+        assert subprocess.run(live, capture_output=True).returncode == 1, "a live engine was already running"
+        store_model_dir(app, folder)
+        app.click("#start-live-btn")
+        note = App._wait(lambda: (lambda t: t if "model.bin" in t else None)(app.text("#note-root")), "the refusal note")
+        assert str(folder) in note and "has no model.bin" in note, f"unexpected note: {note!r}"
+        time.sleep(1)
+        started = subprocess.run(live, capture_output=True, text=True)
+        assert started.returncode == 1, f"a live engine started despite the refusal: {started.stdout.strip()}"
+    finally:
+        app.close()
+
+
+def test_model_folder_used(workdir):
+    folder = model_folder(workdir, "faster-whisper-e2e", with_model=True)
+    app = App(app_env(workdir)[0])
+    try:
+        # Matched on the folder, not the label: the label comes from the staged
+        # sidecar binary, which may predate transcriber.py's label change.
+        bundled = SRC_TAURI / "target" / "debug" / "resources" / "model"
+        for i, (chosen, expected) in enumerate([(folder, f" model from {folder} on "),
+                                                (None, f" model from {bundled} on ")]):
+            store_model_dir(app, chosen)
+            wav = silent_wav(workdir / f"silence-{i}.wav")
+            app.run_async(f"window.__TAURI__.event.emit('tauri://drag-drop', {{paths: [{json.dumps(str(wav))}]}}).then(() => done('ok'));")
+            App._wait(lambda: expected in debug_log(app), f"the engine log to show{expected!r}")
+            App._wait(lambda: app.run_async(f"done(document.getElementById('file-queue').textContent.includes('silence-{i}.wav') && !document.getElementById('file-queue').textContent.includes('transcribing'))"),
+                      f"silence-{i}.wav to finish")
+    finally:
+        app.close()
+
+
 def test_engine_offline():
     result = subprocess.run([sys.executable, str(ROOT / "tests" / "test_engine.py"), "--engine", str(SIDECAR)],
                             capture_output=True, text=True, encoding="utf-8", errors="replace")
@@ -302,7 +407,7 @@ def main() -> int:
             return 1
 
     with tempfile.TemporaryDirectory(prefix="transcriber-e2e-") as tmp:
-        dirs = [Path(tmp) / str(i) for i in range(3)]
+        dirs = [Path(tmp) / str(i) for i in range(6)]
         for d in dirs:
             d.mkdir()
         if inside_netns:
@@ -315,6 +420,9 @@ def main() -> int:
             ("update check online", test_update_check_online, dirs[0]),
             ("download page", test_download_page, dirs[1]),
             ("no request at startup", test_no_request_at_startup, dirs[2]),
+            ("model folder remembered", test_model_folder_remembered, dirs[3]),
+            ("model folder refused", test_model_folder_refused, dirs[4]),
+            ("model folder used", test_model_folder_used, dirs[5]),
         ])
 
     # No network at all, by construction: a fresh network namespace with only

@@ -133,22 +133,45 @@
 
   **Done 2026-09-15.** `app_env()` sets `XDG_DATA_HOME` to `<scenario temp>/data` for every app launch. With the VPN off, all six existing scenarios passed (exit 0). `find ~/.local/share/com.transcriber.app -newer <start marker>` found nothing, and the directory's mtime was unchanged (1788629636) across the run.
 
-- [ ] 5.2 Add `model folder remembered`. Set the stored choice through the page's storage key to a temp folder holding a `model.bin`, then close the app. A second app, started with the same data directory, must show that folder in the Model field. Verify it passes, and fails if the page stops reading the stored value on load (temporarily), then revert.
-- [ ] 5.3 Add `model folder refused`. Store a temp folder without `model.bin`, click **Start transcribing** from script, and assert:
+- [x] 5.2 Add `model folder remembered`. Set the stored choice through the page's storage key to a temp folder holding a `model.bin`, then close the app. A second app, started with the same data directory, must show that folder in the Model field. Verify it passes, and fails if the page stops reading the stored value on load (temporarily), then revert.
+
+  **Done 2026-09-15.** `test_model_folder_remembered` stores the choice with `localStorage.setItem` plus the page's own `renderModelSelect()`, closes the app, and starts a new app with the same `XDG_DATA_HOME`. The Model field shows `[<folder>, "faster-whisper-e2e"]`. Passes. With the page's load-time `renderModelSelect()` commented out and the app rebuilt, it failed with "timed out waiting for the Model field to load". Reverted.
+
+- [x] 5.3 Add `model folder refused`. Store a temp folder without `model.bin`, click **Start transcribing** from script, and assert:
   - the note names the folder and says it has no usable model;
   - no `transcriber-sidecar` process was started (`pgrep -f` on the sidecar path, before and after).
 
   Verify it passes, and fails with `select_model_dir`'s `model.bin` check temporarily removed, then revert.
-- [ ] 5.4 Add `model folder used`:
+
+  **Done 2026-09-15.** `test_model_folder_refused` stores an empty `not-a-model` folder and clicks **Start transcribing** from script. The note must contain the folder and "has no model.bin", and `pgrep -f "transcriber-sidecar.*--live"` must find nothing before, and 1 s after. (A plain sidecar-path match wasn't used, because the page's `--list-devices-json` run is a legitimate sidecar.) Passes. With `select_model_dir`'s `model.bin` check replaced by `true` and the app rebuilt, it failed with "timed out waiting for the refusal note". Reverted and rebuilt.
+
+- [x] 5.4 Add `model folder used`:
   - make a temp folder `faster-whisper-e2e` whose files are symlinks to the bundled model's, store it, and start a file run on a 1-second silent WAV written with the stdlib `wave` module;
   - assert the engine log (`#debug-log`) shows the model loading from that folder;
   - return to the bundled model and repeat, asserting the log shows the bundled folder.
 
   Before writing the scenario, check whether a `tauri://drag-drop` event emitted from script reaches the page's listener. If it doesn't, start the run by calling `start_file_transcription` with the page's own `modelDir` value through execute-script. Record which was used. Verify it passes.
 
+  **Done 2026-09-15.** A `tauri://drag-drop` event emitted from script reaches the page's listener and runs the page's own queue, so that was used: the real `modelDir` path, not a direct invoke. `test_model_folder_used`:
+  - stores `faster-whisper-e2e` (symlinks to the bundled model), drops a 1 s silent WAV, waits for the engine log to show `" model from <folder> on "`, and waits for the queue to finish;
+  - clears the choice and repeats, expecting `" model from <target/debug/resources/model> on "`.
+
+  Passes.
+
+  **Found:** the log line reads "Loading **base** model from <chosen folder>". The debug app runs the staged frozen sidecar (`src-tauri/binaries/…`, built at 08:51, before 1.1's label change), so the scenario matches on the folder path, not the label. The label has its own unit test (1.1), and the real-build check in 6.2 will show it once the sidecar is rebuilt.
+
+  The suite docstring and the README suites-table row now mention these scenarios.
+
 ## 6. Verification
 
-- [ ] 6.1 Run `.venv/bin/python run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set, and a network that reaches GitHub. Verify it exits 0, and that every end-to-end scenario prints `PASS`.
+- [x] 6.1 Run `.venv/bin/python run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set, and a network that reaches GitHub. Verify it exits 0, and that every end-to-end scenario prints `PASS`.
+
+  **Done 2026-09-15.** With `TRANSCRIBER_TEST_SPEECH` set and GitHub reachable: 13/13 suites passed, exit 0. All nine end-to-end scenarios printed `PASS`: the six from before, plus `model folder remembered`, `model folder refused` and `model folder used`.
+
+  The first full run had two failures, both fixed:
+  - **`test_dual_capture.py`:** its hand-built `args` namespace had no `model_label`, which 1.1's output sites now read. Added `model_label="base"`.
+  - **`model folder remembered` (flaky):** it passed alone but failed in the full run. WebKit writes `localStorage` to its `.localstorage-wal` file about 0.5 s after `setItem`, and the test killed the app's process group sooner. The scenario now waits until the choice is in the app's storage file before closing. It then passed 3 times in a row on its own, and in the full run. A user quitting the app normally isn't affected.
+
 - [ ] 6.2 **User check on Linux** (a local build or `tauri dev`), with a second real model folder downloaded beforehand (e.g. `Systran/faster-whisper-small`). This covers what the end-to-end suite can't drive: the native folder dialog, and a real different model.
   - **Browse…** opens the system folder picker, and choosing the folder shows it in the Model field;
   - a transcription uses it: the engine log loads from that folder, and the CLI transcript header names it by folder;
