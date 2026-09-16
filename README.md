@@ -4,16 +4,16 @@
 
 Transcribe meetings, calls and recordings on your own machine. A desktop app
 for Windows, Linux and macOS, and the same engine as a command-line tool.
-Nothing is uploaded: the model ships with the download, so the first
-transcription works with the network off.
+Nothing is uploaded. The model ships with the download, so the first
+transcription works with the network off, and the app's only network request
+is the **Check for updates** button, when you click it.
 
 - Transcribe video and audio files (MP4, MKV, MP3, WAV and the rest) to TXT, SRT or VTT
 - Transcribe live, from system audio and your microphone at once, tagged `[SYS]` and `[MIC]`
-- Runs offline. The only network request is the app's **Check for updates** button, when you click it
 - Built on [faster-whisper](https://github.com/SYSTRAN/faster-whisper); no ffmpeg to install
 
-Live capture in the app works on Windows and Linux. On macOS the app
-transcribes files, and live capture is CLI-only, on macOS 14.4 or later.
+The app captures live audio on Windows and Linux. On macOS it transcribes
+files, and live capture is CLI-only, on macOS 14.4 or later.
 
 ## Install
 
@@ -102,9 +102,9 @@ From a source checkout, that's `python transcriber.py` with the same options.
 
 ## Where next
 
-- **[User guide](docs/user-guide.md)** — every option, per-platform setup for live capture, troubleshooting.
-- **[Contributing](CONTRIBUTING.md)** — how changes are made here, and how to run the tests.
-- **[Building](docs/building.md)** — building the app and the CLI from source, and making a release.
+- **[User guide](docs/user-guide.md)**: every option, per-platform setup for live capture, troubleshooting.
+- **[Contributing](CONTRIBUTING.md)**: how changes are made here, and how to run the tests.
+- **[Building](docs/building.md)**: building the app and the CLI from source, and making a release.
 
 ## License
 

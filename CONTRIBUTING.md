@@ -89,16 +89,19 @@ something isn't installed, say so rather than reporting a clean run.
 
 ## Changing the desktop interface
 
-The app has a deliberate visual design, written down in
-[DESIGN.md](DESIGN.md): a chart recorder, with two pens drawing on a time axis.
-A change to the layout, the styling, or how the interface behaves goes through
-the design pass that produced it, which means an explicit design step,
-screenshots in light and dark at the normal window size and at the 640x480
-minimum, an independent review of the finished work, and an update to
-`DESIGN.md` when the system itself changes.
+The app is built to one visual design, written down in [DESIGN.md](DESIGN.md).
+It reads as a chart recorder, with two pens drawing on a time axis. A change to
+the layout, the styling, or how the interface behaves goes through the same
+design pass that produced it:
 
-That sounds heavy for a one-line CSS edit, and it is deliberate: the interface
-is the part of this project that can't be checked by a test alone.
+- design the change against `DESIGN.md` before writing it;
+- screenshot the result in light and dark, at a normal window and at the
+  640x480 minimum;
+- have the finished work reviewed by someone other than whoever built it;
+- update `DESIGN.md` when the design system itself changes.
+
+Tests can't tell you that a screen reads well, which is why this part is done
+by eye.
 
 ## Branches
 

@@ -40,9 +40,20 @@
 
   **Done 2026-09-16.** 122 lines: title and one-paragraph description, four bullets on what it does, a line on where live capture works, **Install** (the release forms, then Linux, Windows, macOS and the CLI archive, with the testers call and the unsigned-binary notes kept), **Run it** (the app in a sentence, then three CLI commands), **Where next** (three links), and the License section verbatim. The "(in development)" framing is gone, and the dead `openspec/changes/add-tauri-gui/` sentence was dropped rather than repointed: the app is no longer "in progress under `src-tauri/`", so the sentence had nothing to say. The stale "(see [macOS](#macos) below)" cross-reference now points at `docs/user-guide.md#macos`.
 
-- [ ] 2.3 Run the `no-ai-slop` skill over `README.md`, `CONTRIBUTING.md`, `docs/user-guide.md` and `docs/building.md`, in detect mode first, then apply the edits worth making. Record under this task which patterns it named and what changed.
+- [x] 2.3 Run the `no-ai-slop` skill over `README.md`, `CONTRIBUTING.md`, `docs/user-guide.md` and `docs/building.md`, in detect mode first, then apply the edits worth making. Record under this task which patterns it named and what changed.
 
   Verify each document still carries every command block and table it had before the pass.
+
+  **Done 2026-09-16.** Detect mode named seven patterns, all in the new prose; the moved sections were left alone. All seven were fixed:
+  1. **Repetition:** "runs offline" was claimed three times in the README (intro, a bullet, and the Install paragraph). The bullet is gone and the intro carries the Check-for-updates detail.
+  2. **Colon reveal:** "Nothing is uploaded: the model ships…" is now two sentences.
+  3. **Decorative em dashes:** the three "Where next" bullets use a colon.
+  4. **Wordiness:** the live-capture sentence said "macOS" three times; now twice, one sentence shorter.
+  5. **Tangled sentence:** CONTRIBUTING's 45-word design-pass sentence is now a four-item list.
+  6. **Fake-profound kicker:** "the interface is the part of this project that can't be checked by a test alone" became "Tests can't tell you that a screen reads well, which is why this part is done by eye."
+  7. **Colon reveal:** the `DESIGN.md` sentence was split.
+
+  **Verified after the pass:** fences and table rows are unchanged in all four documents (README 4 fences and 16 table rows, CONTRIBUTING 10 and 7, user guide 30 and 0, building 20 and 0).
 
 ## 3. Repoint everything that names a README section
 
