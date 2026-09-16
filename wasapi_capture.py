@@ -23,13 +23,13 @@ class WASAPICapture:
     def get_default_loopback_device(self):
         """Get the loopback device for the default output."""
         try:
-            # Get default output
-            default_output = self.p.get_default_output_device_info()
-            
-            # Find its loopback variant
+            # The WASAPI default output, not the MME one: MME truncates names
+            # to 31 characters, and a substring match then picked a similarly
+            # named device (openspec/changes/03-fix-audit-edges-windows).
+            default_output = self.p.get_default_wasapi_device(d_out=True)
+            wanted = f"{default_output['name']} [Loopback]"
             for device in self.p.get_loopback_device_info_generator():
-                # Match by name (loopback devices have " [Loopback]" suffix)
-                if default_output['name'] in device['name']:
+                if device['name'] == wanted:
                     return device
             
             # Fallback: return first loopback device

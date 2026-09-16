@@ -135,6 +135,49 @@ def test_sample_rate_is_the_device_rate():
     print("OK: sample_rate reports the device's 44100 Hz while streaming")
 
 
+def _loopback_pick(wasapi_default, loopback_names):
+    """get_default_loopback_device() against a fake whose MME default is the
+    truncated "Headphones" and whose WASAPI default is `wasapi_default`."""
+    fake_pyaudio = _make_fake_pyaudio_module(None)
+
+    class FakePyAudio(fake_pyaudio.PyAudio):
+        def get_default_output_device_info(self):
+            return {"name": "Headphones"}
+
+        def get_default_wasapi_device(self, d_out=False):
+            assert d_out, "the reference must be the default *output*"
+            return {"name": wasapi_default}
+
+        def get_loopback_device_info_generator(self):
+            for i, name in enumerate(loopback_names):
+                yield {"name": name, "index": i}
+
+    fake_pyaudio.PyAudio = FakePyAudio
+    with mock.patch.dict(sys.modules, {"pyaudiowpatch": fake_pyaudio}):
+        sys.modules.pop("wasapi_capture", None)
+        import wasapi_capture
+        return wasapi_capture.WASAPICapture().get_default_loopback_device()
+
+
+def test_default_output_own_loopback_among_similar_names():
+    """A substring match on the MME name picked "Headphones (2- Bluetooth)"
+    when "Headphones" was the default (openspec/changes/03-fix-audit-edges-windows)."""
+    device = _loopback_pick(
+        "Headphones",
+        ["Headphones (2- Bluetooth) [Loopback]", "Headphones [Loopback]"],
+    )
+    assert device["name"] == "Headphones [Loopback]", device
+    print("OK: the default output's own loopback wins over a similarly named one")
+
+
+def test_no_exact_match_falls_back_to_first_loopback():
+    device = _loopback_pick("Speakers", ["Monitor A [Loopback]", "Monitor B [Loopback]"])
+    assert device["name"] == "Monitor A [Loopback]", device
+    print("OK: no exact match falls back to the first loopback")
+
+
 if __name__ == "__main__":
     test_capture_stream_exits_promptly_when_read_stalls()
     test_sample_rate_is_the_device_rate()
+    test_default_output_own_loopback_among_similar_names()
+    test_no_exact_match_falls_back_to_first_loopback()

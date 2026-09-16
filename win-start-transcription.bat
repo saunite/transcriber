@@ -12,10 +12,17 @@ REM                   --language en            force a language
 REM   Example: win-start-transcription.bat sprint-review --silence-timeout 0
 setlocal
 
+REM This script's folder, read before any shift: shift moves %0 too, so %~dp0
+REM afterwards names an argument's folder or the current one.
+set "HERE=%~dp0"
+
+REM Substring syntax only works on variables, not %1, so copy it first: a
+REM leading "-" means flags only (openspec/changes/03-fix-audit-edges-windows).
 set NAME_PREFIX=meeting
 set REST=
-if not "%~1"=="" if not "%~1:~0,1%"=="-" (
-    set NAME_PREFIX=%~1
+set "FIRST=%~1"
+if defined FIRST if not "%FIRST:~0,1%"=="-" (
+    set "NAME_PREFIX=%FIRST%"
     shift
 )
 :args_loop
@@ -26,14 +33,16 @@ goto args_loop
 :args_done
 
 REM Prefer the standalone CLI next to this script (a release's CLI archive, no
-REM Python needed); otherwise fall back to the project venv
-REM (openspec/changes/02-add-release-pipeline-windows).
-if exist "%~dp0transcriber.exe" (
-    set "RUN="%~dp0transcriber.exe""
-) else (
-    if exist ".venv\Scripts\activate.bat" call .venv\Scripts\activate.bat
-    set "RUN=python transcriber.py"
-)
+REM Python needed); otherwise fall back to the checkout's venv, both found next
+REM to this script so it runs from any folder
+REM (openspec/changes/02-add-release-pipeline-windows, 03-fix-audit-edges-windows).
+REM goto, not an if ( ) block: a ")" in the path, as in "Program Files (x86)",
+REM would end the block early.
+set "RUN="%HERE%transcriber.exe""
+if exist "%HERE%transcriber.exe" goto run_ready
+if exist "%HERE%.venv\Scripts\activate.bat" call "%HERE%.venv\Scripts\activate.bat"
+set "RUN=python "%HERE%transcriber.py""
+:run_ready
 
 REM Set up environment variables
 set HF_HUB_DISABLE_SYMLINKS_WARNING=1
@@ -55,7 +64,7 @@ set output_file=%NAME_PREFIX%_%timestamp%.txt
 REM Start transcription with WASAPI loopback + microphone. Built into one
 REM variable and both echoed and run from it, so the printed line can never
 REM drift from what's actually executed (openspec/changes/compact-live-cli-output).
-set "CMD=%RUN% --live --wasapi --include-mic --model base --output "%output_file%" --chunk-duration 10 --actual-time %REST%"
+set "CMD=%RUN% --live --wasapi --include-mic --output "%output_file%" --chunk-duration 10 --actual-time %REST%"
 echo %CMD%
 %CMD%
 

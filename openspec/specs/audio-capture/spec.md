@@ -66,6 +66,10 @@ The system SHALL support WASAPI loopback capture on Windows via pyaudiowpatch, i
 - **WHEN** a user starts WASAPI live capture without a device index
 - **THEN** the system auto-detects the default output's loopback device and captures from it
 
+#### Scenario: Similarly named output devices
+- **WHEN** a user starts WASAPI live capture without a device index, and another output device's name contains the default output device's name (for example, the default is "Headphones" and another is "Headphones (2- Bluetooth)")
+- **THEN** the system captures the loopback of the default output device itself, not the other device's
+
 #### Scenario: WASAPI no loopback device
 - **WHEN** no WASAPI loopback device can be found
 - **THEN** the system prints an error and exits with a non-zero code

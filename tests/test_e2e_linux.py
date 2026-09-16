@@ -42,8 +42,13 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from build_portable import _cargo_target_dir  # noqa: E402
+
 SRC_TAURI = ROOT / "src-tauri"
-APP = SRC_TAURI / "target" / "debug" / "transcriber-gui"
+# Where cargo actually writes: ~/.cargo/config.toml or CARGO_TARGET_DIR may
+# move target/ off the checkout (README's WSL build notes).
+APP = (_cargo_target_dir() or SRC_TAURI / "target") / "debug" / "transcriber-gui"
 SIDECAR = SRC_TAURI / "binaries" / "transcriber-sidecar-x86_64-unknown-linux-gnu"
 RELEASES_URL = "https://github.com/saunite/transcriber/releases/latest"
 UP_TO_DATE, AVAILABLE, NO_RELEASE = "You're up to date", "is available", "No releases published yet"
@@ -72,7 +77,7 @@ def missing_piece():
         return "no graphical display: run from a desktop session (WAYLAND_DISPLAY or DISPLAY)"
     hints = {
         "tauri-driver": "cargo install tauri-driver --locked",
-        "WebKitWebDriver": "install the distribution's WebKitGTK WebDriver package (Fedora: webkitgtk6.0, Debian/Ubuntu: webkit2gtk-driver)",
+        "WebKitWebDriver": "install the distribution's WebKitGTK WebDriver package (Fedora: webkitgtk6.0, Debian/Ubuntu: webkitgtk-webdriver, or webkit2gtk-driver on older releases)",
         "strace": "install strace",
         "unshare": "install util-linux",
         "ip": "install iproute2",
@@ -178,13 +183,16 @@ def kill_group(proc):
 
 def app_env(workdir):
     """PATH starts with a recording xdg-open, so opening a URL writes it to a
-    file instead of launching a browser (the opener tries xdg-open first)."""
+    file instead of launching a browser (the opener tries xdg-open first).
+    Under WSL the opener tries `powershell.exe Start-Process $OPEN_RS_TARGET`
+    before xdg-open, so that is recorded too."""
     shim_dir = workdir / "bin"
     shim_dir.mkdir(exist_ok=True)
     log = workdir / "xdg-open.log"
-    shim = shim_dir / "xdg-open"
-    shim.write_text(f'#!/bin/sh\nprintf "%s\\n" "$*" >> "{log}"\n', encoding="utf-8")
-    shim.chmod(0o755)
+    for name, arg in [("xdg-open", "$*"), ("powershell.exe", "$OPEN_RS_TARGET")]:
+        shim = shim_dir / name
+        shim.write_text(f'#!/bin/sh\nprintf "%s\\n" "{arg}" >> "{log}"\n', encoding="utf-8")
+        shim.chmod(0o755)
     # Its own data directory too, so the app's WebKit storage (the theme, the
     # chosen model folder) never touches the user's real app data
     # (openspec/changes/choose-model-folder).
@@ -365,7 +373,7 @@ def test_model_folder_used(workdir):
     try:
         # Matched on the folder, not the label: the label comes from the staged
         # sidecar binary, which may predate transcriber.py's label change.
-        bundled = SRC_TAURI / "target" / "debug" / "resources" / "model"
+        bundled = APP.parent / "resources" / "model"
         for i, (chosen, expected) in enumerate([(folder, f" model from {folder} on "),
                                                 (None, f" model from {bundled} on ")]):
             store_model_dir(app, chosen)

@@ -24,6 +24,10 @@ Each platform's launcher script (`win-start-transcription.bat` on Windows, `linu
 - **WHEN** a user runs `C:\path\to\checkout\win-start-transcription.bat` from a different current folder
 - **THEN** the launcher runs the checkout's `transcriber.py` with the checkout's virtual environment, and the transcript file is created in the current folder
 
+#### Scenario: Script folder with arguments and parentheses in its path
+- **WHEN** a user runs `C:\Program Files (x86)\Transcriber\win-start-transcription.bat sprint-review --silence-timeout 0` from a different current folder
+- **THEN** the launcher still runs the `transcriber.exe` or `transcriber.py` in that script's folder
+
 #### Scenario: A model folder passed through on Windows
 - **WHEN** a user runs `win-start-transcription.bat --model-path C:\models\small`
 - **THEN** the underlying invocation contains no `--model` flag, and the transcription output names the model `small`

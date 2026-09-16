@@ -133,8 +133,10 @@ Point cargo's `target/` directory at a native (ext4) filesystem path, persistent
 ```toml
 # ~/.cargo/config.toml (machine-local, not part of this repo)
 [build]
-target-dir = "/home/YOU/.cache/transcriber-target"
+target-dir = "/home/YOU/.cache/transcriber/target"
 ```
+
+Keep the last path component named `target`: Tauri only treats the running binary as a development build (and so resolves the bundled model next to it) when its folder is `target/<profile>` or `target/<triple>/<profile>`. Under a differently named directory the app looks for the model at its *installed* path instead, and a dev run with no model folder chosen fails with `--model-path /usr/lib/Transcriber/resources/model does not exist`.
 
 An exported `CARGO_TARGET_DIR` still works too and takes precedence if set. `build_portable.py` finds the real location either way (it asks `cargo metadata` directly, rather than only checking the env var).
 
@@ -259,7 +261,7 @@ Without it, the speech check prints `SKIP` and the rest still runs. `tests/test_
 ```bash
 cargo install tauri-driver --locked            # WebDriver bridge for Tauri apps
 sudo dnf install webkitgtk6.0 strace           # Fedora: WebKitWebDriver + strace
-sudo apt install webkit2gtk-driver strace      # Debian/Ubuntu equivalent
+sudo apt install webkitgtk-webdriver strace    # Debian/Ubuntu equivalent (webkit2gtk-driver on older releases)
 ```
 
 `unshare` (util-linux) and `ip` (iproute2) are normally present already. When something is missing, every scenario prints `SKIP` with what to install, and the suite doesn't fail. The online update check prints `SKIP` when `api.github.com` can't be reached (some VPNs block it). WebKitWebDriver doesn't support native clicks here ([tauri#6541](https://github.com/tauri-apps/tauri/issues/6541)), so the suite clicks the real buttons from script.
@@ -314,10 +316,10 @@ The launcher passes extra arguments through to `transcriber.py`, so you can run 
 ```bat
 win-start-transcription.bat                  REM default: meeting_TIMESTAMP.txt
 win-start-transcription.bat sprint-review    REM filename prefix
-win-start-transcription.bat --silence-timeout 0
+win-start-transcription.bat --silence-timeout 0   REM flags only: meeting_TIMESTAMP.txt
 ```
 
-On Linux and macOS the launcher finds `transcriber.py` next to itself, so you can run it from any folder (the transcript is saved in the folder you run it from). It doesn't choose a model size, so `--model small` or `--model-path <folder>` pass straight through, and output names the model you actually loaded.
+A first argument that starts with `-` is a flag, not a prefix. On every platform the launcher finds `transcriber.py` (and, from a source checkout, its `.venv`) next to itself, so you can run it from any folder (the transcript is saved in the folder you run it from). It doesn't choose a model size, so `--model small` or `--model-path <folder>` pass straight through, and output names the model you actually loaded.
 
 **Manual Command:**
 
@@ -357,7 +359,7 @@ Look for your Bluetooth headset in the input devices list and note the device nu
 The repo includes ready-made launchers that set up the environment (venv) and invoke the transcriber:
 
 ```bat
-REM Windows: transcribe a single file
+REM Windows: transcribe a single file (language is auto-detected; works from any folder)
 transcribe_file.bat <input_file> <output_file> [txt|srt|vtt]
 REM Example:
 transcribe_file.bat "meeting.mp4" "transcript.srt" srt
