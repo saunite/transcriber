@@ -155,6 +155,13 @@ jobs:
         # (docs/building.md, Linux build); harmless where it isn't needed.
         run: NO_STRIP=1 npx --yes "@tauri-apps/cli@${TAURI_CLI_VERSION}" build --bundles appimage,deb,rpm
 
+      # Tauri ships every packaged file as an ordinary one, so the repository
+      # definition under /etc would be overwritten on each upgrade, taking a
+      # user's "I disabled this" edit with it. This marks it as a config file
+      # for dpkg and rpm (openspec/changes/add-linux-package-repos).
+      - name: Mark the repository file as configuration
+        run: .venv/bin/python mark_package_configs.py
+
       - name: Assemble portable + CLI artifacts
         run: |
           .venv/bin/python build_portable.py

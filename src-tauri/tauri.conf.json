@@ -27,7 +27,12 @@
   "bundle": {
     "active": true,
     "category": "Utility",
-    "targets": ["appimage", "app"],
+    "shortDescription": "Offline audio and video transcription",
+    "longDescription": "Transcribe meetings, calls and recordings on your own machine. Transcribes video and audio files to TXT, SRT or VTT, and live sessions from system audio and the microphone at once. The speech model ships with the application, so nothing is uploaded and the first transcription works with the network off.",
+    "targets": [
+      "appimage",
+      "app"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -49,7 +54,13 @@
     },
     "linux": {
       "deb": {
-        "depends": ["libasound2"]
+        "depends": [
+          "libasound2"
+        ],
+        "files": {
+          "/etc/apt/sources.list.d/transcriber.list": "../packaging/transcriber.list",
+          "/usr/share/keyrings/transcriber-archive-keyring.asc": "../packaging/transcriber-repo-key.asc"
+        }
       },
       "rpm": {
         "depends": [
@@ -57,7 +68,13 @@
           "libgtk-3.so.0()(64bit)",
           "libasound.so.2()(64bit)"
         ],
-        "compression": { "type": "none" }
+        "compression": {
+          "type": "none"
+        },
+        "files": {
+          "/etc/yum.repos.d/transcriber.repo": "../packaging/transcriber.repo",
+          "/etc/pki/rpm-gpg/RPM-GPG-KEY-transcriber": "../packaging/transcriber-repo-key.asc"
+        }
       }
     },
     "resources": {

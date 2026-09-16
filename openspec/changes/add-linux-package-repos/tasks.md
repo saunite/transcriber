@@ -8,16 +8,30 @@
 
 ## 2. The files the packages carry
 
-- [ ] 2.1 Add the repository definitions under `packaging/`:
+- [x] 2.1 Add the repository definitions under `packaging/`:
   - the apt source, naming the releases base URL and `signed-by=/usr/share/keyrings/transcriber-archive-keyring.gpg`;
   - the dnf `.repo`, with `baseurl` on Pages, `repo_gpgcheck=1`, `gpgcheck=0` (design.md Decision 3) and `gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-transcriber`;
   - a placeholder for the public key file, replaced in 5.1 by the real one.
 
   Map all of them in `src-tauri/tauri.conf.json` under `bundle.linux.deb.files` and `bundle.linux.rpm.files`. Verify a local `cargo tauri build --bundles deb,rpm` puts each file at the intended path (`dpkg-deb -c`, `rpm -qpl`).
 
-- [ ] 2.2 Add the config-file marking to the Linux build, after the bundlers and before anything consumes the packages: `DEBIAN/conffiles` for the `.deb` (unpack, add, repack) and `rpmrebuild --change-spec-files` for the `.rpm`. Put it in a script the release workflow and a local build can both call.
+  **Done 2026-09-16.** `packaging/` holds `transcriber.list`, `transcriber.repo` and `transcriber-repo-key.asc` (the real public key, 819 bytes, exported from the key made in 5.1; `pub` + signing `sub`, no private material). Each file opens with a comment telling the user their edits survive upgrades and how to turn updates off.
+
+  **Deviation from design.md Decision 4:** one armored key file serves both, at `/usr/share/keyrings/transcriber-archive-keyring.asc` for apt (which accepts armored keys in `signed-by`) and `/etc/pki/rpm-gpg/RPM-GPG-KEY-transcriber` for dnf, instead of shipping a dearmored copy as well. It keeps a binary blob out of the repository.
+
+  **Verified** with a local `cargo tauri build --bundles deb,rpm`: `dpkg-deb -c` shows `etc/apt/sources.list.d/transcriber.list` and `usr/share/keyrings/transcriber-archive-keyring.asc`; `rpm -qp` shows `/etc/yum.repos.d/transcriber.repo` and `/etc/pki/rpm-gpg/RPM-GPG-KEY-transcriber`.
+
+- [x] 2.2 Add the config-file marking to the Linux build, after the bundlers and before anything consumes the packages: `DEBIAN/conffiles` for the `.deb` (unpack, add, repack) and `rpmrebuild --change-spec-files` for the `.rpm`. Put it in a script the release workflow and a local build can both call.
 
   Verify with `dpkg-deb -e … && cat DEBIAN/conffiles` and `rpm -qp --qf '[%{FILENAMES} flags=%{FILEFLAGS}\n]'` that only the repository file is marked, and that the packages still install in the five distro containers the release workflow already checks.
+
+  **Done 2026-09-16.** `mark_package_configs.py` at the repo root does both halves and is called by a new "Mark the repository file as configuration" step in the release workflow's Linux job, between the bundlers and the install checks. It picks `docker` or `podman`, whichever exists.
+
+  **Added scope, agreed with the user:** `rpmbuild` refuses a package whose `Summary` is empty, and Tauri built both packages with no description at all (`apt show` and `dnf info` showed "(none)"). `bundle.shortDescription` and `bundle.longDescription` are now set in `tauri.conf.json`, which unblocks the rebuild and fills a field both package managers display.
+
+  **Found while testing:** the container writes its output as a user the caller may not be able to delete, which left a 250 MB temporary directory behind. The container now hands ownership back (`chown -R "$(stat -c '%u:%g' /work)" /work`) before it exits; a rerun leaves nothing.
+
+  **Verified:** the `.deb` carries a one-line `conffiles` naming only the repository file; the `.rpm` shows `flags=17` on `/etc/yum.repos.d/transcriber.repo` while the key and the binaries stay `flags=0`. All five distro images install the packages (Debian stable, Ubuntu 24.04, Fedora, openSUSE Leap, openSUSE Tumbleweed), and on Fedora the installed `transcriber.repo` reads `enabled=1`, `repo_gpgcheck=1`, is owned by the package, and the key is at its path.
 
 ## 3. Tests
 

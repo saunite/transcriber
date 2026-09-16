@@ -1,0 +1,22 @@
+# Transcriber updates, installed by the transcriber package.
+#
+# Your edits to this file are kept when the package is upgraded, and the
+# version shipped by the new package is left beside it as
+# transcriber.repo.rpmnew. To stop receiving updates, set enabled=0. To stop
+# entirely, remove the package.
+#
+# The metadata lives on GitHub Pages and points at each release's own assets,
+# so no copy of the package is stored anywhere else.
+#
+# repo_gpgcheck=1 verifies the signature on that metadata, and the metadata
+# carries a checksum for the package, so the chain is complete without the
+# package itself being signed (gpgcheck=0), which matches how the .rpm has
+# always been distributed.
+[transcriber]
+name=Transcriber
+baseurl=https://saunite.github.io/transcriber/rpm/
+enabled=1
+repo_gpgcheck=1
+gpgcheck=0
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-transcriber
+metadata_expire=6h

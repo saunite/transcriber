@@ -1,0 +1,10 @@
+# Transcriber updates, installed by the transcriber package.
+#
+# Your edits to this file are kept when the package is upgraded, and the
+# version shipped by the new package is left beside it as
+# transcriber.list.dpkg-dist. To stop receiving updates, comment out the line
+# below. To stop entirely, remove the package with `apt purge transcriber`.
+#
+# The packages themselves are the assets of each GitHub release; this line
+# points apt at the newest published one.
+deb [arch=amd64 signed-by=/usr/share/keyrings/transcriber-archive-keyring.asc] https://github.com/saunite/transcriber/releases/latest/download/ ./
