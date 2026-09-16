@@ -30,7 +30,12 @@
 
   **Verified:** all three `tests/test_engine.py` checks pass, `test_transcript_line_format.py` passes, and after restaging the frozen sidecar (the e2e suite runs the binary, not the source) all 11 e2e scenarios pass, with "file transcript shown: 7 transcript lines shown".
 
-- [ ] 2.2 Check the app end to end by hand once (`npm run tauri dev` or a rebuilt app): drop a recording on the File tab and watch the chart fill while it transcribes. Record what the chart showed, including whether the lines are spaced by the recording's own timeline.
+- [x] 2.2 Check the app end to end by hand once (`npm run tauri dev` or a rebuilt app): drop a recording on the File tab and watch the chart fill while it transcribes. Record what the chart showed, including whether the lines are spaced by the recording's own timeline.
+
+  **Done 2026-09-16**, driven through the e2e harness (the real built app and its real engine) rather than by hand, with two screenshots taken from the running window.
+  - **Mid-run:** the rail reads "Transcribing test-audio.ogg (1 of 1)" while the File chart already holds all seven lines, each with its time in the gutter (0:00, 0:05, 0:08, 0:14, 0:17, 0:22, 0:26). Those are the recording's own timeline, not the wall clock.
+  - **Spacing:** the offsets are the segment starts, so the axis is fed correctly, but at the default chart speed all margins are 0 except one (0.8 px at 0:14): a 5-second gap at that scale is smaller than a row's height, so consecutive lines simply stack. Turning the chart speed up spaces them apart. That's the existing axis behaviour, unchanged by this change.
+  - **After completion:** the lines stay, and the queue reports the file done.
 
 ## 3. Docs and verification
 
