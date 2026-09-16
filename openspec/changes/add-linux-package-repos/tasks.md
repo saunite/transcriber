@@ -65,7 +65,7 @@
 
   **Done 2026-09-16.** The workflow runs on `release: published` (plus a manual trigger taking a tag), on the `release-signing` environment. It refuses to start when `GPG_SIGNING_SUBKEY` is unset or Pages is not enabled, then imports the subkey, downloads that release's `.deb` and `.rpm`, builds and signs the indexes, uploads the apt files as assets of the same release, and pushes `repodata/` to `gh-pages` under `rpm/`. Nothing triggers it for a draft or a tag build.
 
-  **Verified locally, not yet on GitHub:** the same commands were run in containers against the real packages. `apt` read the signed index through a redirect and offered `Candidate: 0.1.0`; `dnf` accepted the signed metadata and listed `transcriber.x86_64 0.1.0-1`. The live run is still open, and 6.4 already covers the first real release; the user's preference for a scratch-repository dry run is the open question below.
+  **Verified locally, not yet on GitHub:** the same commands were run in containers against the real packages. `apt` read the signed index through a redirect and offered `Candidate: 0.1.0`; `dnf` accepted the signed metadata and listed `transcriber.x86_64 0.1.0-1`. **The user chose the first real release as the live test** (2026-09-16), rather than a dry run on a scratch repository, since only a real release exercises the actual signing key, the real Pages branch and the `releases/latest/download/` path. Task 6.4 is that check.
 
 ## 5. Maintainer setup (by the user)
 
