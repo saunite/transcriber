@@ -39,7 +39,7 @@ jobs:
             exit 1
           fi
 
-      # Automates README "Releasing" licensing check: these links are the GPL
+      # Automates the licensing check in docs/building.md, "Releasing": these links are the GPL
       # source-availability mechanism, so a dead one blocks the release.
       # Templated URLs ({platform}) are skipped; their tag-tree URL is checked.
       # SOURCE-PROVENANCE.txt names one exact PyAV build (its bundled GPL FFmpeg,
@@ -152,7 +152,7 @@ jobs:
       - name: Build GUI packages
         working-directory: src-tauri
         # NO_STRIP: linuxdeploy's bundled strip can't parse .relr.dyn sections
-        # (README Linux build notes); harmless where it isn't needed.
+        # (docs/building.md, Linux build); harmless where it isn't needed.
         run: NO_STRIP=1 npx --yes "@tauri-apps/cli@${TAURI_CLI_VERSION}" build --bundles appimage,deb,rpm
 
       - name: Assemble portable + CLI artifacts

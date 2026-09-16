@@ -254,7 +254,7 @@ def build_windows(target: str | None) -> Path:
         if not (release_dir / name).exists():
             raise SystemExit(
                 f"Missing {name} in {release_dir} -- run the build first "
-                f"(see README.md's WSL build section or 'cargo tauri build')."
+                f"(see docs/building.md's Windows build section or 'cargo tauri build')."
             )
     # WebView2Loader.dll is a sibling file on the mingw target (statically
     # linked on MSVC instead, so it won't exist there) -- see design.md

@@ -57,7 +57,7 @@
 
 ## 3. Repoint everything that names a README section
 
-- [ ] 3.1 Update the six references:
+- [x] 3.1 Update the six references:
   - `build_portable.py:257` ("see README.md's WSL build section or 'cargo tauri build'");
   - `tests/test_e2e_linux.py:50` ("README's WSL build notes") and `:89` ("the README's sidecar steps");
   - `.github/workflows/release.yml:42` ("README 'Releasing' licensing check") and `:155` ("README Linux build notes");
@@ -65,14 +65,30 @@
 
   Verify `grep -rn "README" build_portable.py tests/test_e2e_linux.py .github/workflows/release.yml openspec/backlog.md` names only documents that exist.
 
-- [ ] 3.2 Check every link and anchor. Collect the Markdown links and `#anchor` references in the four documents, and verify each anchor exists in its own file and each relative path exists on disk (for example the features list's `[macOS](#macos)`, which now crosses a file boundary). Fix what broke.
+  **Done 2026-09-16.** All six now name `docs/building.md` and its section. `build_portable.py` says "docs/building.md's Windows build section" (it is raised by the Windows packaging path, so the Windows section is the right one). Both `tests/test_e2e_linux.py` notes and both `release.yml` comments point at `docs/building.md`, Linux build or "Releasing". The backlog's two release steps cite `docs/building.md`, "Releasing".
+
+  The grep leaves three README mentions, all correct: the backlog's two references to the README's call for macOS testers, which is still in the README, and the dead-link item removed in 3.3. Python and YAML both still parse.
+
+- [x] 3.2 Check every link and anchor. Collect the Markdown links and `#anchor` references in the four documents, and verify each anchor exists in its own file and each relative path exists on disk (for example the features list's `[macOS](#macos)`, which now crosses a file boundary). Fix what broke.
 
   Verify by listing the checked links and their targets under this task.
 
-- [ ] 3.3 Remove the backlog's "Minor" dead-link item, now that both links are fixed. Verify it no longer appears in `openspec/backlog.md`.
+  **Done 2026-09-16.** All 12 relative Markdown links resolve:
+  - `README.md`: `docs/user-guide.md#macos` (the old broken `(#macos)` cross-reference), `docs/user-guide.md`, `CONTRIBUTING.md`, `docs/building.md`;
+  - `CONTRIBUTING.md`: `docs/user-guide.md`, `DESIGN.md`, `docs/building.md` twice;
+  - `docs/user-guide.md`: `../README.md`, and its own `#linux` anchor;
+  - `docs/building.md`: `user-guide.md`, `../CONTRIBUTING.md`.
+
+  Anchors were computed from each target file's own headings, skipping fenced blocks. The 20 backticked repository paths in the four documents were checked too: all exist except `scripts/pkg.py`, which is a path inside PyAV's repository in the provenance note, not ours.
+
+- [x] 3.3 Remove the backlog's "Minor" dead-link item, now that both links are fixed. Verify it no longer appears in `openspec/backlog.md`.
+
+  **Done 2026-09-16.** Removed; "Dead link" appears nowhere in the file. The "Minor" section keeps its other item, and the rest of the backlog is unchanged.
 
 ## 4. Verification
 
-- [ ] 4.1 Run `.venv/bin/python run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set and a network that reaches GitHub, and verify it exits 0. Nothing here changes behaviour, so this is a regression check on the touched Python and workflow files.
+- [x] 4.1 Run `.venv/bin/python run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set and a network that reaches GitHub, and verify it exits 0. Nothing here changes behaviour, so this is a regression check on the touched Python and workflow files.
+
+  **Done 2026-09-16.** With `TRANSCRIBER_TEST_SPEECH` set and GitHub reachable: 16/16 suites passed, exit 0, nothing skipped. It covers the edited `build_portable.py` and `tests/test_e2e_linux.py`; `release.yml` was checked by parsing it as YAML, since CI runs only on a tag.
 
 - [ ] 4.2 **Review, by the user:** read the four documents and confirm the front page is what you want a new visitor to land on, and that nothing you rely on was lost in the move.

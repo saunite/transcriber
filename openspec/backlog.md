@@ -18,8 +18,8 @@ Verified since this list was written, so removed: `02-add-release-pipeline-windo
   1. **Decide the version and re-tag.** The draft `v0.1.0` and its tag point at `3d17f94`, which predates the PyAV pin (`av==18.1.0`) and the re-derived `SOURCE-PROVENANCE.txt` (archived `refresh-source-provenance-for-pyav`). Its artifacts and its notes' provenance link are stale, so don't publish that draft.
      - Delete it with `gh release delete v0.1.0 --cleanup-tag`.
      - Fast-forward `main` to `dev`.
-     - Set the chosen version in `tauri.conf.json`, `Cargo.toml` and `Cargo.lock`, then tag, per README "Releasing". The workflow's preflight checks the version fields, the PyAV pin and every provenance link.
-  2. **Try one artifact from the new draft, then publish it** (README "Releasing" step 4).
+     - Set the chosen version in `tauri.conf.json`, `Cargo.toml` and `Cargo.lock`, then tag, per `docs/building.md`, "Releasing". The workflow's preflight checks the version fields, the PyAV pin and every provenance link.
+  2. **Try one artifact from the new draft, then publish it** (`docs/building.md`, "Releasing", step 4).
   3. **`add-manual-update-check` 4.3, the "update available" path against the real API.** Build a temporary debug app whose `tauri.conf.json` version is lower than the published one (e.g. `0.0.1`), or wait for the next release. Clicking **Check for updates** must show the newer version, and **Open download page** must open `https://github.com/saunite/transcriber/releases/latest` in the browser. Record the method in its archive, `openspec/changes/archive/2026-09-15-add-manual-update-check/tasks.md`.
   4. **Expect the e2e online verdict to change.** Once a release is published, `tests/test_e2e_linux.py`'s `update check online` reads "You're up to date (…)" instead of "No releases published yet". The scenario accepts either, so this is only a sanity check. Note that some VPNs drop GitHub's 140.82.112.0/22 range, and the scenario then prints `SKIP`.
   5. **Point macOS testers at the published artifacts.** The README's call for testers (see "Known limits": macOS artifacts and stop behaviour are untested) needs a public download to link to.
@@ -35,5 +35,4 @@ Verified since this list was written, so removed: `02-add-release-pipeline-windo
 
 ## Minor
 
-- **Dead link in README** (line ~173): it points at `openspec/changes/drop-ffmpeg-dependency/`, which was archived to `openspec/changes/archive/2026-09-08-drop-ffmpeg-dependency/`.
 - **Only skimmed in the 2026-09-15 logic audit** (not audited in depth): `macos_capture.py` and its Swift helper (no hardware), and `build_portable.py`. Every other audit cluster was done (`fix-engine-liveness`, `fix-refused-start-routing`, `fix-true-scale-time-axis`, `01-fix-audit-edges`, `02-fix-audit-edges-linux`, `03-fix-audit-edges-windows`).

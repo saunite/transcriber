@@ -47,7 +47,7 @@ from build_portable import _cargo_target_dir  # noqa: E402
 
 SRC_TAURI = ROOT / "src-tauri"
 # Where cargo actually writes: ~/.cargo/config.toml or CARGO_TARGET_DIR may
-# move target/ off the checkout (README's WSL build notes).
+# move target/ off the checkout (docs/building.md, Linux build).
 APP = (_cargo_target_dir() or SRC_TAURI / "target") / "debug" / "transcriber-gui"
 SIDECAR = SRC_TAURI / "binaries" / "transcriber-sidecar-x86_64-unknown-linux-gnu"
 RELEASES_URL = "https://github.com/saunite/transcriber/releases/latest"
@@ -86,7 +86,7 @@ def missing_piece():
         if not tool(name):
             return f"{name} not found: {hint}"
     if not SIDECAR.is_file():
-        return f"no staged sidecar at {SIDECAR}: build it with build_portable.py or the README's sidecar steps"
+        return f"no staged sidecar at {SIDECAR}: build it with build_portable.py or the sidecar steps in docs/building.md"
     return None
 
 
