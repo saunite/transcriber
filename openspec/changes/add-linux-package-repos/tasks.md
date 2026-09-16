@@ -35,7 +35,7 @@
 
 ## 3. Tests
 
-- [ ] 3.1 Add `tests/test_package_repos.py` (or a shell equivalent run by `run_tests.py`), skipping cleanly when `podman`/`docker` is unavailable, covering with throwaway keys and dummy packages:
+- [x] 3.1 Add `tests/test_package_repos.py` (or a shell equivalent run by `run_tests.py`), skipping cleanly when `podman`/`docker` is unavailable, covering with throwaway keys and dummy packages:
   - a signed flat apt repository reached through a redirect chain like GitHub's installs, and refuses a tampered index and a wrong key;
   - a dnf repository whose `xml:base` points at another host installs, and refuses metadata signed by another key;
   - a repository file marked as a conffile: an edited file survives an upgrade with a `.dpkg-dist` beside it, an untouched one is updated, and `purge` removes it;
@@ -43,15 +43,29 @@
 
   The spikes from 2026-09-16 in the session scratchpad are the starting point; they already do each of these. Verify the suite fails if the conffile marking is dropped from 2.2.
 
+  **Done 2026-09-16.** `tests/test_package_repos.py` has three checks, all passing: the apt repository (installs through the redirect shape, refuses a tampered index and a wrong key), the dnf repository (installs with the package on a second host, refuses a wrong key), and the config marking (an edited file survives an upgrade with `.dpkg-dist`/`.rpmnew` beside it, an untouched one is updated, removal cleans up). It skips with a message when no container runtime exists.
+
+  **Mutation check:** with `DEB_CONFFILES` and `RPM_CONFIG_FILES` emptied in `mark_package_configs.py`, the third check fails with "the .deb was not marked"; the file was restored afterwards (no diff).
+
+  **Cost:** the suite takes about 2 minutes 50 seconds, which roughly triples `run_tests.py`. Flagged for the user; gating it behind an environment variable is a one-line change if that is too slow.
+
 ## 4. Publishing the repositories
 
-- [ ] 4.1 Add a script that builds the metadata from a release's packages: `dpkg-scanpackages` plus `apt-ftparchive release` for apt, `createrepo_c --baseurl <that release's asset base>` for dnf, then clear-sign `InRelease` and detach-sign `repomd.xml`.
+- [x] 4.1 Add a script that builds the metadata from a release's packages: `dpkg-scanpackages` plus `apt-ftparchive release` for apt, `createrepo_c --baseurl <that release's asset base>` for dnf, then clear-sign `InRelease` and detach-sign `repomd.xml`.
 
   Verify by running it against the packages of a local build and pointing a container's `apt` and `dnf` at the result, as in 3.1.
 
-- [ ] 4.2 Add `.github/workflows/publish-repos.yml`, triggered by `release: published`, which downloads that release's `.deb` and `.rpm`, runs 4.1's script with the signing subkey from the environment secret, uploads the apt files (`InRelease`, `Packages.gz`) as assets of that release, and pushes `repodata/` to the Pages branch.
+  **Done 2026-09-16.** `build_repo_metadata.py` builds both indexes and signs only those, taking `--packages`, `--asset-base`, `--apt-out`, `--rpm-out` and optional `--sign-with`, with the passphrase from `GPG_PASSPHRASE`. It copies packages in only so the tools can read their headers, and deletes those copies afterwards, so neither output holds a package.
+
+  **Verified** against the real 250 MB `.deb` and `.rpm` in an `ubuntu:24.04` container: it writes `Packages`, `Packages.gz`, `Release` and a clear-signed `InRelease`, plus `repodata/` with `repomd.xml.asc`, and the metadata carries `<location xml:base="https://github.com/saunite/transcriber/releases/download/v0.1.0/" href="Transcriber-0.1.0-1.x86_64.rpm"/>`. `Filename: ./Transcriber_0.1.0_amd64.deb` resolves against the flat repository's base, and no package copies are left behind.
+
+- [x] 4.2 Add `.github/workflows/publish-repos.yml`, triggered by `release: published`, which downloads that release's `.deb` and `.rpm`, runs 4.1's script with the signing subkey from the environment secret, uploads the apt files (`InRelease`, `Packages.gz`) as assets of that release, and pushes `repodata/` to the Pages branch.
 
   It SHALL fail with a clear message when the signing material or Pages configuration is missing, and SHALL do nothing for drafts and manual runs. Verify with a dry run on a scratch repository or a workflow run against a test release, whichever the maintainer prefers; record which was used.
+
+  **Done 2026-09-16.** The workflow runs on `release: published` (plus a manual trigger taking a tag), on the `release-signing` environment. It refuses to start when `GPG_SIGNING_SUBKEY` is unset or Pages is not enabled, then imports the subkey, downloads that release's `.deb` and `.rpm`, builds and signs the indexes, uploads the apt files as assets of the same release, and pushes `repodata/` to `gh-pages` under `rpm/`. Nothing triggers it for a draft or a tag build.
+
+  **Verified locally, not yet on GitHub:** the same commands were run in containers against the real packages. `apt` read the signed index through a redirect and offered `Candidate: 0.1.0`; `dnf` accepted the signed metadata and listed `transcriber.x86_64 0.1.0-1`. The live run is still open, and 6.4 already covers the first real release; the user's preference for a scratch-repository dry run is the open question below.
 
 ## 5. Maintainer setup (by the user)
 

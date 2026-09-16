@@ -1,0 +1,99 @@
+# Publishes the apt and dnf repositories for a release, so people who installed
+# the .deb or .rpm are offered the new version by their package manager
+# (openspec/changes/add-linux-package-repos).
+#
+# It runs when a release is published, not when the tag build makes the draft: a
+# draft's assets are not publicly downloadable, and .../releases/latest/download/
+# does not resolve until a release is public. Publishing stays a human action,
+# and nothing users see changes until then.
+#
+#   apt  index uploaded as assets of that same release (flat repository)
+#   dnf  repodata/ pushed to the gh-pages branch, pointing at the release assets
+name: publish repositories
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish repositories for"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    environment: release-signing
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Refuse to run without signing material
+        env:
+          SUBKEY: ${{ secrets.GPG_SIGNING_SUBKEY }}
+        run: |
+          if [ -z "$SUBKEY" ]; then
+            echo "::error::GPG_SIGNING_SUBKEY is not set on the release-signing environment." >&2
+            echo "The repository index must be signed; see docs/building.md." >&2
+            exit 1
+          fi
+          if ! gh api "repos/${GITHUB_REPOSITORY}/pages" >/dev/null 2>&1; then
+            echo "::error::GitHub Pages is not enabled for this repository, so the dnf metadata has nowhere to go." >&2
+            exit 1
+          fi
+
+      - name: Tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq dpkg-dev apt-utils createrepo-c gnupg
+
+      - name: Import the signing subkey
+        env:
+          SUBKEY: ${{ secrets.GPG_SIGNING_SUBKEY }}
+        run: |
+          printf '%s' "$SUBKEY" | gpg --batch --import
+          gpg --list-secret-keys --keyid-format=long | sed 's/<.*>/<redacted>/'
+
+      - name: Download this release's packages
+        run: |
+          mkdir -p pkgs
+          gh release download "$TAG" --pattern '*.deb' --pattern '*.rpm' --dir pkgs
+          ls -la pkgs
+
+      - name: Build and sign the repository metadata
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          python3 build_repo_metadata.py \
+            --packages pkgs \
+            --asset-base "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/" \
+            --apt-out apt --rpm-out pages
+
+      - name: Upload the apt index to the release
+        run: gh release upload "$TAG" apt/InRelease apt/Packages apt/Packages.gz --clobber
+
+      - name: Push the dnf metadata to Pages
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin gh-pages --depth=1
+          git worktree add pages-branch origin/gh-pages
+          rm -rf pages-branch/rpm
+          mkdir -p pages-branch/rpm
+          cp -r pages/repodata pages-branch/rpm/
+          cd pages-branch
+          git add rpm
+          if git diff --cached --quiet; then
+            echo "repository metadata unchanged"
+          else
+            git commit -m "dnf repository metadata for ${TAG}"
+            git push origin HEAD:gh-pages
+          fi
+
+      - name: Where users now point
+        run: |
+          echo "apt: deb [signed-by=/usr/share/keyrings/transcriber-archive-keyring.asc] https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/ ./"
+          echo "dnf: baseurl=https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/rpm/"
