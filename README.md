@@ -2,22 +2,20 @@
 
 # Audio Transcriber
 
-A cross-platform CLI tool for transcribing audio from video files and live audio streams using faster-whisper, with **real-time streaming** support.
+Transcribe meetings, calls and recordings on your own machine. A desktop app
+for Windows, Linux and macOS, and the same engine as a command-line tool.
+Nothing is uploaded: the model ships with the download, so the first
+transcription works with the network off.
 
-## Features
+- Transcribe video and audio files (MP4, MKV, MP3, WAV and the rest) to TXT, SRT or VTT
+- Transcribe live, from system audio and your microphone at once, tagged `[SYS]` and `[MIC]`
+- Runs offline. The only network request is the app's **Check for updates** button, when you click it
+- Built on [faster-whisper](https://github.com/SYSTRAN/faster-whisper); no ffmpeg to install
 
-- 🎥 Transcribe audio from local video files (MP4, AVI, MKV, etc.)
-- 🎙️ **Real-time transcription** from system audio (live meetings, streaming videos)
-- 💻 Cross-platform: Works on Windows, Linux, and macOS (live capture on macOS requires 14.4+ or a virtual audio driver — see [macOS](#macos) below)
-- 🔒 100% offline and local - all data stays on your machine. The only network request is the desktop app's **Check for updates** button, and only when you click it.
-- ⚡ Fast transcription with faster-whisper (MIT license)
-- 🎯 Multiple output formats (TXT, SRT, VTT)
+Live capture in the app works on Windows and Linux. On macOS the app
+transcribes files, and live capture is CLI-only, on macOS 14.4 or later.
 
-## Desktop GUI (in development)
-
-A native desktop app (Tauri shell + this CLI as a bundled sidecar) is in progress under `src-tauri/` and `src/` — see `openspec/changes/add-tauri-gui/` for the design and current status.
-
-### Download and run
+## Install
 
 Every [release](https://github.com/saunite/transcriber/releases) offers each platform in up to three forms. They're all the same version and all include the `base` Whisper model, so the first transcription works offline. There's no auto-update. The app's **Check for updates** button (at the bottom of the settings rail) asks GitHub for the latest release when you click it; it only reports what it finds and can open the releases page, and nothing is downloaded or installed for you. To upgrade, download the new version.
 
@@ -25,11 +23,7 @@ Every [release](https://github.com/saunite/transcriber/releases) offers each pla
 - **Installer or package**: installs like any other app, with a menu entry and an uninstaller.
 - **CLI**: the command-line transcriber on its own, with no GUI and no Python needed, plus the meeting launcher script.
 
-**Using a different model in the app.** The **Model** field in the title bar uses the bundled `base` model by default. To use a better one, download a faster-whisper model folder yourself (for example [Systran/faster-whisper-small](https://huggingface.co/Systran/faster-whisper-small); the folder must contain `model.bin`), then pick **Choose folder…** in the Model field and select it. The app remembers the choice. Pick **Bundled (base)** to go back. If the folder later moves or holds no `model.bin`, starting a transcription says so instead of starting. English-only models (names ending in `.en`) can only transcribe English.
-
-**When a live session stops by itself.** Under **Stop after silence** in the Live panel you set how many minutes without speech end a session (default 10; 0 keeps listening until you press **Stop**). When that happens the app tells you ("Stopped after 10 minutes of silence. The transcript so far is saved.") and returns to idle. If capture ends for any other reason, such as the audio server restarting or the output device disconnecting, the app says it ended unexpectedly and shows the engine's last message. While a session is running but nobody is talking, the status reads "Listening — no speech right now"; "Transcribing stalled" appears only when the engine itself has stopped reporting for 30 seconds.
-
-#### Linux
+### Linux
 
 The packages are install-tested on current Debian, Ubuntu LTS, Fedora, openSUSE Leap, and openSUSE Tumbleweed.
 
@@ -42,9 +36,7 @@ The packages are install-tested on current Debian, Ubuntu LTS, Fedora, openSUSE 
 
 The `.deb` and `.rpm` also put the command-line transcriber on your `PATH` as `transcriber-sidecar`. Run that way, it downloads models on first use instead of using the bundled one.
 
-Each time the transcription engine runs, it unpacks itself (about 350 MB) into your temporary folder, `/tmp` on Linux, which is often held in RAM, and removes that copy when it exits. Pressing **Stop** gives it up to 15 seconds to finish and clean up. If a copy is left behind anyway (the app was quit mid-session, or the engine was killed), the app removes it the next time it starts. It only ever removes its own engine's copies, and only when no running engine is using them.
-
-#### Windows
+### Windows
 
 | File | What it is |
 |---|---|
@@ -54,7 +46,7 @@ Each time the transcription engine runs, it unpacks itself (about 350 MB) into y
 
 All three are unsigned, so Windows SmartScreen warns the first time you run one ("Windows protected your PC"). Choose **More info**, then **Run anyway**.
 
-#### macOS
+### macOS
 
 **Built automatically on Apple Silicon GitHub runners, but not yet tested on a real Mac. Testers welcome.** If you try them, please [open an issue](https://github.com/saunite/transcriber/issues) saying what worked, especially:
 
@@ -73,9 +65,9 @@ Apple Silicon (arm64) only; Intel Macs are not supported.
 
 The app is ad-hoc signed but not notarized, so the first time you open it macOS says it can't verify the developer. Go to **System Settings → Privacy & Security**, scroll to the message about Transcriber, and choose **Open Anyway**.
 
-Live capture isn't available in the macOS app yet (see [macOS](#macos) below); file transcription is.
+Live capture isn't available in the macOS app yet; the CLI does it on macOS 14.4 or later, and [the user guide](docs/user-guide.md#macos) has the setup. File transcription works in the app.
 
-#### CLI archive
+### CLI archive
 
 Extract it, then run it from the extracted folder:
 
@@ -91,429 +83,28 @@ On macOS, clear the download quarantine first with `xattr -d com.apple.quarantin
 
 The launcher scripts use the `transcriber` binary next to them when it's there, and `python transcriber.py` otherwise, so the same scripts work from a source checkout.
 
-### Building it yourself
+## Run it
 
-All development happens on Linux/WSL; the sections below cover the Windows and Linux artifacts from there. On macOS (or any other platform with a native Rust toolchain + [Tauri CLI](https://tauri.app/) already set up), stage the sidecar binary under `src-tauri/binaries/transcriber-sidecar-<target-triple>.exe`, then:
+**The app.** Open it, then either drop a recording on the **File** tab, or go to
+the **Live** tab and press **Start transcribing** before your meeting. The
+transcript builds on a time axis as it goes, and is saved to your Documents
+folder.
 
-```bash
-cargo tauri build          # from src-tauri/
-python build_portable.py   # assembles the portable artifact for the current OS into dist/portable/
-```
-
-#### Updating the icon
-
-The master icon is `resources/transcriber-icon-1024.png`, exported from `resources/src/transcriber-icon-full-size.xcf`, and every app icon under `src-tauri/icons/` is generated from it. After editing the `.xcf`, regenerate both, then drop the Android, iOS and Windows Store outputs this app doesn't use:
+**The CLI.**
 
 ```bash
-# -compose over matters: the XCF reader leaves "Compose: None" on the image,
-# and without it -extent produces a blank light-blue square.
-magick resources/src/transcriber-icon-full-size.xcf -background none -flatten -trim +repage \
-  -compose over -gravity center -extent '%[fx:max(w,h)*1.24]x%[fx:max(w,h)*1.24]' \
-  -background 'rgb(186,244,255)' -flatten -resize 1024x1024 resources/transcriber-icon-1024.png
-cargo tauri icon resources/transcriber-icon-1024.png
-rm -rf src-tauri/icons/android src-tauri/icons/ios src-tauri/icons/Square*Logo.png src-tauri/icons/StoreLogo.png
+transcriber --file meeting.mp4                    # a recording -> meeting_transcript_<time>.txt
+transcriber --live --include-mic                  # a live meeting: system audio + microphone
+transcriber --file talk.mp4 --format srt          # subtitles instead
 ```
 
-#### Linux build (WSL or native Linux)
+From a source checkout, that's `python transcriber.py` with the same options.
 
-**Check out the repo on WSL's own (ext4) filesystem, not under `/mnt/c/...`.** `/mnt/c` is a 9p/DrvFs mount of the Windows drive — `CARGO_TARGET_DIR` (below) keeps cargo's *output* off it, but the *source* (`Cargo.toml`, every `src-tauri/src/*.rs`, `tauri.conf.json`) still has to be read from wherever the checkout lives, and Tauri writes generated schema files into `src-tauri/gen/` on every build. From a native path (e.g. `~/repos/transcriber`) none of that touches the Windows filesystem at all. Confirmed working from `~/repos/transcriber`: the `.venv` Windows Python interop (used to freeze the Windows sidecar, see the Windows build notes) still reaches the venv fine via WSL's `\\wsl.localhost\...` path — only that one-shot freeze crosses the boundary, in the direction that doesn't matter for build speed.
+## Where next
 
-Building directly in a WSL (or any native Linux) environment needs these system packages, plus `rustup` and the Tauri CLI:
-
-```bash
-sudo apt-get install -y build-essential pkg-config libssl-dev \
-    libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
-    librsvg2-dev patchelf
-rustup default stable
-cargo install --locked tauri-cli --version "^2"
-```
-
-Point cargo's `target/` directory at a native (ext4) filesystem path, persistently — via `~/.cargo/config.toml` rather than an exported env var, so it doesn't depend on remembering to set it in every shell:
-
-```toml
-# ~/.cargo/config.toml (machine-local, not part of this repo)
-[build]
-target-dir = "/home/YOU/.cache/transcriber/target"
-```
-
-Keep the last path component named `target`: Tauri only treats the running binary as a development build (and so resolves the bundled model next to it) when its folder is `target/<profile>` or `target/<triple>/<profile>`. Under a differently named directory the app looks for the model at its *installed* path instead, and a dev run with no model folder chosen fails with `--model-path /usr/lib/Transcriber/resources/model does not exist`.
-
-An exported `CARGO_TARGET_DIR` still works too and takes precedence if set. `build_portable.py` finds the real location either way (it asks `cargo metadata` directly, rather than only checking the env var).
-
-Freeze the Linux sidecar from a **venv**, not the system Python — on distros where numpy is a system package (e.g. Fedora, linked against FlexiBLAS), building against system Python bundles a BLAS shim with no backend, and the frozen binary aborts on first transcription:
-
-```bash
-python3 -m venv .venv
-./.venv/bin/pip install -r requirements-linux.txt pyinstaller
-./.venv/bin/python build_sidecar.py
-mkdir -p src-tauri/binaries
-cp dist/linux/transcriber-sidecar src-tauri/binaries/transcriber-sidecar-x86_64-unknown-linux-gnu
-```
-
-Then the rest of the Linux build. `NO_STRIP=1` is not optional on current distros: linuxdeploy strips every library it bundles using the `strip` from its own AppImage, and that binutils cannot parse `.relr.dyn` (`unknown type [0x13] section`), a compact relocation format Fedora and other modern toolchains emit by default — so every system library it copied in fails to strip and the bundle aborts with `failed to run linuxdeploy`. Skipping the strip pass costs a slightly larger AppImage and nothing else:
-
-```bash
-NO_STRIP=1 cargo tauri build   # from src-tauri/
-python fetch_sidecar_resources.py   # stage the model, if not already staged
-python build_portable.py
-# Linux artifacts: dist/portable/*.AppImage (GUI)
-#                  dist/portable/transcriber-cli_<version>_linux-x64.tar.gz (CLI)
-# Add --bundles appimage,deb,rpm to the build above for the .deb/.rpm packages.
-```
-
-#### Windows build (from WSL)
-
-The Windows shell (Tauri) cross-compiles cleanly from WSL, but the Windows sidecar is a PyInstaller freeze, and PyInstaller does not cross-compile — it must run under a real Windows Python. WSL can execute Windows `.exe` binaries directly, so this uses a Windows Python venv reached from WSL rather than a separate Windows build step.
-
-Add the mingw cross-toolchain (on top of the base toolchain from the Linux section above):
-
-```bash
-sudo apt-get install -y gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64
-rustup target add x86_64-pc-windows-gnu
-```
-
-If `.venv/` (a Windows-targeted venv) doesn't already exist, create it from WSL via Windows Python and install the sidecar's dependencies:
-
-```bash
-python.exe -m venv .venv
-./.venv/Scripts/python.exe -m pip install -r requirements.txt pyinstaller
-```
-
-Freeze the Windows sidecar through that venv. This checks for the specific venv interpreter, not just any `python.exe` on `PATH` — a generic `PATH` lookup can resolve to an unrelated interpreter (e.g. the Windows Store's stub launcher) that lacks the sidecar's dependencies, which would pass a looser check and then fail confusingly inside the freeze itself instead of failing clearly up front:
-
-```bash
-[ -x .venv/Scripts/python.exe ] || { echo "ERROR: no Windows Python venv at .venv/Scripts/python.exe -- see venv setup above" >&2; exit 1; }
-./.venv/Scripts/python.exe build_sidecar.py
-cp dist/windows/transcriber-sidecar.exe src-tauri/binaries/transcriber-sidecar-x86_64-pc-windows-gnu.exe
-```
-
-Then the rest of the Windows build, same as any other target:
-
-```bash
-cargo tauri build --target x86_64-pc-windows-gnu   # from src-tauri/
-python fetch_sidecar_resources.py                  # stage the model, if not already staged
-python build_portable.py --target x86_64-pc-windows-gnu
-# Windows artifacts: dist/portable/Transcriber_<version>_windows-x64.zip (GUI)
-#                    dist/portable/transcriber-cli_<version>_windows-x64.zip (CLI)
-```
-
-The bundled artifact ships the `base` Whisper model (~145MB) for a fully offline first run. No ffmpeg bundling is needed — the sidecar decodes audio and video via PyAV (bundled with faster-whisper), not an external ffmpeg binary; see `openspec/changes/drop-ffmpeg-dependency/`.
-
-The GUI always passes the sidecar an explicit `--model-path`: the bundled model directory (resolved relative to the running app, so it works the same whether run from the extracted Windows folder, the AppImage, or the `.app`), or the model folder the user chose in the Model field. It never relies on faster-whisper's network/cache-based model lookup. The CLI gained the same `--model-path <dir>` flag for anyone running from a bundled build directly.
-
-#### Releasing
-
-Releases are built by GitHub Actions (`.github/workflows/release.yml`) on fresh Linux, Windows, and macOS runners, not on a developer machine:
-
-1. Set `version` in both `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml` to the new value. Run `cargo update -p transcriber-gui` in `src-tauri/` so `Cargo.lock` follows, and commit all three files.
-2. Merge to `main`, then tag that commit and push the tag:
-
-   ```bash
-   git tag v0.2.0
-   git push origin v0.2.0
-   ```
-
-3. The workflow first checks that the tag matches both version fields and that every source link in `SOURCE-PROVENANCE.txt` still resolves. Then it builds every platform and uploads the results to a **draft** release. Nothing is public yet.
-4. Download and try at least one artifact from the draft, then click **Publish** on the release page. If something is wrong, delete it with `gh release delete v0.2.0 --cleanup-tag`, fix it, and tag again.
-
-To build everything without releasing, for example to check that a branch still builds on every platform, start the workflow from the Actions tab (**Run workflow**). The outputs are downloadable from that run. GitHub only shows the button once the workflow file is on the default branch.
-
-**Licensing: one step still needs a human.** The artifacts bundle GPL-licensed libraries (FFmpeg, x264, x265, via PyAV), so publishing one carries a source-availability obligation. `build_portable.py` and the Tauri bundle config copy `LICENSE`, `THIRD-PARTY-LICENSES.txt`, and `SOURCE-PROVENANCE.txt` into every artifact, and every release's notes link to `SOURCE-PROVENANCE.txt` as it was at that release's tag, instead of attaching it among the downloads.
-
-- The links in that file *are* the compliance mechanism (GPLv3 §6(d)); a dead link is an unmet obligation. The workflow's link check fails the release when one stops resolving. The x265 archive on Bitbucket is the most likely to disappear; if the check flags it, correct the link or rehost the archive.
-- **PyAV is pinned (`av==18.1.0` in the three `requirements*.txt` files), and bumping it means re-deriving everything in `SOURCE-PROVENANCE.txt`**: read the new PyAV `scripts/ffmpeg-*.json` for its `pyav-ffmpeg` tag, that tag's `scripts/pkg.py` and `build-ffmpeg.py` for the component versions and flags, and the new wheels for what actually ships. The workflow's preflight enforces it: a build fails when any pin differs from the `av ==` version the file records.
-
-### Running the tests
-
-One-time setup, in the project venv. The tests also need the bundled model (`python fetch_sidecar_resources.py`) and a Rust toolchain for `cargo test`:
-
-```bash
-pip install -r requirements-dev.txt          # Playwright, for the GUI tests only
-python -m playwright install chromium        # one-time browser download
-```
-
-Run everything:
-
-```bash
-.venv/bin/python run_tests.py
-```
-
-It runs each suite, prints PASS/FAIL with its duration, and exits 1 if any failed. A failing suite does not stop the others.
-
-| Suite | What it covers |
-|---|---|
-| `cargo test` (in `src-tauri/`) | Sidecar argument building, Windows path handling, and stopping the whole engine process tree |
-| `test_*.py` (repo root) | Engine and packaging units: bundled model default, live output path, transcript line format, mic fallback, macOS/WASAPI capture helpers, AppImage stripping |
-| `tests/test_gui.py` | The real `src/index.html` in headless Chromium with a fake `window.__TAURI__` (`tests/fake_tauri.js`), so no app build, audio or engine: live start/stop and the SYS/MIC indicators, the one-at-a-time file queue, unsupported files, a refused file run, and a check that every command the page invokes is registered in `src-tauri/src/main.rs` |
-| `tests/test_engine.py` | Transcribes a local English recording and checks the timestamped transcript, the detected language and at least 70% of its script's key words; random bytes must fail cleanly with no traceback and no transcript file |
-| `tests/test_e2e_linux.py` | Linux only. Builds the debug app and drives its real window through `tauri-driver`. Checks: the update check gives a real verdict online; with no network (inside `unshare -rn`) it says it couldn't check and the engine still transcribes; nothing opens a network connection at startup (`strace`); **Open download page** hands exactly the releases URL to the OS opener (a recording `xdg-open`); a chosen model folder is remembered across restarts, refused without `model.bin`, and actually loaded. Each app run gets its own data directory, so your real app settings are untouched |
-
-**The speech recording is not in the repo.** Use any English recording you have, in any format the engine decodes, kept outside the repository and never committed. Put the words it says in a `.txt` with the same name beside it, then:
-
-```bash
-TRANSCRIBER_TEST_SPEECH=~/recordings/sample.ogg .venv/bin/python run_tests.py   # reads ~/recordings/sample.txt
-```
-
-Without it, the speech check prints `SKIP` and the rest still runs. `tests/test_engine.py` also takes `--speech <audio>` and `--script <txt>` directly.
-
-**The end-to-end suite** (`tests/test_e2e_linux.py`) runs only on Linux, from a graphical desktop session. **App windows open and close on screen while it runs.** It also needs the staged sidecar in `src-tauri/binaries/` and these tools, installed once:
-
-```bash
-cargo install tauri-driver --locked            # WebDriver bridge for Tauri apps
-sudo dnf install webkitgtk6.0 strace           # Fedora: WebKitWebDriver + strace
-sudo apt install webkitgtk-webdriver strace    # Debian/Ubuntu equivalent (webkit2gtk-driver on older releases)
-```
-
-`unshare` (util-linux) and `ip` (iproute2) are normally present already. When something is missing, every scenario prints `SKIP` with what to install, and the suite doesn't fail. The online update check prints `SKIP` when `api.github.com` can't be reached (some VPNs block it). WebKitWebDriver doesn't support native clicks here ([tauri#6541](https://github.com/tauri-apps/tauri/issues/6541)), so the suite clicks the real buttons from script.
-
-**Testing a frozen engine.** The engine tests use `transcriber.py` by default. Point them at a built sidecar with `--engine`:
-
-```bash
-.venv/bin/python tests/test_engine.py --engine dist/linux/transcriber-sidecar
-```
-
-## Requirements
-
-### System Dependencies
-
-**Both Windows and Linux:**
-- Python 3.9 or higher
-
-No external media tool is required -- audio and video files are decoded by PyAV (bundled with faster-whisper), not an external ffmpeg binary.
-
-### Python Dependencies
-
-Install Python packages:
-
-```bash
-# Windows
-pip install -r requirements.txt
-
-# Linux (uses requirements-linux.txt, which omits the Windows-only pyaudiowpatch)
-pip install -r requirements-linux.txt
-```
-
-## Usage
-
-### Transcribe a Video File
-
-```bash
-# Basic transcription
-python transcriber.py --file path/to/video.mp4
-
-# Specify language and larger model
-python transcriber.py --file meeting.mp4 --language en --model medium
-```
-
-### Real-time Audio Capture
-
-**Quick Start for Teams Meetings:**
-
-Each platform has a launcher that automatically starts dual-capture transcription (system audio + microphone): `win-start-transcription.bat` (Windows), `linux-start-transcription.sh` (Linux), `mac-start-transcription.sh` (macOS). Double-click (Windows) or run it (Linux/macOS) to start. The transcript will be saved with a timestamp (e.g., `meeting_20251110_143052.txt`).
-
-The launcher passes extra arguments through to `transcriber.py`, so you can run it with a filename prefix and/or flags. Timestamps default to wall-clock time (`--actual-time` is always passed). Windows example (Linux/macOS work the same way, just run the `.sh` script instead):
-
-```bat
-win-start-transcription.bat                  REM default: meeting_TIMESTAMP.txt
-win-start-transcription.bat sprint-review    REM filename prefix
-win-start-transcription.bat --silence-timeout 0   REM flags only: meeting_TIMESTAMP.txt
-```
-
-A first argument that starts with `-` is a flag, not a prefix. On every platform the launcher finds `transcriber.py` (and, from a source checkout, its `.venv`) next to itself, so you can run it from any folder (the transcript is saved in the folder you run it from). It doesn't choose a model size, so `--model small` or `--model-path <folder>` pass straight through, and output names the model you actually loaded.
-
-**Manual Command:**
-
-```bash
-# Live transcription with dual-capture (system audio + microphone)
-python transcriber.py --live --wasapi --include-mic --mic-device 3
-
-# System audio only (WASAPI loopback for Bluetooth compatibility)
-python transcriber.py --live --wasapi
-
-# Traditional mode (may not work with Bluetooth headsets)
-python transcriber.py --live
-
-# Custom chunk settings for better responsiveness
-python transcriber.py --live --chunk-duration 20
-
-# macOS: native system audio loopback (no virtual driver needed, macOS 14.4+)
-python transcriber.py --live --coreaudio-tap --include-mic --mic-device 3
-```
-
-Live capture saves the transcript as it goes, to `transcript_<timestamp>.txt` in the current directory; the first line it prints names the file. Pass `--output <path>` to choose the file, or `--no-output` to only print the transcript.
-
-**Understanding the Labels:**
-- `[SYS]` - System audio (other meeting participants, videos, etc.)
-- `[MIC]` - Your microphone (your voice)
-
-Every live session labels its lines this way, including system-audio-only sessions (no `--include-mic`), which print `[SYS]` lines and the same compact status lines as a session with a microphone.
-
-**Find Your Microphone Device:**
-```bash
-python transcriber.py --list-devices
-```
-Look for your Bluetooth headset in the input devices list and note the device number.
-
-### Launchers
-
-The repo includes ready-made launchers that set up the environment (venv) and invoke the transcriber:
-
-```bat
-REM Windows: transcribe a single file (language is auto-detected; works from any folder)
-transcribe_file.bat <input_file> <output_file> [txt|srt|vtt]
-REM Example:
-transcribe_file.bat "meeting.mp4" "transcript.srt" srt
-
-REM Windows: Teams meeting (WASAPI loopback + mic), with optional prefix/flags
-REM Timestamps default to wall-clock time (--actual-time is always passed)
-win-start-transcription.bat [name-prefix] [transcriber flags...]
-REM Example:
-win-start-transcription.bat sprint-review --silence-timeout 0
-```
-
-```bash
-# Linux: Teams meeting (system audio + mic dual-capture), with optional prefix/flags
-./linux-start-transcription.sh [name-prefix] [transcriber flags...]
-# Example:
-./linux-start-transcription.sh sprint-review --silence-timeout 0
-
-# macOS: Teams meeting (Core Audio Tap dual-capture), with optional prefix/flags
-./mac-start-transcription.sh [name-prefix] [transcriber flags...]
-```
-
-On Linux, use `linux_start_transcription.sh` (underscore-named) for simple system-audio-only live capture with manual device selection (see [Linux](#linux) under "Setup for Real-time Audio Capture") — a different, general-purpose script from the Teams-meeting-specific `linux-start-transcription.sh` (hyphen-named) above.
-
-### Advanced Options
-
-```bash
-# Use larger model for better accuracy
-python transcriber.py --file audio.wav --model medium
-
-# Specify language
-python transcriber.py --file video.mp4 --language en
-
-# Output as SRT subtitles
-python transcriber.py --file video.mp4 --format srt
-
-# List available audio devices
-python transcriber.py --list-devices
-
-# WASAPI mode with custom microphone device
-python transcriber.py --live --wasapi --include-mic --mic-device 5
-```
-
-### Complete Options
-
-- `--file <path>` - Transcribe audio from a video/audio file
-- `--live` - Capture and transcribe system audio in real-time
-- `--wasapi` - Use WASAPI loopback mode (Windows only, Bluetooth-compatible)
-- `--coreaudio-tap` - Use Core Audio Process Tap for native system-audio loopback (macOS only, requires macOS 14.4+, no virtual driver needed)
-- `--include-mic` - Include microphone capture alongside system audio (use with --wasapi or --coreaudio-tap)
-- `--mic-device <id>` - Microphone device index (use --list-devices to find)
-- `--model <size>` - Model size: tiny, base, small, medium, large, turbo (default: base)
-- `--model-path <dir>` - Load the model from a local faster-whisper (CTranslate2) model folder, one containing `model.bin`, instead of resolving `--model` by name. Download one yourself, e.g. [Systran/faster-whisper-small](https://huggingface.co/Systran/faster-whisper-small). Output names the model after the folder (e.g. `faster-whisper-small`) unless `--model` is also given. English-only (`*.en`) models can only transcribe English.
-- `--language <code>` - Language code (e.g., en, es, fr) - auto-detect if not specified
-- `--task <type>` - Task: transcribe or translate (default: transcribe)
-- `--output <path>` - Output file for transcript (default: `<name>_transcript_<timestamp>.<format>` for `--file`, `transcript_<timestamp>.txt` for `--live`, both in the current directory)
-- `--no-output` - Live capture only: print the transcript without saving it to a file (cannot be combined with `--output`)
-- `--format <type>` - Output format: txt, srt, vtt (default: txt)
-- `--no-timestamps` - Exclude timestamps from text output
-- `--actual-time` - Use wall-clock timestamps (local time) instead of relative offsets. In live capture, each line is stamped with the time its speech began, not when it was printed
-- `--chunk-duration <seconds>` - Duration of audio chunks for streaming (default: 30)
-- `--silence-timeout <seconds>` - Auto-stop after N seconds of silence (default: 600 = 10 min, 0 = never). A silence stop exits with code 0; if the system audio source itself ends (audio server restart, device disconnected), live capture prints `❌ System audio capture ended unexpectedly`, keeps the transcript so far and exits with code 1
-- `--audio-device <id>` - Audio device index for live capture (-1 = auto-detect)
-- `--setup-help` - Print audio loopback setup instructions and exit
-- `--device <type>` - Device to run on: auto, cpu, cuda (default: auto)
-- `--compute-type <type>` - Compute type: auto, int8, float16, float32 (default: auto)
-
-## Setup for Real-time Audio Capture
-
-### Windows
-
-**For Bluetooth Headsets (Recommended - WASAPI Mode):**
-
-The transcriber includes WASAPI loopback support which works with Bluetooth headsets. No additional setup required!
-
-```bash
-# Use WASAPI mode with microphone
-python transcriber.py --live --wasapi --include-mic --mic-device 3
-
-# Or just double-click win-start-transcription.bat
-```
-
-**For Traditional Sound Cards (Stereo Mix):**
-
-You may need to enable "Stereo Mix":
-
-1. Right-click the speaker icon in taskbar → Sounds
-2. Go to 'Recording' tab
-3. Right-click empty area → Show Disabled Devices
-4. Enable 'Stereo Mix' or 'Wave Out Mix'
-5. Set it as default recording device
-
-**Note:** Stereo Mix does NOT work with Bluetooth headsets. Use WASAPI mode instead.
-
-**Alternative**: Install [VB-Cable](https://vb-audio.com/Cable/) virtual audio device
-
-### Linux
-
-Uses PulseAudio/PipeWire monitor, auto-detected via `pactl`/`parec` (part of `pulseaudio-utils`, or PipeWire's own `pipewire-pulse` package — installed by default on most desktop Linux distributions). Identify your audio monitor device:
-```bash
-pactl list sources | grep -i monitor
-```
-
-The transcriber auto-detects and captures the real monitor source automatically — no manual device selection needed. It records the monitor of your default output device, and on PipeWire the recording follows the default when it changes mid-session (for example, when Bluetooth headphones connect), so the meeting audio keeps being transcribed. On PulseAudio itself this is untested. You can also start live transcription with the bundled launcher:
-
-```bash
-# Auto-detect the monitor device (default)
-./linux_start_transcription.sh
-
-# Use a specific PipeWire/PulseAudio monitor device index
-./linux_start_transcription.sh 2
-```
-
-The script writes output to `transcription_<timestamp>.txt`, auto-stops after 10 minutes of silence (use `--silence-timeout 0` for continuous recording, or pass additional `transcriber.py` flags through as arguments).
-
-### macOS
-
-**Native Capture (Core Audio Process Tap, macOS 14.4+):**
-
-```bash
-python transcriber.py --live --coreaudio-tap --include-mic --mic-device 3
-```
-
-> **Known limitation, confirmed on real hardware:** macOS only shows the audio-capture permission prompt to an app launched as a proper `.app` bundle (e.g. the packaged desktop app) — plain `python transcriber.py` run from a terminal will not be prompted and will not receive audio, even if the terminal app itself has been granted access in System Settings > Privacy & Security > System Audio Recording Only. It fails clearly (a `NoAudioDataError` after a few seconds) rather than hanging silently, but the fallback below is the reliable option for bare CLI usage.
-
-**Fallback (older macOS, or if native capture doesn't work): Virtual Audio Driver**
-
-Install a virtual loopback driver and select it as the input device:
-
-1. Install [BlackHole](https://github.com/ExistentialAudio/BlackHole) or [Loopback](https://rogueamoeba.com/loopback/)
-2. Set it as (or aggregate it with) your output device so system audio is routed through it
-3. Find its device index:
-   ```bash
-   python transcriber.py --list-devices
-   ```
-4. Run live capture against it:
-   ```bash
-   python transcriber.py --live --audio-device N --include-mic --mic-device M
-   ```
-
-## Performance Tips
-
-### For Best Accuracy
-- Use `--model medium` or `--model large`
-- Specify `--language` if you know it
-
-### For Speed
-- Use `--model tiny` or `--model base`
-- Use `--device cuda` if you have an NVIDIA GPU
-- For streaming, use shorter `--chunk-duration` (but may reduce accuracy)
-
-### GPU Acceleration
-- Install CUDA toolkit for NVIDIA GPUs
-- The tool automatically uses GPU if available
-- Expect 4-10x speedup with GPU
+- **[User guide](docs/user-guide.md)** — every option, per-platform setup for live capture, troubleshooting.
+- **[Contributing](CONTRIBUTING.md)** — how changes are made here, and how to run the tests.
+- **[Building](docs/building.md)** — building the app and the CLI from source, and making a release.
 
 ## License
 
@@ -529,44 +120,3 @@ offered under GPLv2-only terms.
 every bundled component with its license and copyright, and
 `SOURCE-PROVENANCE.txt` records exact versions and where to obtain corresponding
 source. All three ship inside every artifact.
-
-## Troubleshooting
-
-### "No loopback device found"
-- **Windows**: Enable Stereo Mix or install VB-Cable
-- **Linux**: Ensure PulseAudio/PipeWire is running, and `pactl`/`parec` are installed (`pulseaudio-utils`, or PipeWire's own `pipewire-pulse` package)
-- **macOS**: Use `--coreaudio-tap` (macOS 14.4+), or install BlackHole/Loopback and select it with `--audio-device`
-- Use `--list-devices` to see available devices
-- Use `--setup-help` for detailed setup instructions
-
-### Auto-stop feature
-- By default, transcription stops after 10 minutes of silence
-- Disable with `--silence-timeout 0` for continuous recording
-- Adjust timeout with `--silence-timeout 300` (5 minutes), etc.
-
-### Slow transcription
-- Use smaller model (`--model tiny` or `--model base`)
-- Enable GPU if available
-- For live mode, reduce `--chunk-duration`
-
-### Poor accuracy
-- Use larger model (`--model medium` or `--model large`)
-- Specify correct `--language`
-- Ensure good audio quality (no background noise)
-
-## Examples
-
-### Basic video transcription
-```bash
-python transcriber.py --file meeting.mp4
-```
-
-### Live meeting transcription
-```bash
-python transcriber.py --live --model base --language en
-```
-
-### Generate SRT subtitles
-```bash
-python transcriber.py --file video.mp4 --format srt
-```
