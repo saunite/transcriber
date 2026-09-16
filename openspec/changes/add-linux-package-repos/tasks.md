@@ -91,15 +91,25 @@
 
 ## 6. Docs and verification
 
-- [ ] 6.1 Docs:
+- [x] 6.1 Docs:
   - `docs/user-guide.md`: what the repository is, that installing the package registers it, the key's fingerprint and where it lands, how to disable updates (edit the file; the edit survives upgrades), and how removal cleans up;
   - `docs/building.md`: the publish step, the key's handling and rotation, and what to do if it is ever compromised;
   - `README.md`: the "There's no auto-update" line becomes conditional for `.deb` and `.rpm`.
 
   Verify each is described.
 
-- [ ] 6.2 Run `.venv/bin/python run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set and a network that reaches GitHub, and verify it exits 0.
+  **Done 2026-09-16.**
+  - **`docs/user-guide.md`** gains "Updates for the .deb and .rpm": what the repository is, a table of the four installed files, the key's fingerprint, the one-time trust prompt on Fedora and openSUSE (and why apt has none), how to turn updates off with the edit surviving upgrades, and that removal cleans up (`apt purge`, `dnf remove`).
+  - **`docs/building.md`** gains "Package repositories" under Releasing: what the publish workflow does in four steps, where the signing key lives, what to do if the subkey leaks or the master is lost, why the key has no expiry, and why the config marking runs in a Fedora container.
+  - **`README.md`**: the no-auto-update line now names the `.deb` and `.rpm` exception and links to the guide; the Linux table says `apt purge` removes the repository while `remove` keeps it.
+  - **Checked:** every relative link and anchor in the four documents still resolves.
 
-- [ ] 6.3 Add a backlog item for splitting the model and the engine into their own packages, so an upgrade stops costing ~283 MB, noting that this change makes upgrades frequent enough for it to matter.
+- [x] 6.2 Run `.venv/bin/python run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set and a network that reaches GitHub, and verify it exits 0.
+
+  **Done 2026-09-16.** With `TRANSCRIBER_TEST_SPEECH` set and GitHub reachable: 17/17 suites passed, exit 0, nothing skipped. `tests/test_package_repos.py` takes 192 s of the 306 s total, so the suite went from about 100 s to about 5 minutes. Whether to gate it behind an environment variable is still the user's call.
+
+- [x] 6.3 Add a backlog item for splitting the model and the engine into their own packages, so an upgrade stops costing ~283 MB, noting that this change makes upgrades frequent enough for it to matter.
+
+  **Done 2026-09-16.** Added to "Parked changes" above the release item, with the 142 MB model and 153 MB engine measured from this build and the note that this change is what makes it matter.
 
 - [ ] 6.4 **At the first published release, by the user:** on a real Debian or Ubuntu machine and a real Fedora or openSUSE machine, install the downloaded package, confirm the repository registered itself, then publish a later version and confirm the package manager offers and installs it. Record both results; this is the check the container tests cannot make.

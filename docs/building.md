@@ -113,6 +113,43 @@ The bundled artifact ships the `base` Whisper model (~145MB) for a fully offline
 The GUI always passes the sidecar an explicit `--model-path`: the bundled model directory (resolved relative to the running app, so it works the same whether run from the extracted Windows folder, the AppImage, or the `.app`), or the model folder the user chose in the Model field. It never relies on faster-whisper's network/cache-based model lookup. The CLI gained the same `--model-path <dir>` flag for anyone running from a bundled build directly.
 
 ## Releasing
+### Package repositories
+
+Publishing a release also publishes the apt and dnf repositories that installed
+`.deb` and `.rpm` users upgrade from. The `publish repositories` workflow does it
+on `release: published`, so nothing users see changes until you publish:
+
+1. it refuses to run unless the signing key and GitHub Pages are both available;
+2. it downloads that release's `.deb` and `.rpm`, builds the indexes with
+   `build_repo_metadata.py`, and signs only the indexes;
+3. it uploads `InRelease`, `Packages` and `Packages.gz` as assets of that same
+   release, which is the whole apt repository;
+4. it pushes `repodata/` to the `gh-pages` branch, which is the dnf half; the
+   metadata points back at the release's own `.rpm`.
+
+**The signing key.** A master key, held offline by the maintainer along with its
+revocation certificate, with only a signing subkey in GitHub as
+`GPG_SIGNING_SUBKEY` and `GPG_PASSPHRASE` on the `release-signing` environment.
+The public half ships inside both packages, and its fingerprint is in
+[the user guide](user-guide.md#updates-for-the-deb-and-rpm).
+
+- **If the subkey leaks:** revoke that subkey with the master, publish a release
+  whose packages carry the new public key, and sign with the new subkey. Users
+  who installed an older package keep the old key until they upgrade once.
+- **If the master key is lost:** you can no longer revoke or rotate. Releases
+  keep signing while the CI secret survives, but a new key would mean every
+  existing user installing one package by hand. Back up the keyring and the
+  revocation certificate somewhere other than the machine you sign from.
+- **The key has no expiry**, deliberately: an expired key breaks `apt update` for
+  every user until they hand-install a package carrying a new one.
+
+**Config files.** `mark_package_configs.py` runs in the Linux build, after the
+bundlers, and marks the repository file as a dpkg conffile and an rpm
+`%config(noreplace)` file, so a user's edit survives upgrades. Tauri's bundlers
+cannot do this themselves. The rpm half runs in a Fedora container, since
+`rpmrebuild` is not packaged for Ubuntu, where the release builds run.
+
+
 
 Releases are built by GitHub Actions (`.github/workflows/release.yml`) on fresh Linux, Windows, and macOS runners, not on a developer machine:
 

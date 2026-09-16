@@ -31,11 +31,15 @@ Repository metadata SHALL be signed, and each package manager SHALL be configure
 - **THEN** the documentation names the key's fingerprint and where the key file was installed, so they can compare it against their system
 
 ### Requirement: Installing the package registers the repository
-The `.deb` and `.rpm` SHALL install the repository definition and its signing key, so that upgrades are offered without further setup. Removing the package SHALL leave no repository definition behind that would keep pointing the package manager at this project.
+The `.deb` and `.rpm` SHALL install the repository definition and its signing key, so that upgrades are offered without the user configuring anything. Where the package manager requires a user to confirm trusting the key before it will use the repository, that confirmation SHALL be asked once, SHALL identify the key by its fingerprint, and SHALL NOT recur. Removing the package SHALL leave no repository definition behind that would keep pointing the package manager at this project.
 
 #### Scenario: First install from a downloaded package
 - **WHEN** a user installs the downloaded `.deb` or `.rpm`
 - **THEN** the repository and its key are registered, and their package manager offers later versions from then on
+
+#### Scenario: Confirming the key the first time
+- **WHEN** a user's package manager verifies repository metadata against keys it holds itself, and this project's key is not yet among them
+- **THEN** the first upgrade asks the user once to accept the key, showing its fingerprint, and later upgrades proceed without asking
 
 #### Scenario: Removing the application
 - **WHEN** a user removes the application through their package manager, purging it where that distinction exists

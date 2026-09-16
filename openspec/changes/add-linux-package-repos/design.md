@@ -83,6 +83,14 @@ With that, the behaviour is the package managers' own, and no install script of 
 - **Alternative, rejected:** installing `rpmrebuild` from its upstream tarball on the runner. It adds a download outside any distribution's packaging to a job that signs releases.
 - **Alternative, rejected:** a postinstall script comparing checksums. It reimplements what both package managers already do, and gets the "user disabled it" case wrong easily.
 
+### 7. dnf asks once before it trusts the key
+
+`repo_gpgcheck=1` verifies `repomd.xml` against keys in dnf's own per-repository keyring, and a key in the **rpm database is not enough**: with our key imported by `rpm --import`, `dnf list` still reported "repomd.xml GPG signature verification error: Signing key not found" and prompted. With `-y`, dnf imports the key ("Importing OpenPGP key 0xA02A160C") and proceeds.
+
+So a Fedora or openSUSE user sees one prompt, showing the key's fingerprint, the first time they upgrade; after that nothing. The user accepted that on 2026-09-16, and the spec says so rather than promising silence. apt is unaffected: the `signed-by` keyring the package installs is used directly.
+
+- **Alternative, rejected:** signing the packages as well (`gpgcheck=1`) plus a `%post` running `rpm --import`. It removes the prompt, but reverses Decision 3 and reintroduces the install script Decision 6 avoids. Every third-party rpm repository asks this question once; the prompt is also the moment a user sees which fingerprint they are trusting.
+
 ## Risks / Trade-offs
 
 - **[`rpmrebuild` runs in a container]** → Verified working on Fedora 42 and confirmed absent from Ubuntu's repositories, hence Decision 5. If the Fedora image's tooling ever changes, the alternative is building the `.rpm` ourselves.

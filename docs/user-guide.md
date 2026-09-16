@@ -10,6 +10,49 @@ install it, see [the README](../README.md).
 
 Each time the transcription engine runs, it unpacks itself (about 350 MB) into your temporary folder, `/tmp` on Linux, which is often held in RAM, and removes that copy when it exits. Pressing **Stop** gives it up to 15 seconds to finish and clean up. If a copy is left behind anyway (the app was quit mid-session, or the engine was killed), the app removes it the next time it starts. It only ever removes its own engine's copies, and only when no running engine is using them.
 
+## Updates for the .deb and .rpm
+
+Installing the Linux `.deb` or `.rpm` registers this project as a package
+repository, so `apt` and `dnf` offer new versions the way they do for anything
+else you installed. The packages themselves stay where they always were, as the
+assets of each GitHub release; only a small index is published separately.
+
+What gets installed alongside the application:
+
+| File | What it is |
+|---|---|
+| `/etc/apt/sources.list.d/transcriber.list` | the repository, on Debian and Ubuntu |
+| `/etc/yum.repos.d/transcriber.repo` | the repository, on Fedora and openSUSE |
+| `/usr/share/keyrings/transcriber-archive-keyring.asc` | the key apt checks the index against |
+| `/etc/pki/rpm-gpg/RPM-GPG-KEY-transcriber` | the same key, where dnf looks for it |
+
+**The key.** The index is signed, and the index carries a checksum for the
+package, so both are covered by one signature. The key's fingerprint is:
+
+```
+612A 3A5D 8538 DCF3 8F43  BE23 2DAD C8BD B40B C439
+```
+
+On Fedora and openSUSE, the first upgrade asks once whether to trust that key
+and shows the fingerprint; compare it with the line above. Later upgrades don't
+ask. On Debian and Ubuntu there is no prompt, because apt reads the key file the
+package installed.
+
+**Turning it off.** Comment out the line in `transcriber.list`, or set
+`enabled=0` in `transcriber.repo`. Both files are configuration files as far as
+your package manager is concerned, so your change survives upgrades: the version
+from the newer package is left beside it as `transcriber.list.dpkg-dist` or
+`transcriber.repo.rpmnew` instead of replacing yours. If you never edit the file,
+it is simply kept up to date.
+
+**Removing it.** Removing the application removes the repository: `apt purge
+transcriber` on Debian and Ubuntu (plain `apt remove` keeps the file, as it does
+for any configuration), and `dnf remove transcriber` on Fedora and openSUSE.
+
+**The AppImage, the portable builds, Windows and macOS** have no repository and
+are updated by downloading a new version, with the app's **Check for updates**
+button to tell you when there is one.
+
 ## Requirements
 
 ### System Dependencies

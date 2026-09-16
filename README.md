@@ -17,7 +17,7 @@ files, and live capture is CLI-only, on macOS 14.4 or later.
 
 ## Install
 
-Every [release](https://github.com/saunite/transcriber/releases) offers each platform in up to three forms. They're all the same version and all include the `base` Whisper model, so the first transcription works offline. There's no auto-update. The app's **Check for updates** button (at the bottom of the settings rail) asks GitHub for the latest release when you click it; it only reports what it finds and can open the releases page, and nothing is downloaded or installed for you. To upgrade, download the new version.
+Every [release](https://github.com/saunite/transcriber/releases) offers each platform in up to three forms. They're all the same version and all include the `base` Whisper model, so the first transcription works offline. The app never updates itself. Its **Check for updates** button (at the bottom of the settings rail) asks GitHub for the latest release when you click it; it only reports what it finds and can open the releases page, and nothing is downloaded or installed for you. To upgrade, download the new version. The exception is the Linux `.deb` and `.rpm`, which register this project as a package repository when installed, so `apt` and `dnf` offer new versions like any other package; [the user guide](docs/user-guide.md#updates-for-the-deb-and-rpm) explains how to check or turn that off.
 
 - **Portable**: nothing to install, no admin rights. Deleting it is the uninstall.
 - **Installer or package**: installs like any other app, with a menu entry and an uninstaller.
@@ -30,7 +30,7 @@ The packages are install-tested on current Debian, Ubuntu LTS, Fedora, openSUSE 
 | File | What it is |
 |---|---|
 | `transcriber_<version>_amd64.AppImage` | Portable GUI. Run `chmod +x` on it, then run it. AppImages need FUSE (`libfuse2`); without it, run it with `--appimage-extract-and-run`. |
-| `transcriber_<version>_amd64.deb` | Debian/Ubuntu package: `sudo apt install ./transcriber_<version>_amd64.deb`. Remove with `sudo apt remove transcriber`. |
+| `transcriber_<version>_amd64.deb` | Debian/Ubuntu package: `sudo apt install ./transcriber_<version>_amd64.deb`. Remove with `sudo apt purge transcriber` (`remove` keeps the update repository, as it does any configuration). |
 | `transcriber-<version>-1.x86_64.rpm` | Fedora: `sudo dnf install ./transcriber-<version>-1.x86_64.rpm`. openSUSE: `sudo zypper install --allow-unsigned-rpm ./transcriber-<version>-1.x86_64.rpm`. Remove with `sudo dnf remove transcriber` or `sudo zypper remove transcriber`. |
 | `transcriber-cli_<version>_linux-x64.tar.gz` | CLI (see below). |
 
