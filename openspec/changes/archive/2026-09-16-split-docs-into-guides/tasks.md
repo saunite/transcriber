@@ -91,4 +91,6 @@
 
   **Done 2026-09-16.** With `TRANSCRIBER_TEST_SPEECH` set and GitHub reachable: 16/16 suites passed, exit 0, nothing skipped. It covers the edited `build_portable.py` and `tests/test_e2e_linux.py`; `release.yml` was checked by parsing it as YAML, since CI runs only on a tag.
 
-- [ ] 4.2 **Review, by the user:** read the four documents and confirm the front page is what you want a new visitor to land on, and that nothing you rely on was lost in the move.
+- [x] 4.2 **Review, by the user:** read the four documents and confirm the front page is what you want a new visitor to land on, and that nothing you rely on was lost in the move.
+
+  **Done 2026-09-16.** The user read the four documents and reported them fine: the front page is what a visitor should land on, and nothing they rely on was lost in the move.
