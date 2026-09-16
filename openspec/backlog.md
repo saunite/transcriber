@@ -4,14 +4,15 @@
 
 ## Waiting on a Windows session
 
-Nothing. Every Windows check was completed on 2026-09-14.
+- **Is the `TZ` deletion doing anything on Windows?** `transcriber.py` deletes `TZ` at import for `fix-cygwin-tz-override-bug`, where a Cygwin shell exports an IANA-style `TZ` the Windows C runtime cannot parse. On Linux that deletion is provably ineffective: glibc caches the zone and only re-reads on `tzset()`, so the engine follows `TZ` regardless (measured in `fix-engine-timezone-override`, 2026-09-16). If the Windows runtime caches the same way, that fix never worked. Re-check the archived scenario on Windows: run the engine from a Cygwin shell exporting `TZ=America/Mexico_City` and see whether its stamps are local or UTC.
+
+Every other Windows check was completed on 2026-09-14.
 
 Verified since this list was written, so removed: `02-add-release-pipeline-windows` 4.1–4.5 (per-user install and uninstall with no admin prompt, portable app, CLI offline, and the launcher's `wmic` fix), `fix-live-stop-orphans-engine` 5.3 (stop kills the sidecar on Windows), the published `.deb` requires `libasound2` (run 34765219343), and a `workflow_dispatch` run creates no release (`01-add-release-pipeline` 3.4).
 
 ## Parked changes (each needs a proposal)
 
 - **Consistent window decorations on Linux.** The `.rpm`/`.deb` run as native Wayland clients and GTK draws its own title bar. The AppImage's `AppRun` hook forces `GDK_BACKEND=x11`, so KWin draws the Breeze title bar instead. Measured under X11: `_NET_FRAME_EXTENTS = 0, 0, 30, 0`, no `_GTK_FRAME_EXTENTS`; the button layout comes from `kwinrc`'s `ButtonsOnLeft=HXIA`. The user prefers the AppImage look. Likely approach: set `GDK_BACKEND=x11` at the top of `main()` in `src-tauri/src/main.rs`, before `tauri::Builder` (edition 2021, so no `unsafe`). Tauri 2.9.3 exposes no deb/rpm `desktopTemplate`. Trade-offs: XWayland scaling and HiDPI, screen-share and clipboard behaviour. It would also sidestep the Wayland crash the hook exists for (tauri-apps/tauri#8541).
-- **An hour's gap between GUI and engine timestamps.** In one session the GUI marked the start as `08:43:28` and named the file `transcript_20260913_084328.txt`, while the engine's own transcript lines were stamped `07:43`/`07:44`. Not investigated. Suspect the JS and Python sides disagree on timezone or DST handling.
 - **Windows system audio doesn't follow a default-output change mid-session.** `WASAPICapture` opens the default output's loopback once, at start, so switching output (for example, connecting Bluetooth headphones) leaves the session recording the old device. Linux follows the change on PipeWire (see "Known limits"). The user scoped this out of the logic audit's cluster D on 2026-09-15.
 - **Split the model and the engine into their own packages.** The `.deb` and `.rpm` are ~283 MB because the bundled model (142 MB) and the frozen engine (153 MB) sit inside them, so every upgrade costs that much while the application's own code is under a megabyte. Both ecosystems handle split packages natively (`transcriber` depending on `transcriber-model-base` and an engine package), which would make a typical upgrade a few megabytes. Parked by the user on 2026-09-16 while proposing `add-linux-package-repos`; that change makes upgrades routine, which is what makes this worth doing.
 - **The real release, and the checks that can only run after it.** Nothing is published yet: the only release and tag are the draft `v0.1.0` (checked 2026-09-15). Grouped here on 2026-09-15.

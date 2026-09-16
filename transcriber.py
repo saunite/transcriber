@@ -702,6 +702,19 @@ def _resolve_mic_config(args) -> Optional[MicConfig]:
     return MicConfig(mic_device, channels, mic_info['name'], rate)
 
 
+def _timezone_summary() -> str:
+    """The zone the engine resolved, for its status line.
+
+    An hour's gap between the app's clock and the engine's was once reported and
+    never reproduced; whatever the engine believed local time to be was the one
+    thing the investigation could not recover afterwards
+    (openspec/changes/fix-engine-timezone-override). Now it says so.
+    """
+    now = datetime.now().astimezone()
+    offset = now.strftime("%z")
+    return f"{time.tzname[now.dst() != timedelta(0)] if time.daylight else time.tzname[0]} ({offset[:3]}:{offset[3:]})"
+
+
 def _wall_clock_stamp(at: Optional[datetime] = None) -> str:
     """A local date/time stamp: `at`, or the clock read fresh at the call site."""
     return (at or datetime.now()).strftime("[%Y-%m-%d %H:%M:%S]")
@@ -777,7 +790,7 @@ def _run_dual_capture(engine, args, *, title, mode_summary, sys_rate, run_sys, m
     # The GUI waits for the "Listening..." line before showing capture as
     # active (openspec/changes/fix-capturing-shown-before-listening).
     print(f"Transcriber → {args.output}" if args.output else "Transcriber (not saving a transcript file)")
-    print(f"{args.model_label} model ({engine.device}/{engine.compute_type}), {args.language or 'auto-detect'} language, {mode_summary}")
+    print(f"{args.model_label} model ({engine.device}/{engine.compute_type}), {args.language or 'auto-detect'} language, {mode_summary}, timestamps in {_timezone_summary()}")
     listen_line = "Listening... (Ctrl+C to stop"
     if args.silence_timeout > 0:
         listen_line += f", auto-stop after {args.silence_timeout/60:.1f}m silence"

@@ -31,6 +31,6 @@ The system SHALL format segment times as relative `[MM:SS -> MM:SS]` ranges when
 - **WHEN** the process is launched with a `TZ` environment variable its platform's date and time library can interpret, naming a zone other than the machine's default
 - **THEN** wall-clock timestamps are in that zone, the same as any other program started from that environment
 
-#### Scenario: The application and the engine stamp the same session
-- **WHEN** the desktop application starts a live session and names its transcript file from its own clock, while the engine stamps the transcript's lines
-- **THEN** both readings are of the same local time, so the file name and the first line agree to within the time taken to start the session
+#### Scenario: The engine reports the zone it resolved
+- **WHEN** a live session starts
+- **THEN** the engine's own output names the timezone and offset its timestamps use, so a reader can tell what the engine believed local time to be without inferring it from the stamps

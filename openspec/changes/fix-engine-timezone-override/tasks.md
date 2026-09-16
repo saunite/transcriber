@@ -35,24 +35,41 @@
 
   Per this task, the apply stopped here to re-plan rather than applying a fix for a defect that does not exist.
 
-## 2. Test, then fix
+## 2. Make a recurrence diagnose itself
 
-- [ ] 2.1 Add a check to `test_transcript_line_format.py` (or a new root test if it reads better) that runs `transcriber.py --help`-style startup in a subprocess with `TZ` set to a zone far from this machine's (for example `TZ=Pacific/Kiritimati`) and asserts the engine's own wall-clock stamp is in that zone: compare `transcriber._wall_clock_stamp()` printed by the subprocess against `datetime.now(ZoneInfo("Pacific/Kiritimati"))` in the parent, allowing a few seconds. Skip on Windows, where the Cygwin fallback applies.
+- [x] 2.1 Add a root `test_engine_timezone.py` that runs the engine in a subprocess with `TZ` set to a zone far from this machine's (`Pacific/Kiritimati`) and asserts:
+  - its `--actual-time` stamp is in that zone, within a few seconds of `datetime.now(ZoneInfo("Pacific/Kiritimati"))` in the parent;
+  - with `TZ` unset, the stamp matches the machine's own local time.
 
-  Verify it **fails** against today's engine, which drops `TZ` at import and stamps in the machine's own zone.
+  It pins today's correct behaviour rather than a fix, so it passes as written; record that. Skip on Windows, where the Cygwin fallback applies. Verify it fails if `time.tzset()` is called after the `TZ` deletion in `transcriber.py`, which is what the suspected defect would have looked like.
 
-- [ ] 2.2 Apply the fix 1.2 chose. If it is the expected one: make the `TZ` deletion conditional on Windows in `transcriber.py`, keeping the comment's explanation of the Cygwin case, so Linux and macOS honour `TZ`.
+  **Done 2026-09-16.** Three checks, all passing as written, since they pin behaviour that is already correct:
+  - `TZ=Pacific/Kiritimati -> 2026-09-17 09:56:02 (+14)`;
+  - `no TZ -> 2026-09-16 13:56:02 (CST)`;
+  - the summary line reads `CST (-06:00)`.
 
-  Verify 2.1 passes, `test_transcript_line_format.py` and `test_dual_capture.py` still pass, and a run with no `TZ` set stamps exactly as before.
+  It needs no model or audio: the stamp comes from `_wall_clock_stamp()`, the same helper every live line uses, run in a subprocess with a controlled environment. It skips on Windows.
 
-- [ ] 2.3 If 1.1 showed the page's runtime is the one with stale rules, record what would fix it (a newer timezone database in the packaged runtime) and whether it is ours to fix. Do not change `src/main.js` to compensate for a wrong clock; a shifted stamp would then be wrong in the other direction on a correct machine.
+  **Mutation:** adding `time.tzset()` after the `TZ` deletion, which is exactly what the suspected defect would have been, fails the first check: "with TZ=Pacific/Kiritimati the engine stamped 2026-09-16 13:56:27 (CST), but that zone reads 2026-09-17 09:56:27: 20.0 hours out". The file was restored afterwards.
 
-## 3. Verification
+- [x] 2.2 In `transcriber.py`, add the resolved timezone and offset to the compact summary line a live session prints, so the app's engine log records what the engine believed local time to be. Keep it to that one line; the output stays three lines.
 
-- [ ] 3.1 Repeat 1.1's comparison on the fixed build and verify the three readings agree.
+  Verify `test_dual_capture.py` still passes, and extend 2.1 to assert the line names the zone the engine actually used.
 
-- [ ] 3.2 Remove "An hour's gap between GUI and engine timestamps" from `openspec/backlog.md`'s parked changes, recording the cause found in 1.2. If 2.3 applies, park that follow-up instead. Verify the item no longer appears.
+  **Done 2026-09-16.** A new `_timezone_summary()` returns the zone abbreviation and offset (`CST (-06:00)`, or `+14 (+14:00)` under `TZ=Pacific/Kiritimati`), and the live session's second line now ends with "timestamps in <that>". The output is still three lines.
 
-- [ ] 3.3 Run `.venv/bin/python run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set and a network that reaches GitHub, and verify it exits 0.
+  **Verified:** `test_dual_capture.py` passes, and 2.1's third check compares the summary against the zone the engine resolved in a separate subprocess, so the line cannot drift from the stamps.
 
-- [ ] 3.4 **Manual check, by the user, on a rebuilt sidecar:** run a short live session and confirm the transcript's file name and its first line agree on the hour. Nothing needs to be kept.
+## 3. Backlog and verification
+
+- [x] 3.1 `openspec/backlog.md`:
+  - remove "An hour's gap between GUI and engine timestamps" from the parked changes, since it was investigated;
+  - add, under "Waiting on a Windows session", that `os.environ.pop("TZ", None)` is ineffective on Linux (glibc caches the zone until `tzset()`), so the Cygwin fix it was written for may never have worked on Windows either, and `fix-cygwin-tz-override-bug`'s scenario should be re-checked there.
+
+  Verify both by reading the file.
+
+  **Done 2026-09-16.** The hour-gap item is gone from "Parked changes" (the phrase appears nowhere in the file), and "Waiting on a Windows session" now carries the `TZ` question, with the Linux measurement and the concrete check to run from a Cygwin shell.
+
+- [x] 3.2 Run `.venv/bin/python run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set and a network that reaches GitHub, and verify it exits 0.
+
+  **Done 2026-09-16.** With `TRANSCRIBER_TEST_SPEECH` set and GitHub reachable: 18/18 suites passed, exit 0, nothing skipped. That is one more suite than before (`test_engine_timezone.py`).
