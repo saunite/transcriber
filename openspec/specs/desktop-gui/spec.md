@@ -106,7 +106,7 @@ The system SHALL accept dropped (or browsed) video/audio files and transcribe th
 
 #### Scenario: Drop a video file
 - **WHEN** a user drags a supported video file onto the app
-- **THEN** the system extracts audio and transcribes it via the sidecar, showing progress and the resulting transcript
+- **THEN** the system extracts audio and transcribes it via the sidecar, and the transcript appears in the file view line by line while the transcription runs, not only once it finishes
 
 #### Scenario: Drop an unsupported file
 - **WHEN** a user drags a file with an unrecognized extension onto the app
