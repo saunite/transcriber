@@ -67,7 +67,7 @@ The system SHALL let users specify a language code and a task of transcribe (kee
 - **THEN** the system transcribes with English as the language and translates to English
 
 ### Requirement: Format timestamps for output
-The system SHALL format segment times as relative `[MM:SS -> MM:SS]` ranges when actual-time mode is off. When actual-time mode is on: file transcription SHALL format wall-clock time as a `[start -> end]` range anchored to one base time captured once at the start of file processing; live/streaming transcription SHALL format wall-clock time as a single `YYYY-MM-DD HH:MM:SS` timestamp giving the local time at which that line's speech began, derived from when that audio source started delivering audio plus the speech's position in that source's audio, and unaffected by how long buffering or transcription took. Local-time resolution SHALL reflect the OS's actual configured timezone regardless of an inherited shell environment variable the process can't correctly interpret.
+The system SHALL format segment times as relative `[MM:SS -> MM:SS]` ranges when actual-time mode is off. When actual-time mode is on: file transcription SHALL format wall-clock time as a `[start -> end]` range anchored to one base time captured once at the start of file processing; live/streaming transcription SHALL format wall-clock time as a single `YYYY-MM-DD HH:MM:SS` timestamp giving the local time at which that line's speech began, derived from when that audio source started delivering audio plus the speech's position in that source's audio, and unaffected by how long buffering or transcription took. Local-time resolution SHALL follow the timezone the session is configured to use, including a `TZ` environment variable the platform's own date and time library can interpret, so that the engine and any application running it read the same local time. Where an inherited `TZ` cannot be interpreted by the platform's library, local time SHALL fall back to the OS's configured timezone rather than to UTC.
 
 #### Scenario: Relative timestamps
 - **WHEN** actual-time mode is off
@@ -92,6 +92,14 @@ The system SHALL format segment times as relative `[MM:SS -> MM:SS]` ranges when
 #### Scenario: Launched from a shell with an incompatible inherited TZ variable
 - **WHEN** the process is launched from a shell (e.g. Cygwin) that exports an IANA-style `TZ` environment variable the Windows C runtime cannot parse
 - **THEN** wall-clock timestamps still reflect the OS's actual configured local timezone, not UTC
+
+#### Scenario: Launched with a TZ the platform understands
+- **WHEN** the process is launched with a `TZ` environment variable its platform's date and time library can interpret, naming a zone other than the machine's default
+- **THEN** wall-clock timestamps are in that zone, the same as any other program started from that environment
+
+#### Scenario: The engine reports the zone it resolved
+- **WHEN** a live session starts
+- **THEN** the engine's own output names the timezone and offset its timestamps use, so a reader can tell what the engine believed local time to be without inferring it from the stamps
 
 ### Requirement: Save transcripts in multiple formats
 The system SHALL save transcripts in txt, srt, or vtt format, with txt supporting timestamps toggling and srt/vtt using their standard time formats.
