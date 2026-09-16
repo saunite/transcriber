@@ -59,7 +59,13 @@ The benefit is practical: one signing step, no `rpmsign`, and the packages stay 
 
 **What this does and does not protect.** It stops a tampered or intercepted download, and a corrupted CDN. It does not stop someone who takes over the repository, because they would hold both the assets and the CI secret. That is why the master key stays out of CI: it is what makes revoking and re-issuing possible.
 
-### 5. Config-file marking has to be added after Tauri builds
+### 5. The rpm marking runs in a Fedora container, on the same Ubuntu runner
+
+The Linux leg stays on `ubuntu-22.04`. It cannot move to Fedora: GitHub hosts no Fedora runner, and building inside a Fedora container would raise the glibc floor from 2.35 to 2.41, so the packages would refuse to start on Debian stable and Ubuntu LTS, which `release-build` requires them to support.
+
+`rpmrebuild` is **not packaged for Ubuntu** (`rpm` 4.17 is in jammy/universe, `rpmrebuild` is absent), so that step runs in a `fedora:42` container inside the job, which already runs `docker` for its five install checks. It rewrites package metadata only and touches no binary, so it has no bearing on glibc.
+
+### 6. Config-file marking has to be added after Tauri builds
 
 Tauri's bundlers call `FileOptions::new(dest)` with no config flag and never write a `conffiles` control file, so a packaged file in `/etc` is silently replaced on every upgrade. **Verified** on a deb built that way: a user's commented-out repository line was overwritten without a word.
 
@@ -74,11 +80,12 @@ With that, the behaviour is the package managers' own, and no install script of 
 | deb conffile | kept, new one as `.dpkg-dist` | updated silently | kept on `remove`, deleted on `purge` |
 | rpm `%config(noreplace)` | kept, new one as `.rpmnew` | updated silently | deleted on erase |
 
+- **Alternative, rejected:** installing `rpmrebuild` from its upstream tarball on the runner. It adds a download outside any distribution's packaging to a job that signs releases.
 - **Alternative, rejected:** a postinstall script comparing checksums. It reimplements what both package managers already do, and gets the "user disabled it" case wrong easily.
 
 ## Risks / Trade-offs
 
-- **[`rpmrebuild` on the runner]** → It is packaged for Debian and Ubuntu, but the Linux leg runs on `ubuntu-22.04` and this has only been verified on Fedora. The first task checks it there before the rest is built on it.
+- **[`rpmrebuild` runs in a container]** → Verified working on Fedora 42 and confirmed absent from Ubuntu's repositories, hence Decision 5. If the Fedora image's tooling ever changes, the alternative is building the `.rpm` ourselves.
 - **[Every upgrade is ~283 MB]** → Unchanged by this work, but users meet it more often once upgrades are automatic. The split is parked; this is the reason it is worth doing.
 - **[`releases/latest/download/` follows the newest published release]** → A release published out of order, or an older one re-published, would move what users are offered. Publishing order is already a manual step.
 - **[Self-registration is contentious]** → Debian policy dislikes a package adding a third-party source; Chrome and VS Code do it anyway. The user chose it, and Decision 5 makes opting out survive upgrades.

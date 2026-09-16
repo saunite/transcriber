@@ -1,8 +1,10 @@
 ## 1. Check what the runner can do
 
-- [ ] 1.1 Verify `rpmrebuild` is installable and works on the Linux leg's image. In an `ubuntu-22.04` container, install it from the distribution's repositories, run it against a package built the way Tauri builds one (a plain file under `/etc`), and confirm the file's flags change from `0` to `17`.
+- [x] 1.1 Decide where the rpm config marking runs.
 
-  If it isn't available there, record that and stop to re-plan: the alternatives are building the `.rpm` ourselves or running that step in a Fedora container inside the job.
+  **Done 2026-09-16.** `rpmrebuild` is **not available on Ubuntu**: `apt-cache search rpmrebuild` on `ubuntu:22.04` returns nothing, while `rpm` 4.17 is in jammy/universe. It works on Fedora, where it took a Tauri-style plain file from `flags=0` to `flags=17`.
+
+  Moving the whole leg to Fedora is out: GitHub hosts no Fedora runner, and a Fedora container would raise the glibc floor from 2.35 to 2.41 and break the Debian and Ubuntu installs the specs require. So that one step runs in a `fedora:42` container inside the Ubuntu job (design.md Decision 5), which already uses `docker` for its install checks.
 
 ## 2. The files the packages carry
 
@@ -39,9 +41,25 @@
 
 ## 5. Maintainer setup (by the user)
 
-- [ ] 5.1 **Generate the keys.** Create the master key offline, plus a signing-only subkey and a revocation certificate kept off CI. Export the subkey's secret material, add it and its passphrase as secrets on the environment the publish workflow uses, and put the armored public key in `packaging/`. Record the fingerprint under this task.
+- [x] 5.1 **Generate the keys** (by the user).
 
-- [ ] 5.2 **Enable GitHub Pages** for the repository, serving the branch the publish workflow pushes to. Verify `https://saunite.github.io/transcriber/` serves a file from that branch.
+  **Done 2026-09-16.** Keyring at `~/Nextcloud/Pessoal/keys/transcriber-signing` (self-hosted Nextcloud, `0700`):
+  - **master** `612A3A5D8538DCF38F43BE232DADC8BDB40BC439`, ed25519 `[SC]`, no expiry;
+  - **signing subkey** `468AB93232044ED3EA7EA3D8ED41E8274CE3715A`, ed25519 `[S]`;
+  - revocation certificate present as `612A…C439.rev`.
+
+  GitHub environment `release-signing` holds `GPG_SIGNING_SUBKEY` and `GPG_PASSPHRASE`, and no secret export was left on disk.
+
+  **The fingerprint for the docs (task 6.1) is the master's:** `612A 3A5D 8538 DCF3 8F43 BE23 2DAD C8BD B40B C439`.
+
+  Three corrections to the steps as first written, found while running them:
+  - `!` must be quoted separately in zsh (`"$SUB"'!'`), or history expansion eats it, and it is needed **only** on `--export-secret-subkeys`. Signing uses `--local-user "$FPR"`, and gpg picks the signing subkey itself.
+  - `grep -c "PRIVATE KEY BLOCK"` returns 2 for one key, since `BEGIN` and `END` both match. Count `"BEGIN PGP PRIVATE KEY BLOCK"` instead.
+  - `sec#` does not show when reading the exported file; import it into a throwaway `GNUPGHOME` and run `gpg --list-secret-keys` there, where `sec#` proves the master stayed behind.
+
+- [x] 5.2 **Enable GitHub Pages.**
+
+  **Done 2026-09-16.** An orphan `gh-pages` branch was created with a placeholder page saying what the site is for, and pushed. Pushing that branch enabled Pages by itself, so the API call reported it was already on. `https://saunite.github.io/transcriber/` returns HTTP 200 and serves the placeholder, from branch `gh-pages`, path `/`.
 
 ## 6. Docs and verification
 
