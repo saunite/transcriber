@@ -392,6 +392,27 @@ def test_dotted_output_folder(browser):
     return page, errors
 
 
+def test_file_transcript(browser):
+    """A file run's transcript appears in the File view while it runs
+    (openspec/changes/show-file-transcript-in-app)."""
+    page, errors = open_page(browser)
+    drop(page, "/media/talk.mp4")
+    wait_for_calls(page, "start_file_transcription", 1)
+
+    line = "(l) => __fake.emit('transcript-line', l)"
+    page.evaluate(line, {"ts": "00:01.000 -> 00:03.000", "tag": None, "text": "first thing said"})
+    page.evaluate(line, {"ts": "00:07.000 -> 00:09.000", "tag": None, "text": "second thing said"})
+
+    expect(page.locator("#transcript-file .trace-text")).to_have_text(["first thing said", "second thing said"])
+    expect(page.locator("#transcript-live .trace")).to_have_count(0)
+    expect(page.locator("#file-empty")).to_be_hidden()
+
+    page.evaluate("__fake.emit('file-transcription-complete', true)")
+    expect(page.locator("#transcript-file .trace-text")).to_have_text(["first thing said", "second thing said"])
+    assert queue_states(page) == ["done"], queue_states(page)
+    return page, errors
+
+
 def test_model_folder(browser):
     """The Model field: bundled by default, a chosen folder sent to both
     commands and remembered, reset, cancel, and the shell's refusal shown
@@ -700,6 +721,7 @@ def main() -> int:
         report("refused starts", test_refused_starts, browser)
         report("time axis", test_time_axis, browser)
         report("dotted output folder", test_dotted_output_folder, browser)
+        report("file transcript", test_file_transcript, browser)
         browser.close()
     return 1 if failures else 0
 

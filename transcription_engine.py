@@ -160,16 +160,22 @@ class TranscriptionEngine:
                     'text': segment.text.strip()
                 }
                 segments.append(segment_dict)
-                
-                # Write segment immediately to file
+
+                # Print and write each segment as it arrives. The desktop app
+                # reads this stdout to fill its File view, which stayed empty
+                # while only the file was written
+                # (openspec/changes/show-file-transcript-in-app). tqdm's bar
+                # goes to stderr, so it never lands in this output.
+                timestamp = self.format_timestamp(
+                    segment.start,
+                    segment.end,
+                    use_actual_time=use_actual_time,
+                    base_time=base_time
+                )
+                line = f"{timestamp} {segment.text.strip()}"
+                print(line, flush=True)
                 if output_file:
-                    timestamp = self.format_timestamp(
-                        segment.start,
-                        segment.end,
-                        use_actual_time=use_actual_time,
-                        base_time=base_time
-                    )
-                    output_file.write(f"{timestamp} {segment.text.strip()}\n")
+                    output_file.write(line + "\n")
                     output_file.flush()  # Ensure it's written to disk immediately
         finally:
             if output_file:

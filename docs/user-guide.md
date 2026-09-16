@@ -35,6 +35,10 @@ pip install -r requirements-linux.txt
 
 ### Transcribe a Video File
 
+Each segment is printed as it is transcribed, so you can read along while a
+long recording is processed, and the same lines are saved to the transcript
+file. In the app, they fill the File view the same way.
+
 ```bash
 # Basic transcription
 python transcriber.py --file path/to/video.mp4

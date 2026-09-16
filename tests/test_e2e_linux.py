@@ -56,7 +56,8 @@ COULD_NOT_CHECK = "Couldn't check for updates"
 PORT = 4444
 TIMEOUT = 60
 SCENARIOS = ["update check online", "download page", "no request at startup",
-             "model folder remembered", "model folder refused", "model folder used", "stale extraction cleaned",
+             "model folder remembered", "model folder refused", "model folder used", "file transcript shown",
+             "stale extraction cleaned",
              "update check offline", "download page offline", "engine offline"]
 
 
@@ -386,6 +387,24 @@ def test_model_folder_used(workdir):
         app.close()
 
 
+def test_file_transcript_shown(workdir):
+    """A dropped recording's transcript appears in the File view, not only in
+    the saved file (openspec/changes/show-file-transcript-in-app)."""
+    speech = os.environ.get("TRANSCRIBER_TEST_SPEECH")
+    if not speech or not Path(speech).is_file():
+        raise Skip("no recording set: TRANSCRIBER_TEST_SPEECH=<audio file>")
+    app = App(app_env(workdir)[0])
+    try:
+        app.run_async(f"window.__TAURI__.event.emit('tauri://drag-drop', {{paths: [{json.dumps(speech)}]}}).then(() => done('ok'));")
+        App._wait(lambda: app.run_async("done(!document.getElementById('file-queue').textContent.includes('transcribing'))"),
+                  "the dropped recording to finish transcribing")
+        lines = app.run_async("done(document.querySelectorAll('#transcript-file .trace-text').length);")
+        assert lines, "the File view shows no transcript line after transcribing a recording"
+        return f"{lines} transcript lines shown"
+    finally:
+        app.close()
+
+
 def test_stale_extraction_cleaned(workdir):
     """At start, the app removes only its own engine's unpacked copies whose
     process is gone (openspec/changes/fix-sidecar-temp-leak)."""
@@ -454,7 +473,7 @@ def main() -> int:
             return 1
 
     with tempfile.TemporaryDirectory(prefix="transcriber-e2e-") as tmp:
-        dirs = [Path(tmp) / str(i) for i in range(7)]
+        dirs = [Path(tmp) / str(i) for i in range(8)]
         for d in dirs:
             d.mkdir()
         if inside_netns:
@@ -470,7 +489,8 @@ def main() -> int:
             ("model folder remembered", test_model_folder_remembered, dirs[3]),
             ("model folder refused", test_model_folder_refused, dirs[4]),
             ("model folder used", test_model_folder_used, dirs[5]),
-            ("stale extraction cleaned", test_stale_extraction_cleaned, dirs[6]),
+            ("file transcript shown", test_file_transcript_shown, dirs[6]),
+            ("stale extraction cleaned", test_stale_extraction_cleaned, dirs[7]),
         ])
 
     # No network at all, by construction: a fresh network namespace with only

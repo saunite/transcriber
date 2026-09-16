@@ -51,6 +51,15 @@ def check_speech(engine, model_path, media, script):
     assert lines, "the transcript is empty"
     bad = [l for l in lines if not LINE.match(l)]
     assert not bad, f"lines without a [start -> end] timestamp: {bad[:3]}"
+
+    # The app reads the engine's stdout, so a file run has to print what it
+    # writes; it used to print only a progress bar and a summary
+    # (openspec/changes/show-file-transcript-in-app).
+    printed = [l.strip() for l in out.splitlines() if LINE.match(l.strip())]
+    assert printed == lines, (
+        f"the engine printed {len(printed)} transcript lines but saved {len(lines)}; "
+        f"first difference: printed={printed[:1]} saved={lines[:1]}"
+    )
     assert "Detected language: en" in out, "the engine did not report detecting English"
 
     key = {w for w in words(script.read_text(encoding="utf-8")) if len(w) >= 5}
