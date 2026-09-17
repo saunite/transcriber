@@ -48,7 +48,7 @@ All three are unsigned, so Windows SmartScreen warns the first time you run one 
 
 ### macOS
 
-**Built automatically on Apple Silicon GitHub runners, but not yet tested on a real Mac. Testers welcome.** If you try them, please [open an issue](https://github.com/saunite/transcriber/issues) saying what worked, especially:
+**Built automatically on Apple Silicon GitHub runners, but not yet tested on a real Mac. Testers welcome.** The three macOS files are on the [latest release](https://github.com/saunite/transcriber/releases/latest). If you try them, please [open an issue](https://github.com/saunite/transcriber/issues) saying what worked, especially:
 
 - Does the `.dmg` or the zipped `.app` open after you allow it in Privacy & Security (below)?
 - Does file transcription work in the app?

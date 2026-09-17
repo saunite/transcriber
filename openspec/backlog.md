@@ -23,7 +23,6 @@ Verified since this list was written, so removed: `02-add-release-pipeline-windo
   2. **Try one artifact from the new draft, then publish it** (`docs/building.md`, "Releasing", step 4).
   3. **`add-manual-update-check` 4.3, the "update available" path against the real API.** Build a temporary debug app whose `tauri.conf.json` version is lower than the published one (e.g. `0.0.1`), or wait for the next release. Clicking **Check for updates** must show the newer version, and **Open download page** must open `https://github.com/saunite/transcriber/releases/latest` in the browser. Record the method in its archive, `openspec/changes/archive/2026-09-15-add-manual-update-check/tasks.md`.
   4. **Expect the e2e online verdict to change.** Once a release is published, `tests/test_e2e_linux.py`'s `update check online` reads "You're up to date (…)" instead of "No releases published yet". The scenario accepts either, so this is only a sanity check. Note that some VPNs drop GitHub's 140.82.112.0/22 range, and the scenario then prints `SKIP`.
-  5. **Point macOS testers at the published artifacts.** The README's call for testers (see "Known limits": macOS artifacts and stop behaviour are untested) needs a public download to link to.
 
 ## Known limits, accepted for now
 
