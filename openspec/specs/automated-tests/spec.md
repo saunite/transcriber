@@ -17,6 +17,21 @@ The project SHALL provide a single command that runs the Rust unit tests, every 
 - **WHEN** one suite fails
 - **THEN** the remaining suites still run, the failing suite is named in the summary, and the command exits with a non-zero status
 
+### Requirement: Package repository checks run only when requested
+The package repository checks (the apt and dnf repositories and the upgrade behaviour of the installed repository file, run in throwaway containers) SHALL run only when the developer asks for them through an environment variable. When not requested, each check SHALL be reported as skipped with how to request it, and the suite SHALL NOT fail. When requested but no container runtime is available, each check SHALL be reported as skipped with that reason. The contributor document SHALL describe the variable, what the checks need, roughly how long they take, and when to run them.
+
+#### Scenario: A normal test run
+- **WHEN** a developer runs the test command without requesting the package repository checks
+- **THEN** those checks are reported as skipped with the variable that turns them on, start no containers, and the suite passes
+
+#### Scenario: The checks are requested
+- **WHEN** a developer runs the test command, or the suite on its own, with the variable set
+- **THEN** the apt, dnf and repository-file checks run and report pass or fail as before
+
+#### Scenario: A contributor changes the packaging
+- **WHEN** a contributor reads the contributor document before changing how the Linux packages or their repositories are built
+- **THEN** it names the suite, the variable that turns it on, what the suite needs, and that it should be run for such changes and before a release
+
 ### Requirement: GUI behaviour is tested without the desktop app
 The GUI tests SHALL load the application's real frontend files in a headless browser, with a fake app bridge standing in for the desktop application. They SHALL need no built application, no audio hardware and no transcription engine. They SHALL verify both the commands the page sends to the application and the state the page shows in response to the application's events. Every command the page sends SHALL correspond to a command the application actually provides, so the fake bridge cannot silently accept a command the real application lacks.
 
