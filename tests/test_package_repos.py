@@ -15,10 +15,12 @@ Checks:
   %config(noreplace) file, so an edited file survives an upgrade and an
   untouched one is updated.
 
-Run: python tests/test_package_repos.py
+Slow (~4 min) and rarely needed, so it only runs when asked; see CONTRIBUTING.md.
+Run: TRANSCRIBER_TEST_PACKAGING=1 python tests/test_package_repos.py
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -251,6 +253,10 @@ def main() -> int:
         ("dnf repository", check_dnf_repository),
         ("repository file is a config file", check_config_marking),
     ]
+    if os.environ.get("TRANSCRIBER_TEST_PACKAGING") != "1":
+        for name, _ in checks:
+            print(f"SKIP  {name}: set TRANSCRIBER_TEST_PACKAGING=1 to run (needs podman or docker, network, ~4 min)")
+        return 0
     failures = 0
     for name, check in checks:
         try:

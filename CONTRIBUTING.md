@@ -58,6 +58,7 @@ It runs each suite, prints PASS/FAIL with its duration, and exits 1 if any faile
 | `test_*.py` (repo root) | Engine and packaging units: bundled model default, live output path, transcript line format, mic fallback, macOS/WASAPI capture helpers, AppImage stripping |
 | `tests/test_gui.py` | The real `src/index.html` in headless Chromium with a fake `window.__TAURI__` (`tests/fake_tauri.js`), so no app build, audio or engine: live start/stop and the SYS/MIC indicators, the one-at-a-time file queue, unsupported files, a refused file run, and a check that every command the page invokes is registered in `src-tauri/src/main.rs` |
 | `tests/test_engine.py` | Transcribes a local English recording and checks the timestamped transcript, the detected language and at least 70% of its script's key words; random bytes must fail cleanly with no traceback and no transcript file |
+| `tests/test_package_repos.py` | Opt-in (see below). In throwaway Debian and Fedora containers, with throwaway keys: the apt and dnf repositories install through GitHub's download layout and refuse a tampered or wrongly signed index; an edited repository file survives a package upgrade and an untouched one is updated |
 | `tests/test_e2e_linux.py` | Linux only. Builds the debug app and drives its real window through `tauri-driver`. Checks: the update check gives a real verdict online; with no network (inside `unshare -rn`) it says it couldn't check and the engine still transcribes; nothing opens a network connection at startup (`strace`); **Open download page** hands exactly the releases URL to the OS opener (a recording `xdg-open`); a chosen model folder is remembered across restarts, refused without `model.bin`, and actually loaded. Each app run gets its own data directory, so your real app settings are untouched |
 
 **The speech recording is not in the repo.** Use any English recording you have, in any format the engine decodes, kept outside the repository and never committed. Put the words it says in a `.txt` with the same name beside it, then:
@@ -67,6 +68,12 @@ TRANSCRIBER_TEST_SPEECH=~/recordings/sample.ogg .venv/bin/python run_tests.py   
 ```
 
 Without it, the speech check prints `SKIP` and the rest still runs. `tests/test_engine.py` also takes `--speech <audio>` and `--script <txt>` directly.
+
+**The package repository suite only runs when asked.** It takes about 4 minutes, needs podman or docker and the network, and checks code that rarely changes. Without `TRANSCRIBER_TEST_PACKAGING=1` it prints `SKIP`. Set it when you change `mark_package_configs.py`, `build_repo_metadata.py`, `packaging/`, `.github/workflows/publish-repos.yml` or the package file mappings in `src-tauri/tauri.conf.json`, and before tagging a release:
+
+```bash
+TRANSCRIBER_TEST_PACKAGING=1 .venv/bin/python run_tests.py
+```
 
 **The end-to-end suite** (`tests/test_e2e_linux.py`) runs only on Linux, from a graphical desktop session. **App windows open and close on screen while it runs.** It also needs the staged sidecar in `src-tauri/binaries/` and these tools, installed once:
 
