@@ -92,7 +92,7 @@ Each platform leg SHALL attach a standalone CLI archive carrying the same versio
 - **THEN** the license file, the third-party notices, the source-provenance file, and the model's license are present
 
 ### Requirement: macOS release artifacts
-The macOS leg SHALL produce, for Apple Silicon (arm64), a disk image, a zipped application bundle, and a standalone CLI archive, and SHALL attach all three to the release. Until a maintainer verifies them on real macOS hardware, the project's download documentation SHALL state that the macOS artifacts are built automatically but untested on real hardware, and SHALL invite users to report results.
+The macOS leg SHALL produce, for Apple Silicon (arm64), a disk image, a zipped application bundle, and a standalone CLI archive, and SHALL attach all three to the release. Until a maintainer verifies them on real macOS hardware, the project's download documentation SHALL state that the macOS artifacts are built automatically but untested on real hardware, and SHALL invite users to report results. Once a release is published, that invitation SHALL link to the latest published release, where the macOS artifacts can be downloaded, using a link that stays valid when a newer release is published.
 
 #### Scenario: macOS artifacts in a release
 - **WHEN** a release's macOS leg completes
@@ -101,6 +101,10 @@ The macOS leg SHALL produce, for Apple Silicon (arm64), a disk image, a zipped a
 #### Scenario: Untested status is visible
 - **WHEN** a user reads the macOS download instructions
 - **THEN** they are told the macOS artifacts are built automatically but have not been tested on real hardware, and how to report whether they work
+
+#### Scenario: A tester goes to the downloads
+- **WHEN** a Mac user who wants to test follows the link in the call for testers
+- **THEN** they land on the latest published release, which lists the macOS disk image, zipped application bundle and CLI archive, and the link keeps pointing at the newest release after later releases are published
 
 ### Requirement: macOS standalone CLI carries its audio-tap helper
 The macOS standalone CLI executable SHALL contain the native audio-tap helper that system-audio capture depends on, so `--coreaudio-tap` needs no separately built helper. The macOS build SHALL fail rather than produce a CLI executable without the helper.
