@@ -30,7 +30,7 @@
   - a stale run's exit is ignored and the current one's is recorded;
   - `wait_for` returns at once, after the grace, or when the condition flips.
 
-  `cargo test`: 34 passed, including the two Unix stop tests on the refactored loop. `cargo build` gives no warnings. Full suite: 20/20 in 93 s. **Not verified here:** the `#[cfg(windows)]` block isn't compiled on Linux. A CI run compiles it; running the app on Windows (task 3.1) checks what it does.
+  `cargo test`: 34 passed, including the two Unix stop tests on the refactored loop. `cargo build` gives no warnings. Full suite: 20/20 in 93 s. **Compiled on Windows in CI**, at the user's request (run 35378925221, commit `b976393`). All four jobs succeeded in 12 minutes, and the Windows job built `transcriber-gui` with no warnings or errors. Whether the stop *works* on Windows is task 3.1.
 
 ## 3. Verification in a Windows session
 
