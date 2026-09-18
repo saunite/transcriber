@@ -868,6 +868,29 @@ def _run_dual_capture(engine, args, *, title, mode_summary, sys_rate, run_sys, m
         carried = 0  # overlap samples the next chunk begins with
         stream_start = None
 
+        def transcribe(data, kept):
+            """One chunk; `kept` samples of it are carried into the next."""
+            nonlocal position, carried, last_speech_time
+            chunk_start, lead = position - carried / target_rate, carried / 2 / target_rate
+            # Every chunk takes its time, even one skipped or failed below.
+            position += (len(data) - carried) / target_rate
+            carried = kept
+            if not gate or np.max(np.abs(data)) > 0.01:
+                try:
+                    results, spoke = _process_audio_chunk(
+                        engine, data, chunk_start,
+                        language=args.language, sample_rate=target_rate,
+                        lead=lead, trail=kept / 2 / target_rate,
+                        stream_start=stream_start if args.actual_time else None
+                    )
+                    if spoke:
+                        last_speech_time = time.time()
+                    for stamp, seg in results:
+                        _emit(f"{stamp} [{tag}] {seg['text']}")
+                        all_segments.append(seg)
+                except Exception as e:
+                    print(f"  ❌ Error transcribing {tag.lower()} audio: {e}")
+
         while not stop_event.is_set() or not q.empty():
             while not q.empty():
                 block = transform(q.get_nowait())
@@ -881,29 +904,20 @@ def _run_dual_capture(engine, args, *, title, mode_summary, sys_rate, run_sys, m
                 data = np.concatenate(buffer)
                 kept = overlap_samples if len(data) > overlap_samples else 0
                 buffer[:] = [data[-kept:]] if kept else []
-                chunk_start, lead = position - carried / target_rate, carried / 2 / target_rate
-                # Every chunk takes its time, even one skipped or failed below.
-                position += (len(data) - carried) / target_rate
-                carried = kept
-                if not gate or np.max(np.abs(data)) > 0.01:
-                    try:
-                        results, spoke = _process_audio_chunk(
-                            engine, data, chunk_start,
-                            language=args.language, sample_rate=target_rate,
-                            lead=lead, trail=kept / 2 / target_rate,
-                            stream_start=stream_start if args.actual_time else None
-                        )
-                        if spoke:
-                            last_speech_time = time.time()
-                        for stamp, seg in results:
-                            _emit(f"{stamp} [{tag}] {seg['text']}")
-                            all_segments.append(seg)
-                    except Exception as e:
-                        print(f"  ❌ Error transcribing {tag.lower()} audio: {e}")
+                transcribe(data, kept)
                 if args.heartbeat:
                     _print_or_stop(f"HEARTBEAT {tag}")
             else:
                 time.sleep(0.05)
+
+        # Stopped: what arrived since the last chunk is the speech just before
+        # Stop or Ctrl+C, so it is transcribed as one last, shorter chunk rather
+        # than dropped. A buffer holding only the carried overlap has nothing new
+        # (openspec/changes/01-flush-live-tail-on-stop).
+        # ponytail: the resampler's few held frames are not drained; pass
+        # flush=True to _resample if a final word is ever found clipped.
+        if sum(len(c) for c in buffer) > carried:
+            transcribe(np.concatenate(buffer), 0)
 
     # Separate worker threads, so system audio and the mic never block each other.
     sys_thread = threading.Thread(

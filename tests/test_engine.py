@@ -93,8 +93,10 @@ def repeated_trigrams(text, window=12):
 
 def check_live_chunks(model_path, media, script):
     """Cuts the recording as live capture does (10 s chunks, 1 s carried
-    overlap) and checks the overlap is not transcribed twice, while boundary
-    words still come through (openspec/changes/fix-true-scale-time-axis)."""
+    overlap, and what is left at the end as one last, shorter chunk, as when a
+    session stops) and checks the overlap is not transcribed twice, while
+    boundary words still come through (openspec/changes/fix-true-scale-time-axis,
+    01-flush-live-tail-on-stop)."""
     sys.path.insert(0, str(ROOT))
     import transcriber
     from faster_whisper import decode_audio
@@ -103,13 +105,19 @@ def check_live_chunks(model_path, media, script):
     audio = decode_audio(str(media), sampling_rate=16000)
     engine = TranscriptionEngine(model_path=str(model_path))
     chunk, overlap = 10 * 16000, 16000
-    lines, position = [], 0.0
+    lines, next_start = [], 0
     for start in range(0, len(audio) - chunk + 1, chunk - overlap):
         results, _ = transcriber._process_audio_chunk(
-            engine, audio[start:start + chunk], position,
+            engine, audio[start:start + chunk], start / 16000,
             lead=overlap / 32000 if start else 0.0, trail=overlap / 32000)
         lines += [seg["text"] for _, seg in results]
-        position += (chunk - overlap) / 16000
+        next_start = start + chunk - overlap
+    if len(audio) > next_start + overlap or next_start == 0:
+        # The stop: the rest, with the carried second, and nothing after it.
+        results, _ = transcriber._process_audio_chunk(
+            engine, audio[next_start:], next_start / 16000,
+            lead=overlap / 32000 if next_start else 0.0, trail=0.0)
+        lines += [seg["text"] for _, seg in results]
     transcript = " ".join(lines)
 
     said = script.read_text(encoding="utf-8")

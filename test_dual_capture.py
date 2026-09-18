@@ -234,6 +234,67 @@ def _check_time_axis(mic):
     print("OK: time axis -- positions, skipped chunks, speech-time stamps")
 
 
+def _check_stop_keeps_tail(mic):
+    """Stopping part-way through a chunk transcribes what arrived since the
+    last one, once (openspec/changes/01-flush-live-tail-on-stop)."""
+    one_second, half = np.zeros(16000, np.float32), np.zeros(8000, np.float32)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        # 2 s chunks: 0-2 s is a chunk, then 0.5 s more arrives before the stop.
+        # The last chunk is the carried second plus that half (1-2.5 s), stamped
+        # from 1 s, and its line reaches the transcript file.
+        output = os.path.join(tmp, "tail.txt")
+        engine = _SegmentsEngine(0.6)
+        code, out = _run(engine, _args(output, chunk_duration=2, include_mic=False), title="T",
+                         mode_summary="T", sys_rate=lambda: 16000,
+                         run_sys=_feed([one_second, one_second, half], gap=0.12), mic=None)
+        assert code == 0, out
+        assert engine.chunk_lengths == [32000, 24000], engine.chunk_lengths
+        stamps = [line.split("]")[0] + "]" for line in _lines(out, "SYS")]
+        assert stamps == ["[00.60 -> 00.80]", "[01.60 -> 01.80]"], stamps
+        with open(output, encoding="utf-8") as f:
+            assert "[01.60 -> 01.80]" in f.read(), "the last chunk's line never reached the transcript file"
+
+    # Stopping exactly on a chunk boundary leaves only the carried second,
+    # which was already transcribed: no extra chunk.
+    engine = _SegmentsEngine(0.6)
+    code, out = _run(engine, _args(None, chunk_duration=2, include_mic=False), title="T", mode_summary="T",
+                     sys_rate=lambda: 16000, run_sys=_feed([one_second, one_second], gap=0.12), mic=None)
+    assert code == 0, out
+    assert engine.chunk_lengths == [32000], engine.chunk_lengths
+
+    # The microphone's silence gate still applies to the last chunk. The mic's
+    # chunks are 5 s whatever --chunk-duration says: a silent 5 s chunk
+    # (skipped), then a 0.5 s tail. A silent tail adds no line; an audible one
+    # adds one, which the old code dropped.
+    def idle(on_chunk, enqueue, check_silence):
+        time.sleep(0.8)
+        raise KeyboardInterrupt
+
+    global _FakeInputStream
+    real_stream = _FakeInputStream
+    try:
+        for tail_level, expected in ((0.0, 0), (0.5, 1)):
+            class TailMic(_FakeInputStream):
+                """A silent 5 s chunk, then, once it's taken, a 0.5 s tail."""
+
+                def start(self, level=tail_level):
+                    def feed():
+                        self.callback(np.zeros((5 * self.samplerate, 1), np.float32), 0, None, None)
+                        time.sleep(0.3)
+                        self.callback(np.full((self.samplerate // 2, 1), level, np.float32), 0, None, None)
+                    threading.Thread(target=feed, daemon=True).start()
+
+            _FakeInputStream = TailMic
+            code, out = _run(_SegmentsEngine(0.6), _args(None, chunk_duration=2), title="T", mode_summary="T",
+                             sys_rate=lambda: 16000, run_sys=idle, mic=mic)
+            assert code == 0, out
+            assert len(_lines(out, "MIC")) == expected, (tail_level, _lines(out, "MIC"))
+    finally:
+        _FakeInputStream = real_stream
+    print("OK: stop keeps the tail -- last chunk once, none on a boundary, mic gate applies")
+
+
 def main() -> None:
     mic = transcriber.MicConfig(device=3, channels=1, name="Fake Mic", rate=16000)
 
@@ -421,6 +482,7 @@ def main() -> None:
     transcriber._stop_requested = False
 
     _check_time_axis(mic)
+    _check_stop_keeps_tail(mic)
     _check_no_mic_device()
 
     # 4. The platform functions hand the runner the right pieces. The runner is
