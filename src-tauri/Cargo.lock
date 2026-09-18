@@ -4297,6 +4297,7 @@ dependencies = [
 name = "transcriber-gui"
 version = "0.1.0"
 dependencies = [
+ "gtk",
  "once_cell",
  "regex",
  "semver",

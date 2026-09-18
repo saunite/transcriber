@@ -60,7 +60,8 @@
         "files": {
           "/etc/apt/sources.list.d/transcriber.list": "../packaging/transcriber.list",
           "/usr/share/keyrings/transcriber-archive-keyring.asc": "../packaging/transcriber-repo-key.asc"
-        }
+        },
+        "desktopTemplate": "../packaging/transcriber.desktop"
       },
       "rpm": {
         "depends": [
@@ -74,7 +75,8 @@
         "files": {
           "/etc/yum.repos.d/transcriber.repo": "../packaging/transcriber.repo",
           "/etc/pki/rpm-gpg/RPM-GPG-KEY-transcriber": "../packaging/transcriber-repo-key.asc"
-        }
+        },
+        "desktopTemplate": "../packaging/transcriber.desktop"
       }
     },
     "resources": {

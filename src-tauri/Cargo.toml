@@ -25,3 +25,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 regex = "1"
 once_cell = "1"
+
+# Linux only: remove tao's Wayland header bar so the desktop draws the frame, and
+# name the window Transcriber so it matches Transcriber.desktop
+# (openspec/changes/fix-linux-native-window-frame). Same version tao already uses.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
