@@ -64,6 +64,14 @@
 ## 4. Suites and design record
 
 - [ ] 4.1 Run `.venv/bin/python run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set, and verify every suite passes, including `tests/test_e2e_linux.py` with no skips.
+
+  **Run 2026-09-18 with a new 15.96 s recording: 18/19 suites pass.** The e2e suite passes with no skips; "file transcript shown" and "engine offline" now run with the recording. **`tests/test_engine.py` fails "live chunks do not repeat words"**, missing `almost`, `entirely`, `subsurface`, `these`. The cause predates this change, and no engine or engine-test file differs from `main`:
+  - `check_live_chunks` only feeds complete 10 s chunks (`range(0, len(audio) - chunk + 1, …)`, `tests/test_engine.py:107`), so the last ~6 s of this recording are never transcribed. The recording that passed before was long enough to hide this.
+  - The live engine has the same gap: `_drain_and_transcribe` (`transcriber.py`) transcribes only when the buffer reaches the 10 s threshold, and nothing flushes the remainder when a session stops. So up to ~9 s of the last speech before Stop is never transcribed.
+
+  Left open pending the user's decision on that gap.
+
+
 - [x] 4.2 Impeccable verify-only pass on the `src-index-html` surface, per DESIGN.md:
   - light and dark screenshots at 900x640 and at the 640x480 minimum, confirming the page itself is unchanged under the new frame;
   - a finish review by the `impeccable-finish-reviewer` agent, with its verdict recorded here;
