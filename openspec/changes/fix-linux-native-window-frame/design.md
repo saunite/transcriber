@@ -34,7 +34,7 @@ GTK fixes the decoration mode when the window is realized, and `set_titlebar` is
 - The cost of repeating the entry: the window size and title now live in two files. A test compares the two entries, so they can't drift apart without failing.
 
 **3. One naming rule: lowercase for the package and the command, `Transcriber` for everything the desktop matches on.**
-Decided by the user on 2026-09-18. Lowercase stays where Linux convention expects it: the package name `transcriber`, the `.deb`/`.rpm` file names, and the command `/usr/bin/transcriber-gui`, which is typed in terminals and can't become `transcriber` because that is the CLI binary's name. The AppImage file keeps `Transcriber_<version>_amd64.AppImage`. The three identity names all become `Transcriber`:
+Decided by the user on 2026-09-18. Lowercase stays where Linux convention expects it: the package name `transcriber`, the `.deb`/`.rpm` file names, and the command `/usr/bin/transcriber-gui`, which is typed in terminals and can't become `transcriber` because that is the CLI binary's name. The AppImage file keeps `Transcriber_<version>_amd64.AppImage`. Found while applying: CI's rename loop lowercased every `Transcriber*` artifact, the AppImage included, so v0.1.0 shipped `transcriber_0.1.0_amd64.AppImage`. The user chose the capitalised name on 2026-09-18, so the loop now renames only `*.deb` and `*.rpm`. The three identity names all become `Transcriber`:
 
 | Name | Today | After |
 |---|---|---|

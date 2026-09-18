@@ -6,6 +6,10 @@
 - [x] 1.2 Add `packaging/transcriber.desktop` reproducing today's desktop file with `StartupWMClass=Transcriber`, and name it in `bundle.linux.deb.desktopTemplate` and `bundle.linux.rpm.desktopTemplate` in `src-tauri/tauri.conf.json`. Verify the built `.deb` and `.rpm` install `/usr/share/applications/Transcriber.desktop` with `StartupWMClass=Transcriber` and the other lines unchanged (`Comment`, `Exec=transcriber-gui`, `Icon=transcriber-gui`, `Name=Transcriber`).
 - [ ] 1.3 Add `gtk = "0.18"` under `[target.'cfg(target_os = "linux")'.dependencies]` in `src-tauri/Cargo.toml`. In `src-tauri/src/main.rs`, under `#[cfg(target_os = "linux")]`: call `glib::set_prgname(Some("Transcriber"))` at the top of `main()` (through the gtk crate's `glib` re-export), and in the `setup` hook get the main window, call `gtk_window()?.set_titlebar(None::<&gtk::Widget>)`, then `show()`. Verify `cargo test` passes, `Cargo.lock` gains no new crate version, and the Windows cross-build (`cargo tauri build --target x86_64-pc-windows-gnu`, per `docs/building.md`) still compiles. The Tauri CLI must be installed first (`docs/building.md`).
 
+- [x] 1.4 Stop CI lowercasing the AppImage: in `.github/workflows/release.yml`, rename only `out/Transcriber*.deb` and `out/Transcriber*.rpm`, and change the README's Linux table to `Transcriber_<version>_amd64.AppImage`. Verify with a dry run of the loop on the four Linux file names.
+
+  **Done 2026-09-18.** A dry run on `Transcriber_0.1.0_amd64.AppImage`, `Transcriber_0.1.0_amd64.deb`, `Transcriber-0.1.0-1.x86_64.rpm` and `transcriber-cli_0.1.0_linux-x64.tar.gz` leaves the AppImage capitalised and gives `transcriber_0.1.0_amd64.deb` and `transcriber-0.1.0-1.x86_64.rpm`. The install-test step afterwards globs `/p/*.deb` and `/p/*.rpm`, so it's unaffected. The first real check is task 1.3's workflow run.
+
 ## 2. Verification on KDE Plasma (Wayland)
 
 - [x] 2.1 Build the `.rpm` and install it. Run it with `WAYLAND_DEBUG=1` and verify:
@@ -40,7 +44,7 @@
   - the project icon shows on its title bar and taskbar under X11;
   - the file is still named `Transcriber_<version>_amd64.AppImage`.
 
-  **Done 2026-09-18,** except the published file name. The repacked AppImage (`build_portable.py`) has `StartupWMClass=Transcriber` in its desktop file. Under X11 its window class is `"Transcriber", "Transcriber"` and `_NET_FRAME_EXTENTS = 0, 0, 30, 0` (KWin's frame). Its title bar and taskbar entry both show the project icon. The frame now matches the `.rpm`'s. **The file name is open:** the local build is `Transcriber_0.1.0_amd64.AppImage`, but CI's rename loop (`release.yml`) lowercases it, and v0.1.0 was published as `transcriber_0.1.0_amd64.AppImage`. The user's "keep it uppercase" decision was based on my wrong statement that it's uppercase today, so it has been put back to them.
+  **Done 2026-09-18,** except the published file name. The repacked AppImage (`build_portable.py`) has `StartupWMClass=Transcriber` in its desktop file. Under X11 its window class is `"Transcriber", "Transcriber"` and `_NET_FRAME_EXTENTS = 0, 0, 30, 0` (KWin's frame). Its title bar and taskbar entry both show the project icon. The frame now matches the `.rpm`'s. **The file name:** the local build is `Transcriber_0.1.0_amd64.AppImage`. CI used to lowercase it, and v0.1.0 was published as `transcriber_0.1.0_amd64.AppImage`. Told this, the user kept the capitalised name, and task 1.4 stops CI renaming it.
 
 - [x] 2.4 Time from launch to first visible frame, before and after, over five launches each. Verify the median hasn't grown by more than 100 ms.
 

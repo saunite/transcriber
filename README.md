@@ -29,7 +29,7 @@ The packages are install-tested on current Debian, Ubuntu LTS, Fedora, openSUSE 
 
 | File | What it is |
 |---|---|
-| `transcriber_<version>_amd64.AppImage` | Portable GUI. Run `chmod +x` on it, then run it. AppImages need FUSE (`libfuse2`); without it, run it with `--appimage-extract-and-run`. |
+| `Transcriber_<version>_amd64.AppImage` | Portable GUI. Run `chmod +x` on it, then run it. AppImages need FUSE (`libfuse2`); without it, run it with `--appimage-extract-and-run`. |
 | `transcriber_<version>_amd64.deb` | Debian/Ubuntu package: `sudo apt install ./transcriber_<version>_amd64.deb`. Remove with `sudo apt purge transcriber` (`remove` keeps the update repository, as it does any configuration). |
 | `transcriber-<version>-1.x86_64.rpm` | Fedora: `sudo dnf install ./transcriber-<version>-1.x86_64.rpm`. openSUSE: `sudo zypper install --allow-unsigned-rpm ./transcriber-<version>-1.x86_64.rpm`. Remove with `sudo dnf remove transcriber` or `sudo zypper remove transcriber`. |
 | `transcriber-cli_<version>_linux-x64.tar.gz` | CLI (see below). |
