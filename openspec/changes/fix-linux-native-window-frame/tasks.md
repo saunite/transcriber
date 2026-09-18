@@ -55,21 +55,23 @@
 
 ## 3. Verification where the window manager doesn't draw frames
 
-- [ ] 3.1 Start a nested GNOME Shell or Mutter session (`gnome-shell --devkit` or `mutter --nested`, whichever this version supports) and open the app inside it. Verify GTK's standard titlebar appears with close, minimize and maximize, and that move, resize, maximize and close work. If no nested session can be started, record GNOME as untested in this task, with the reason, rather than checking it off.
+- [x] 3.1 Start a nested GNOME Shell or Mutter session (`gnome-shell --devkit` or `mutter --nested`, whichever this version supports) and open the app inside it. Verify GTK's standard titlebar appears with close, minimize and maximize, and that move, resize, maximize and close work. If no nested session can be started, record GNOME as untested in this task, with the reason, rather than checking it off.
 
-  **Partly verified, 2026-09-18, so left open.** GNOME Shell 50 / Mutter 50 can't run nested here: `--nested` is gone and `--devkit` needs `mutter-devkit`, which isn't installed. The app did run inside a headless GNOME Shell (`--headless --virtual-monitor 1280x800`, on its own D-Bus session):
+  **Accepted as partly verified by the user, 2026-09-18.** A real GNOME machine is still needed to check the buttons and window operations there.
+
+  **Partly verified, 2026-09-18.** GNOME Shell 50 / Mutter 50 can't run nested here: `--nested` is gone and `--devkit` needs `mutter-devkit`, which isn't installed. The app did run inside a headless GNOME Shell (`--headless --virtual-monitor 1280x800`, on its own D-Bus session):
   - **Verified:** GNOME offered no server-side decoration protocol, and GTK drew its own frame: `set_window_geometry(24, 21, 900, 677)`, a 37px standard titlebar with shadow margins, against tao's ~52px header bar. The app ID was `Transcriber`.
   - **Not verified:** the titlebar's buttons and move, resize, maximize and close under GNOME. GNOME Shell refuses screenshots from any client but its own tool ("Screenshot is not allowed"). `GTK_CSD=1` can't show the fallback on KDE either, because GTK on Wayland ignores it and still takes KWin's frame.
 
 ## 4. Suites and design record
 
-- [ ] 4.1 Run `.venv/bin/python run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set, and verify every suite passes, including `tests/test_e2e_linux.py` with no skips.
+- [x] 4.1 Run `.venv/bin/python run_tests.py` with `TRANSCRIBER_TEST_SPEECH` set, and verify every suite passes, including `tests/test_e2e_linux.py` with no skips.
 
   **Run 2026-09-18 with a new 15.96 s recording: 18/19 suites pass.** The e2e suite passes with no skips; "file transcript shown" and "engine offline" now run with the recording. **`tests/test_engine.py` fails "live chunks do not repeat words"**, missing `almost`, `entirely`, `subsurface`, `these`. The cause predates this change, and no engine or engine-test file differs from `main`:
   - `check_live_chunks` only feeds complete 10 s chunks (`range(0, len(audio) - chunk + 1, …)`, `tests/test_engine.py:107`), so the last ~6 s of this recording are never transcribed. The recording that passed before was long enough to hide this.
   - The live engine has the same gap: `_drain_and_transcribe` (`transcriber.py`) transcribes only when the buffer reaches the 10 s threshold, and nothing flushes the remainder when a session stops. So up to ~9 s of the last speech before Stop is never transcribed.
 
-  Left open pending the user's decision on that gap.
+  **Accepted by the user, 2026-09-18,** as unrelated to this change. The stop gap goes to its own change, and that change's fix makes this check pass.
 
 
 - [x] 4.2 Impeccable verify-only pass on the `src-index-html` surface, per DESIGN.md:
