@@ -210,7 +210,7 @@ mod tests {
 
     use super::{
         build_file_args, build_live_session_args, engine_busy, heartbeat_tag, on_terminated, select_model_dir,
-        stale_extraction_dirs, strip_extended_length_prefix, RunEnded, SidecarManager,
+        stale_extraction_dirs, strip_extended_length_prefix, wait_for, RunEnded, SidecarManager,
     };
     // cfg-gated to match the helpers themselves, which only exist off Windows.
     #[cfg(not(windows))]
@@ -263,6 +263,14 @@ mod tests {
         assert_eq!(args[0], "--live");
         assert_eq!(args.contains(&"--wasapi".to_string()), cfg!(windows), "{args:?}");
         assert_eq!(args.contains(&"--coreaudio-tap".to_string()), cfg!(target_os = "macos"), "{args:?}");
+    }
+
+    #[test]
+    fn only_windows_asks_the_engine_to_stop_through_stdin() {
+        // Windows can't SIGINT a console-less engine; elsewhere SIGINT is the stop
+        // (openspec/changes/02-flush-live-tail-on-stop-windows).
+        let args = build_live_session_args("/model/dir".to_string(), true, None, false, None, None, None, 10);
+        assert_eq!(args.contains(&"--stop-on-stdin".to_string()), cfg!(windows), "{args:?}");
     }
 
     #[test]
@@ -450,6 +458,31 @@ mod tests {
     }
 
     #[test]
+    fn a_live_exit_records_which_run_exited() {
+        // What a graceful stop on Windows waits for; a late exit from an older
+        // run must not look like the current one's.
+        let mut state = SidecarManager::new();
+        state.live_generation = 4;
+        assert_eq!(on_terminated(&mut state, 3, true, Some(0)), RunEnded::Ignored);
+        assert_eq!(state.live_exited, 0);
+        on_terminated(&mut state, 4, true, Some(0));
+        assert_eq!(state.live_exited, 4);
+    }
+
+    #[test]
+    fn wait_for_ends_as_soon_as_the_condition_holds_or_the_grace_runs_out() {
+        use std::time::{Duration, Instant};
+        let start = Instant::now();
+        assert!(wait_for(|| true, Duration::from_secs(15)));
+        assert!(start.elapsed() < Duration::from_millis(50));
+        let start = Instant::now();
+        assert!(!wait_for(|| false, Duration::from_millis(300)));
+        assert!(start.elapsed() >= Duration::from_millis(300));
+        let flag = std::cell::Cell::new(0);
+        assert!(wait_for(|| { flag.set(flag.get() + 1); flag.get() > 2 }, Duration::from_secs(5)));
+    }
+
+    #[test]
     fn a_late_exit_from_an_older_run_changes_nothing() {
         let mut state = SidecarManager::new();
         state.live_generation = 4; // a new session started after run 3 was stopped
@@ -520,6 +553,9 @@ pub struct SidecarManager {
     /// The current live run's last engine output line (heartbeats excluded),
     /// shown to the user when the session ends by itself.
     last_line: String,
+    /// The generation of the last live run whose engine exited, so a graceful
+    /// stop on Windows can wait for exactly that exit.
+    live_exited: u64,
 }
 
 impl SidecarManager {
@@ -532,6 +568,7 @@ impl SidecarManager {
             live_generation: 0,
             file_generation: 0,
             last_line: String::new(),
+            live_exited: 0,
         }
     }
 }
@@ -573,6 +610,7 @@ fn on_terminated(sidecar: &mut SidecarManager, generation: u64, is_live: bool, c
         let was_active = sidecar.session_active;
         sidecar.session_active = false;
         sidecar.child = None;
+        sidecar.live_exited = generation;
         if was_active {
             RunEnded::LiveEnded(code)
         } else {
@@ -787,6 +825,9 @@ fn build_live_session_args(
     let mut args = vec!["--live".to_string()];
     if cfg!(windows) {
         args.push("--wasapi".to_string());
+        // Windows can't SIGINT a console-less child, so Stop writes "stop" to
+        // the engine's stdin instead (openspec/changes/02-flush-live-tail-on-stop-windows).
+        args.push("--stop-on-stdin".to_string());
     } else if cfg!(target_os = "macos") {
         args.push("--coreaudio-tap".to_string());
     }
@@ -1074,8 +1115,19 @@ pub fn remove_stale_extractions(dir: &std::path::Path) {
 /// its ~350 MB unpacked copy -- SIGKILL leaves it in the temp directory
 /// (openspec/changes/fix-sidecar-temp-leak). An engine that exits sooner ends
 /// the wait at once.
-#[cfg(not(windows))]
 const STOP_GRACE: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// Polls `done` until it holds or `grace` passes; whether it held.
+fn wait_for(done: impl Fn() -> bool, grace: std::time::Duration) -> bool {
+    let deadline = std::time::Instant::now() + grace;
+    while !done() {
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    true
+}
 
 /// Signals a sidecar's whole process tree and reports what survived.
 ///
@@ -1095,10 +1147,7 @@ fn terminate_process_tree(pid: u32) -> Vec<u32> {
     targets.push(pid);
     signal_pids("-INT", &targets);
 
-    let deadline = std::time::Instant::now() + STOP_GRACE;
-    while std::time::Instant::now() < deadline && targets.iter().any(|p| pid_alive(*p)) {
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
+    wait_for(|| !targets.iter().any(|p| pid_alive(*p)), STOP_GRACE);
 
     let stubborn: Vec<u32> = targets.iter().copied().filter(|p| pid_alive(*p)).collect();
     if !stubborn.is_empty() {
@@ -1185,15 +1234,27 @@ pub async fn stop_live_session(app: AppHandle, state: State<'_, AppState>) -> Re
         sidecar.child.take()
     };
     if let Some(child) = child {
-        // ponytail: hard kill, no graceful SIGINT relay -- tauri-plugin-shell
-        // does not expose a portable "send Ctrl+C to child" primitive as of
-        // writing, and transcriber.py's graceful shutdown is a SIGINT
-        // handler. Upgrade path: a stdin-based stop protocol in
-        // transcriber.py if abrupt termination is found to drop buffered
-        // transcript lines or leave partial WAV files in practice.
+        // Windows has no SIGINT for a console-less child, and a forced kill
+        // dropped the audio the engine still held. So Stop asks through stdin
+        // (the engine runs with --stop-on-stdin), waits the same grace as
+        // elsewhere for that run's exit, and forces only if it doesn't come
+        // (openspec/changes/02-flush-live-tail-on-stop-windows).
         #[cfg(windows)]
         {
-            let line = taskkill_tree(child.pid());
+            let mut child = child;
+            let generation = state.sidecar.lock().unwrap().live_generation;
+            let asked = child.write(b"stop\n").is_ok();
+            let exited = asked
+                && wait_for(|| state.sidecar.lock().unwrap().live_exited == generation, STOP_GRACE);
+            let line = if exited {
+                "Capture engine stopped.".to_string()
+            } else {
+                format!(
+                    "The capture engine did not stop within {} s, so it was ended: {}",
+                    STOP_GRACE.as_secs(),
+                    taskkill_tree(child.pid())
+                )
+            };
             let _ = app.emit("sidecar-log", SidecarLogPayload { line });
         }
         #[cfg(not(windows))]

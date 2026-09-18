@@ -114,6 +114,25 @@ def _close_stream_bounded(stream, timeout: float = 5.0) -> bool:
     return False
 
 
+def _watch_stdin_for_stop():
+    """Stop the session, as Ctrl+C does, on a "stop" line or when stdin closes.
+
+    The desktop app on Windows can't send SIGINT to a console-less child, so it
+    writes "stop" to the engine's stdin instead, and stdin closing means the app
+    went away. interrupt_main() runs the SIGINT handler, which ignores a repeat
+    once a stop is under way (openspec/changes/02-flush-live-tail-on-stop-windows)."""
+    import _thread
+    import threading
+
+    def watch():
+        for line in sys.stdin:
+            if line.strip() == "stop":
+                break
+        _thread.interrupt_main()
+
+    threading.Thread(target=watch, daemon=True).start()
+
+
 # Printed as the session's very last line, after the stop summary, so the GUI
 # can show it as the reason (openspec/changes/fix-engine-liveness).
 LOST_SOURCE_MESSAGE = "❌ System audio capture ended unexpectedly"
@@ -261,6 +280,9 @@ Examples:
     # pipeline, speech or not, so a quiet room is not mistaken for a stalled
     # engine (openspec/changes/fix-engine-liveness). Hidden from --help.
     parser.add_argument('--heartbeat', action='store_true', help=argparse.SUPPRESS)
+    # Desktop app on Windows only: stop on a "stop" line or EOF on stdin, since it
+    # can't send SIGINT to a console-less child (openspec/changes/02-flush-live-tail-on-stop-windows).
+    parser.add_argument('--stop-on-stdin', action='store_true', help=argparse.SUPPRESS)
     
     parser.add_argument(
         '--format',
@@ -412,6 +434,8 @@ Examples:
 
         # Set up signal handler for Ctrl+C
         signal.signal(signal.SIGINT, _make_signal_handler(args.verbose))
+        if args.stop_on_stdin:
+            _watch_stdin_for_stop()
         
         engine = TranscriptionEngine(
             model_size=args.model_label,  # names a --model-path folder in the load message
