@@ -22,7 +22,7 @@ The system SHALL transcribe an audio file using faster-whisper and return a list
 - **THEN** each segment is both written to the output file and reported to the caller as it is produced, so a caller can show the transcript building up
 
 ### Requirement: Transcribe live audio chunks
-The system SHALL transcribe audio chunks in real time for streaming, using a lower beam size for speed. Each segment's time SHALL be its position in the captured audio stream: overlap carried between consecutive chunks SHALL NOT be counted twice, and every chunk SHALL advance the stream position, whether it was transcribed, skipped as silent, or failed to transcribe. Speech in the audio shared by two consecutive chunks SHALL appear in the output once, not repeated.
+The system SHALL transcribe audio chunks in real time for streaming, using a lower beam size for speed. Each segment's time SHALL be its position in the captured audio stream: overlap carried between consecutive chunks SHALL NOT be counted twice, and every chunk SHALL advance the stream position, whether it was transcribed, skipped as silent, or failed to transcribe. Speech in the audio shared by two consecutive chunks SHALL appear in the output once, not repeated. When a live session stops, the audio captured since the last chunk SHALL be transcribed as one final, shorter chunk rather than discarded, under the same rules: stamped at its position in the stream, its overlap with the previous chunk not repeated, and the microphone's silence gate applied.
 
 #### Scenario: Chunk transcription produces segments
 - **WHEN** a live audio chunk contains speech
@@ -39,6 +39,14 @@ The system SHALL transcribe audio chunks in real time for streaming, using a low
 #### Scenario: Speech across a chunk boundary is not repeated
 - **WHEN** a word is spoken within the audio shared by two consecutive chunks
 - **THEN** the transcript contains that word once
+
+#### Scenario: Speech just before a stop is kept
+- **WHEN** a live session stops part-way through a chunk, with speech in the audio captured since the last chunk
+- **THEN** that speech is transcribed and written to the transcript, stamped at its position in the stream, and nothing already transcribed is repeated
+
+#### Scenario: A silent tail adds nothing
+- **WHEN** a live session stops and the audio captured since the last chunk is silent
+- **THEN** no line is added for it
 
 ### Requirement: Control model, device, and compute settings
 The system SHALL let users choose the whisper model size (tiny, base, small, medium, large, turbo), the execution device (auto, cpu, cuda), and compute type (auto, int8, float16, float32), with auto-detection from the environment. The system SHALL also accept an explicit local model directory path, which SHALL be used to load the model directly instead of resolving the model by name through the network/cache lookup, when provided.
