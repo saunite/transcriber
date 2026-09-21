@@ -17,7 +17,7 @@ files, and live capture is CLI-only, on macOS 14.4 or later.
 
 ## Install
 
-Every [release](https://github.com/saunite/transcriber/releases) offers each platform in up to three forms. They're all the same version and all include the `base` Whisper model, so the first transcription works offline. The app never updates itself. Its **Check for updates** button (at the bottom of the settings rail) asks GitHub for the latest release when you click it; it only reports what it finds and can open the releases page, and nothing is downloaded or installed for you. To upgrade, download the new version. The exception is the Linux `.deb` and `.rpm`, which register this project as a package repository when installed, so `apt` and `dnf` offer new versions like any other package; [the user guide](docs/user-guide.md#updates-for-the-deb-and-rpm) explains how to check or turn that off.
+Every [release](https://github.com/saunite/transcriber/releases) offers each platform in up to three forms. Each release's notes open with a table naming the file to take for your platform, and the downloads are named `linux-…`, `windows-…` and `macos-…` so they group together. They're all the same version and all include the `base` Whisper model, so the first transcription works offline. The app never updates itself. Its **Check for updates** button (at the bottom of the settings rail) asks GitHub for the latest release when you click it; it only reports what it finds and can open the releases page, and nothing is downloaded or installed for you. To upgrade, download the new version. The exception is the Linux `.deb` and `.rpm`, which register this project as a package repository when installed, so `apt` and `dnf` offer new versions like any other package; [the user guide](docs/user-guide.md#updates-for-the-deb-and-rpm) explains how to check or turn that off.
 
 - **Portable**: nothing to install, no admin rights. Deleting it is the uninstall.
 - **Installer or package**: installs like any other app, with a menu entry and an uninstaller.
@@ -29,10 +29,10 @@ The packages are install-tested on current Debian, Ubuntu LTS, Fedora, openSUSE 
 
 | File | What it is |
 |---|---|
-| `Transcriber_<version>_amd64.AppImage` | Portable GUI. Run `chmod +x` on it, then run it. AppImages need FUSE (`libfuse2`); without it, run it with `--appimage-extract-and-run`. |
-| `transcriber_<version>_amd64.deb` | Debian/Ubuntu package: `sudo apt install ./transcriber_<version>_amd64.deb`. Remove with `sudo apt purge transcriber` (`remove` keeps the update repository, as it does any configuration). |
-| `transcriber-<version>-1.x86_64.rpm` | Fedora: `sudo dnf install ./transcriber-<version>-1.x86_64.rpm`. openSUSE: `sudo zypper install --allow-unsigned-rpm ./transcriber-<version>-1.x86_64.rpm`. Remove with `sudo dnf remove transcriber` or `sudo zypper remove transcriber`. |
-| `transcriber-cli_<version>_linux-x64.tar.gz` | CLI (see below). |
+| `linux-Transcriber_<version>_amd64.AppImage` | Portable GUI. Run `chmod +x` on it, then run it. AppImages need FUSE (`libfuse2`); without it, run it with `--appimage-extract-and-run`. |
+| `linux-transcriber_<version>_amd64.deb` | Debian/Ubuntu package: `sudo apt install ./linux-transcriber_<version>_amd64.deb`. Remove with `sudo apt purge transcriber` (`remove` keeps the update repository, as it does any configuration). |
+| `linux-transcriber-<version>-1.x86_64.rpm` | Fedora: `sudo dnf install ./linux-transcriber-<version>-1.x86_64.rpm`. openSUSE: `sudo zypper install --allow-unsigned-rpm ./linux-transcriber-<version>-1.x86_64.rpm`. Remove with `sudo dnf remove transcriber` or `sudo zypper remove transcriber`. |
+| `linux-transcriber-cli_<version>_linux-x64.tar.gz` | CLI (see below). |
 
 The `.deb` and `.rpm` also put the command-line transcriber on your `PATH` as `transcriber-sidecar`. Run that way, it downloads models on first use instead of using the bundled one.
 
@@ -40,9 +40,9 @@ The `.deb` and `.rpm` also put the command-line transcriber on your `PATH` as `t
 
 | File | What it is |
 |---|---|
-| `Transcriber_<version>_x64-setup.exe` | Installer. It installs for your user only, under `%LOCALAPPDATA%`, so it never asks for admin rights. Uninstall it from Settings → Apps → Installed apps. |
-| `Transcriber_<version>_windows-x64.zip` | Portable GUI. Extract it anywhere and run `transcriber-gui.exe` from inside the extracted folder. Deleting the folder is the uninstall. |
-| `transcriber-cli_<version>_windows-x64.zip` | CLI (see below): `transcriber.exe`, the `win-start-transcription.bat` and `transcribe_file.bat` launchers, and the bundled model. |
+| `windows-Transcriber_<version>_x64-setup.exe` | Installer. It installs for your user only, under `%LOCALAPPDATA%`, so it never asks for admin rights. Uninstall it from Settings → Apps → Installed apps. |
+| `windows-Transcriber_<version>_windows-x64.zip` | Portable GUI. Extract it anywhere and run `transcriber-gui.exe` from inside the extracted folder. Deleting the folder is the uninstall. |
+| `windows-transcriber-cli_<version>_windows-x64.zip` | CLI (see below): `transcriber.exe`, the `win-start-transcription.bat` and `transcribe_file.bat` launchers, and the bundled model. |
 
 All three are unsigned, so Windows SmartScreen warns the first time you run one ("Windows protected your PC"). Choose **More info**, then **Run anyway**.
 
@@ -57,9 +57,9 @@ All three are unsigned, so Windows SmartScreen warns the first time you run one 
 
 | File | What it is |
 |---|---|
-| `Transcriber_<version>_aarch64.dmg` | Disk image. Open it and drag `Transcriber.app` to Applications. |
-| `Transcriber_<version>_macos-arm64.zip` | Portable app. Unzip it and open `Transcriber.app`. Deleting it is the uninstall. |
-| `transcriber-cli_<version>_macos-arm64.tar.gz` | CLI (see below). |
+| `macos-Transcriber_<version>_aarch64.dmg` | Disk image. Open it and drag `Transcriber.app` to Applications. |
+| `macos-Transcriber_<version>_macos-arm64.zip` | Portable app. Unzip it and open `Transcriber.app`. Deleting it is the uninstall. |
+| `macos-transcriber-cli_<version>_macos-arm64.tar.gz` | CLI (see below). |
 
 Apple Silicon (arm64) only; Intel Macs are not supported.
 

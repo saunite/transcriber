@@ -162,7 +162,7 @@ Releases are built by GitHub Actions (`.github/workflows/release.yml`) on fresh 
    ```
 
 3. The workflow first checks that the tag matches both version fields and that every source link in `SOURCE-PROVENANCE.txt` still resolves. Then it builds every platform and uploads the results to a **draft** release. Nothing is public yet.
-4. Download and try at least one artifact from the draft, then click **Publish** on the release page. If something is wrong, delete it with `gh release delete v0.2.0 --cleanup-tag`, fix it, and tag again.
+4. Download and try at least one artifact from the draft, then click **Publish** on the release page. The workflow writes the release notes, including the table that tells a reader which download to take. It also stages each platform's artifacts under a `linux-`, `windows-` or `macos-` prefix, which is what groups them on the release page. The artifact names below are what a *local* build produces, without that prefix. If something is wrong, delete it with `gh release delete v0.2.0 --cleanup-tag`, fix it, and tag again.
 
 To build everything without releasing, for example to check that a branch still builds on every platform, start the workflow from the Actions tab (**Run workflow**). The outputs are downloadable from that run. GitHub only shows the button once the workflow file is on the default branch.
 

@@ -95,7 +95,22 @@ jobs:
         # among the packages (openspec/changes/tidy-release-workflow). The same
         # file also ships inside every artifact.
         run: |
+          v="${GITHUB_REF_NAME#v}"
           notes=$(cat <<EOF
+          ## Which download do I need?
+
+          Every download includes the \`base\` Whisper model, so the first transcription works offline.
+
+          | Platform | Install it | Portable, nothing to install | Command line only |
+          |---|---|---|---|
+          | **Linux** | Debian/Ubuntu: \`linux-transcriber_${v}_amd64.deb\` — Fedora/openSUSE: \`linux-transcriber-${v}-1.x86_64.rpm\` | \`linux-Transcriber_${v}_amd64.AppImage\` | \`linux-transcriber-cli_${v}_linux-x64.tar.gz\` |
+          | **Windows** | \`windows-Transcriber_${v}_x64-setup.exe\` | \`windows-Transcriber_${v}_windows-x64.zip\` | \`windows-transcriber-cli_${v}_windows-x64.zip\` |
+          | **macOS** (Apple Silicon) | \`macos-Transcriber_${v}_aarch64.dmg\` | \`macos-Transcriber_${v}_macos-arm64.zip\` | \`macos-transcriber-cli_${v}_macos-arm64.tar.gz\` |
+
+          The Linux \`.deb\` and \`.rpm\` also register this project with apt and dnf, so they offer later versions like any other package.
+
+          \`InRelease\`, \`Packages\` and \`Packages.gz\` below are the apt repository index. Package managers fetch them; nobody needs to download them.
+
           ## Source code for bundled GPL components
 
           These downloads include FFmpeg, x264 and x265 (GPL-licensed) through PyAV.
@@ -174,6 +189,10 @@ jobs:
           # ("Transcriber"). The AppImage installs nothing and keeps the
           # capitalised name (openspec/changes/fix-linux-native-window-frame).
           for f in out/Transcriber*.deb out/Transcriber*.rpm; do mv "$f" "out/transcriber${f#out/Transcriber}"; done
+          # Platform prefix: the release page sorts assets alphabetically and has
+          # no folders, so the prefix is what groups a platform's downloads
+          # together (openspec/changes/tidy-release-downloads).
+          for f in out/*; do mv "$f" "out/linux-${f#out/}"; done
           ls -la out
 
       # Only that the package manager resolves the dependencies and installs;
@@ -295,6 +314,8 @@ jobs:
           cp dist/portable/Transcriber_*_windows-x64.zip \
              dist/portable/transcriber-cli_*_windows-x64.zip \
              src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/*-setup.exe out/
+          # Groups this platform's downloads on the release page (openspec/changes/tidy-release-downloads).
+          for f in out/*; do mv "$f" "out/windows-${f#out/}"; done
           ls -la out
 
       - name: Upload to draft release
@@ -382,6 +403,8 @@ jobs:
           cp src-tauri/target/release/bundle/dmg/*.dmg \
              dist/portable/Transcriber_*_macos-arm64.zip \
              dist/portable/transcriber-cli_*_macos-arm64.tar.gz out/
+          # Groups this platform's downloads on the release page (openspec/changes/tidy-release-downloads).
+          for f in out/*; do mv "$f" "out/macos-${f#out/}"; done
           ls -la out
 
       - name: Upload to draft release
