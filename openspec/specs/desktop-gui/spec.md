@@ -32,6 +32,10 @@ The system SHALL spawn the bundled Python sidecar only when the user starts a li
 - **WHEN** a user stops a live session whose frozen sidecar has re-executed into a worker process
 - **THEN** the worker process is terminated too, so no process retains the microphone or system-audio device after the session ends
 
+#### Scenario: Stopping on Windows is graceful too
+- **WHEN** a user on Windows stops an active live session
+- **THEN** the engine is asked to stop through a channel it can act on, finishes transcribing what it has captured and closes its transcript, and is terminated forcibly only if it has not exited within the same grace period used on other platforms
+
 #### Scenario: Graceful stop preserves the transcript
 - **WHEN** a live session that is saving a transcript is stopped
 - **THEN** the engine is given the chance to flush and close its transcript file before being terminated, so the saved transcript is complete rather than truncated mid-line

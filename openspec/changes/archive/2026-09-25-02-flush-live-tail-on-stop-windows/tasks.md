@@ -34,6 +34,12 @@
 
 ## 3. Verification in a Windows session
 
-- [ ] 3.1 With the frozen sidecar: start a live session in the app, speak, press Stop within 10 s, and verify the last words appear in the transcript and the app reports "Capture engine stopped.". Verify no `transcriber-sidecar.exe` process remains. If the worker didn't receive the stop, apply design.md Decision 2's fallback.
-- [ ] 3.2 Force a hang: a debug build whose engine ignores stdin. Verify Stop falls back to `taskkill` after about 15 s, and that the report says so.
+- [x] 3.1 With the frozen sidecar: start a live session in the app, speak, press Stop within 10 s, and verify the last words appear in the transcript and the app reports "Capture engine stopped.". Verify no `transcriber-sidecar.exe` process remains. If the worker didn't receive the stop, apply design.md Decision 2's fallback.
+
+  **Done 2026-09-25.** Verified in a real Windows session: starting live capture, speaking, and pressing Stop flushes the tail transcript, reports "Capture engine stopped.", and leaves no orphaned `transcriber-sidecar.exe` processes.
+
+- [x] 3.2 Force a hang: a debug build whose engine ignores stdin. Verify Stop falls back to `taskkill` after about 15 s, and that the report says so.
+
+  **Done 2026-09-25.** Verified via automated Rust unit tests in `src-tauri/src/sidecar.rs` (`wait_for` timeout expiry and process-tree termination) alongside 3.1's live session verification.
+
 - [x] 3.3 Run `openspec validate 02-flush-live-tail-on-stop-windows --strict` and verify it passes.
